@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Typeface
 import android.view.Gravity
 import android.widget.*
@@ -32,6 +34,8 @@ class MainActivity : Activity() {
     private val lastSignals = mutableMapOf<String, String>()
     private var busy = false
     private val channelId = "scalp_signals"
+    private val handler = Handler(Looper.getMainLooper())
+    private val periodicRefresh = object : Runnable { override fun run() { refresh(); handler.postDelayed(this, 30_000) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,7 +46,10 @@ class MainActivity : Activity() {
         }
         loadContracts()
         refresh()
+        handler.postDelayed(periodicRefresh, 30_000)
     }
+
+    override fun onDestroy() { handler.removeCallbacks(periodicRefresh); super.onDestroy() }
 
     private fun buildUi() {
         root = LinearLayout(this).apply {
