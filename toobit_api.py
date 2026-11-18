@@ -1,24 +1,28 @@
 
+import time
 import requests
-from typing import Optional
 
 
 class ToobitAPI:
     BASE_URL = "https://api.toobit.com"
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key
+    INTERVALS = {
+        "5m": 5 * 60 * 1000,
+        "15m": 15 * 60 * 1000,
+        "1h": 60 * 60 * 1000
+    }
+
+    def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "CryptoSignalBot/1.0"
         })
 
     def _get(self, endpoint, params=None):
-        url = self.BASE_URL + endpoint
         response = self.session.get(
-            url,
+            self.BASE_URL + endpoint,
             params=params,
-            timeout=15
+            timeout=20
         )
         response.raise_for_status()
         return response.json()
@@ -26,75 +30,71 @@ class ToobitAPI:
     def server_time(self):
         return self._get("/api/v1/time")
 
-    def exchange_info(self):
-        return self._get("/api/v1/exchangeInfo")
-
     def get_price(self, symbol="BTCUSDT"):
-        data = self._get(
+        return self._get(
             "/quote/v1/ticker/price",
             {"symbol": symbol}
         )
-        return data
 
-    def get_24h(self, symbol="BTCUSDT"):
-        return self._get(
-            "/quote/v1/ticker/24hr",
-            {"symbol": symbol}
+    def get_klines(self, symbol="BTCUSDT",
+                   interval="5m", limit=200):
+
+        if interval not in self.INTERVALS:
+            raise ValueError("Invalid interval")
+
+        limit = max(60, min(int(limit), 1000))
+
+        end_time = int(time.time() * 1000)
+        start_time = (
+            end_time - self.INTERVALS[interval] * limit
         )
 
-    def get_klines(
-        self,
-        symbol="BTCUSDT",
-        interval="5m",
-        limit=200
-    ):
-        return self._get(
+        rows = self._get(
             "/quote/v1/klines",
             {
                 "symbol": symbol,
                 "interval": interval,
+                "startTime": start_time,
+                "endTime": end_time,
                 "limit": limit
             }
         )
 
+        candles = []
+
+        for row in rows:
+            if len(row) < 6:
+                continue
+
+            candles.append({
+                "open_time": int(row[0]),
+                "open": float(row[1]),
+                "high": float(row[2]),
+                "low": float(row[3]),
+                "close": float(row[4]),
+                "volume": float(row[5])
+            })
+
+        return candles
+
     def get_multi_timeframe(self, symbol="BTCUSDT"):
         return {
-            "5m": self.get_klines(symbol, "5m"),
-            "15m": self.get_klines(symbol, "15m"),
-            "1h": self.get_klines(symbol, "1h")
+            "5m": self.get_klines(symbol, "5m", 200),
+            "15m": self.get_klines(symbol, "15m", 200),
+            "1h": self.get_klines(symbol, "1h", 200)
         }
-
-    def get_order_book(self, symbol="BTCUSDT"):
-        return self._get(
-            "/quote/v1/depth",
-            {
-                "symbol": symbol,
-                "limit": 100
-            }
-        )
-
-    def get_recent_trades(self, symbol="BTCUSDT"):
-        return self._get(
-            "/quote/v1/trades",
-            {
-                "symbol": symbol,
-                "limit": 60
-            }
-        )
 
 
 if __name__ == "__main__":
     api = ToobitAPI()
 
     try:
-        print("Toobit connection successful")
+        data = api.get_multi_timeframe("BTCUSDT")
 
-        print("BTC Price:")
-        print(api.get_price("BTCUSDT"))
+        for timeframe, candles in data.items():
+            print(timeframe, ":", len(candles), "candles")
 
-        print("Multi timeframe:")
-        print(api.get_multi_timeframe("BTCUSDT"))
+        print("Latest price:", api.get_price("BTCUSDT"))
 
-    except requests.RequestException as error:
-        print("API Error:", error)
-
+    except Exception as error:
+        print("Connection error:", error)
