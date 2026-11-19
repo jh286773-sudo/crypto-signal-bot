@@ -542,6 +542,11 @@ class MainActivity : Activity() {
 
     // Native candle renderer: plots actual Toobit OHLC values, not decorative sample data.
     private inner class MarketVisualView(context: Context) : android.view.View(context) {
+        init {
+            // Render the live chart with Android's hardware-accelerated vector canvas.
+            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+            setWillNotDraw(false)
+        }
         private val candles = mutableListOf<MarketCandle>()
         private val grid = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(48, 220, 185, 105); strokeWidth = dp(1).toFloat()
