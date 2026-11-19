@@ -158,7 +158,7 @@ class MainActivity : Activity() {
         }
         heroTop.addView(livePill)
         hero.addView(heroTop)
-        hero.addView(AurumHeroArt(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(184)).apply { topMargin = dp(5); bottomMargin = dp(3) })
+        hero.addView(AurumHeroArt(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(218)).apply { topMargin = dp(5); bottomMargin = dp(3) })
         status = text("در حال اتصال به Toobit…", 14, Color.WHITE, true).apply {
             setPadding(0, dp(13), 0, dp(4))
             setShadowLayer(8f, 0f, 0f, Color.rgb(174, 128, 36))
@@ -208,7 +208,7 @@ class MainActivity : Activity() {
         quoteRow.addView(marketChangeLabel)
         visualCard.addView(quoteRow)
         marketChart = MarketVisualView(this)
-        visualCard.addView(marketChart, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)).apply {
+        visualCard.addView(marketChart, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(232)).apply {
             topMargin = dp(5); bottomMargin = dp(8)
         })
         val visualFoot = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -467,7 +467,21 @@ class MainActivity : Activity() {
     private inner class MarketVisualView(context: Context) : android.view.View(context) {
         private val candles = mutableListOf<MarketCandle>()
         private val grid = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(38, 220, 185, 105); strokeWidth = dp(1).toFloat()
+            color = Color.argb(48, 220, 185, 105); strokeWidth = dp(1).toFloat()
+        }
+        private val axisText = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(155, 220, 205, 169); textSize = dp(9).toFloat()
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        private val candleShadow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(38, 0, 0, 0); style = android.graphics.Paint.Style.FILL
+        }
+        private val volumePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+        }
+        private val borderPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(90, 212, 175, 55); style = android.graphics.Paint.Style.STROKE
+            strokeWidth = dp(1).toFloat()
         }
         private val wick = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             strokeWidth = dp(1).toFloat(); strokeCap = android.graphics.Paint.Cap.ROUND
@@ -493,7 +507,15 @@ class MainActivity : Activity() {
             super.onDraw(canvas)
             val w = width.toFloat(); val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
-            for (i in 0..4) canvas.drawLine(0f, h * i / 4f, w, h * i / 4f, grid)
+            val axisWidth = dp(43).toFloat()
+            val plotRight = w - axisWidth
+            val plotBottom = h - dp(24)
+            for (i in 0..4) {
+                val gy = dp(8).toFloat() + (plotBottom - dp(8)) * i / 4f
+                canvas.drawLine(0f, gy, plotRight, gy, grid)
+                canvas.drawText("${100 - i * 25}", plotRight + dp(7), gy + dp(3), axisText)
+            }
+            canvas.drawRoundRect(0f, 0f, w, h, dp(12).toFloat(), dp(12).toFloat(), borderPaint)
             if (candles.size < 2) {
                 val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                     color = muted; textSize = dp(11).toFloat(); textAlign = android.graphics.Paint.Align.CENTER
@@ -504,10 +526,11 @@ class MainActivity : Activity() {
             val low = candles.minOf { it.low }
             val high = candles.maxOf { it.high }
             val range = (high - low).takeIf { it > 0.0 } ?: (high * .001).coerceAtLeast(.0000001)
-            val top = dp(9).toFloat(); val bottom = h - dp(9)
+            val top = dp(10).toFloat(); val bottom = plotBottom - dp(3)
             fun y(value: Double) = bottom - (((value - low) / range).toFloat() * (bottom - top))
-            val slot = w / candles.size
+            val slot = plotRight / candles.size
             val candleWidth = (slot * .58f).coerceAtLeast(dp(2).toFloat())
+            val maxVolume = candles.maxOf { it.volume }.coerceAtLeast(0.0000001)
             val closePath = android.graphics.Path()
             candles.forEachIndexed { index, c ->
                 val x = slot * index + slot / 2f
@@ -526,8 +549,13 @@ class MainActivity : Activity() {
                 val x = slot * index + slot / 2f
                 val up = c.close >= c.open
                 val color = if (up) Color.rgb(91, 211, 145) else Color.rgb(231, 91, 83)
+                volumePaint.color = if (up) Color.argb(55, 91, 211, 145) else Color.argb(55, 231, 91, 83)
+                val volumeHeight = (c.volume / maxVolume).toFloat() * dp(17)
+                canvas.drawRoundRect(x - candleWidth * .36f, h - volumeHeight - dp(3), x + candleWidth * .36f, h - dp(3),
+                    dp(2).toFloat(), dp(2).toFloat(), volumePaint)
                 wick.color = color
                 body.color = color
+                canvas.drawLine(x + dp(1), y(c.high) + dp(1), x + dp(1), y(c.low) + dp(1), candleShadow)
                 canvas.drawLine(x, y(c.high), x, y(c.low), wick)
                 val y1 = y(max(c.open, c.close))
                 val y2 = y(min(c.open, c.close))
@@ -538,13 +566,16 @@ class MainActivity : Activity() {
             }
             val lastY = y(candles.last().close)
             canvas.drawLine(0f, lastY, w, lastY, lastLine)
-            canvas.drawCircle(w - dp(3).toFloat(), lastY, dp(7).toFloat(), glow)
+            canvas.drawCircle(plotRight - dp(3).toFloat(), lastY, dp(10).toFloat(), glow)
             val marker = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.rgb(245, 220, 135)
                 style = android.graphics.Paint.Style.STROKE
                 strokeWidth = dp(1).toFloat()
             }
-            canvas.drawCircle(w - dp(3).toFloat(), lastY, dp(3).toFloat(), marker)
+            canvas.drawCircle(plotRight - dp(3).toFloat(), lastY, dp(3).toFloat(), marker)
+            axisText.textAlign = android.graphics.Paint.Align.RIGHT
+            canvas.drawText(fmt(candles.last().close), w - dp(5).toFloat(), (lastY - dp(5)).coerceAtLeast(dp(10).toFloat()), axisText)
+            axisText.textAlign = android.graphics.Paint.Align.LEFT
         }
     }
 
@@ -562,9 +593,9 @@ class MainActivity : Activity() {
         setPadding(dp(17), dp(15), dp(17), dp(17))
         background = android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.rgb(31, 32, 37), Color.rgb(19, 21, 27))
-        ).apply { cornerRadius = dp(19).toFloat(); setStroke(dp(1), Color.rgb(75, 66, 46)) }
-        elevation = dp(4).toFloat()
+            intArrayOf(Color.rgb(57, 47, 28), Color.rgb(30, 29, 27), Color.rgb(15, 17, 22), Color.rgb(9, 11, 15))
+        ).apply { cornerRadius = dp(22).toFloat(); setStroke(dp(1), Color.rgb(126, 96, 43)) }
+        elevation = dp(9).toFloat()
     }
 
     private fun marginParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
@@ -647,7 +678,7 @@ class MainActivity : Activity() {
                 }
                 val bitmap = connection.inputStream.use {
                     BitmapFactory.decodeStream(it)?.let { decoded ->
-                        val scaled = android.graphics.Bitmap.createScaledBitmap(decoded, dp(48), dp(48), true)
+                        val scaled = android.graphics.Bitmap.createScaledBitmap(decoded, dp(64), dp(64), true)
                         if (scaled !== decoded) decoded.recycle()
                         scaled
                     }
