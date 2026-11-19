@@ -5,7 +5,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
-data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0)
+data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L)
 
 data class StrategyResult(
     val signal: String,
