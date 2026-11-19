@@ -85,7 +85,6 @@ object ExchangeMarketData {
                 val a=JSONObject(get("https://api-contract.weex.com/capi/v3/market/exchangeInfo?contractType=PERPETUAL")).optJSONArray("symbols") ?: JSONArray()
                 for(i in 0 until a.length()) { val o=a.getJSONObject(i); val sym=o.optString("symbol"); if(sym.endsWith("USDT") && (o.optString("status").isBlank() || o.optString("status")=="TRADING")) out.add(sym.removeSuffix("USDT")+"-SWAP-USDT") }
             }
-            }
         }
         return out.distinct().sorted()
     }
