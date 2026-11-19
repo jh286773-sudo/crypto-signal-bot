@@ -330,7 +330,11 @@ class MainActivity : Activity() {
     private fun logoView(size: Int): ImageView = ImageView(this).apply {
         layoutParams = LinearLayout.LayoutParams(dp(size), dp(size)).apply { marginEnd = dp(14) }
         scaleType = ImageView.ScaleType.FIT_CENTER
-        background = rounded(Color.rgb(22, 23, 27), gold, 12)
+        background = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.rgb(66, 56, 35), Color.rgb(18, 20, 24))
+        ).apply { cornerRadius = dp(12).toFloat(); setStroke(dp(1), gold) }
+        elevation = dp(7).toFloat()
         setPadding(dp(2), dp(2), dp(2), dp(2))
     }
 
@@ -338,7 +342,11 @@ class MainActivity : Activity() {
         val picker = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(12), dp(18), dp(12))
-            background = rounded(ink, gold, 20)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(57, 47, 27), Color.rgb(25, 25, 29), Color.rgb(8, 10, 14))
+            ).apply { cornerRadius = dp(22).toFloat(); setStroke(dp(1), gold) }
+            elevation = dp(18).toFloat()
         }
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -358,7 +366,11 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(Color.WHITE)
             setHintTextColor(muted)
-            background = rounded(panel, Color.rgb(105, 86, 39), 14)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(43, 40, 32), Color.rgb(15, 17, 21))
+            ).apply { cornerRadius = dp(14).toFloat(); setStroke(dp(1), Color.rgb(143, 111, 47)) }
+            elevation = dp(5).toFloat()
             setPadding(dp(14), dp(8), dp(14), dp(8))
         }
         picker.addView(search, marginParams(top = 8, bottom = 8))
@@ -386,7 +398,11 @@ class MainActivity : Activity() {
             text = "پاک‌کردن"
             textSize = 12f
             setTextColor(goldLight)
-            background = rounded(panel, gold, 12)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(65, 58, 43), Color.rgb(24, 25, 29))
+            ).apply { cornerRadius = dp(13).toFloat(); setStroke(dp(1), gold) }
+            elevation = dp(8).toFloat()
             setPadding(dp(10), 0, dp(10), 0)
         }
         footer.addView(clear, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(8) })
@@ -394,7 +410,11 @@ class MainActivity : Activity() {
             text = "تأیید انتخاب‌ها"
             textSize = 13f
             setTextColor(ink)
-            background = rounded(gold, goldLight, 12)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.WHITE, goldLight, gold, Color.rgb(139, 94, 20))
+            ).apply { cornerRadius = dp(13).toFloat(); setStroke(dp(1), Color.rgb(255, 234, 166)) }
+            elevation = dp(11).toFloat()
         }
         footer.addView(done, LinearLayout.LayoutParams(0, dp(44), 1f))
         picker.addView(footer, marginParams(top = 10))
@@ -464,7 +484,8 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), dp(4), dp(10), dp(4))
                 background = rounded(if (selectedSymbols.contains(symbol)) Color.rgb(38, 34, 22) else panel,
-                    if (selectedSymbols.contains(symbol)) gold else Color.rgb(58, 59, 63), 14)
+                    if (selectedSymbols.contains(symbol)) gold else Color.rgb(100, 91, 70), 14)
+                elevation = dp(if (selectedSymbols.contains(symbol)) 7 else 3).toFloat()
             }
             val coinLogo = logoView(38)
             row.addView(coinLogo)
@@ -477,7 +498,10 @@ class MainActivity : Activity() {
                 text = "●"; textSize = 24f
                 gravity = Gravity.CENTER
                 setTextColor(if (selectedSymbols.contains(symbol)) gold else Color.TRANSPARENT)
-                background = android.graphics.drawable.GradientDrawable().apply {
+                background = android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(Color.WHITE, goldLight, gold)
+                ).apply {
                     shape = android.graphics.drawable.GradientDrawable.OVAL
                     setColor(if (selectedSymbols.contains(symbol)) gold else Color.TRANSPARENT)
                     setStroke(dp(2), gold)
