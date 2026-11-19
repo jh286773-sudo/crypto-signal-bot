@@ -142,9 +142,9 @@ class CryptoMonitorService : Service() {
     }
 
     private fun selectedSymbols(): List<String> {
-        val saved = tradePrefs.getStringSet("selected_symbols", null)?.toList().orEmpty()
+        val saved = if (tradePrefs.contains("selected_symbols")) tradePrefs.getStringSet("selected_symbols", emptySet())?.toList().orEmpty() else defaultSymbols
         val openSymbols = tradePrefs.all.keys.filter { it.startsWith("open_setup_") }.map { it.removePrefix("open_setup_") }
-        return ((if (saved.isEmpty()) defaultSymbols else saved) + openSymbols).distinct().take(100)
+        return (saved + openSymbols).distinct().take(100)
     }
 
     private fun markPrice(symbol: String): Double {
