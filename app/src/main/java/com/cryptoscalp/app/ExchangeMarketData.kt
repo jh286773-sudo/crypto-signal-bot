@@ -103,6 +103,8 @@ object ExchangeMarketData {
             } catch(_:Exception) {}
         }
         if(result.size<60) throw IllegalStateException("$exchange: کندل کافی دریافت نشد (${result.size})")
+        // Bybit, OKX and Bitget return newest-first candles; the strategy expects oldest-first.
+        if(exchange=="Bybit" || exchange=="OKX" || exchange=="Bitget" || exchange=="BingX") result.reverse()
         return result
     }
 
