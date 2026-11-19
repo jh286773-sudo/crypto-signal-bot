@@ -158,6 +158,7 @@ class MainActivity : Activity() {
         }
         heroTop.addView(livePill)
         hero.addView(heroTop)
+        hero.addView(AurumHeroArt(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(154)).apply { topMargin = dp(5); bottomMargin = dp(3) })
         status = text("در حال اتصال به Toobit…", 14, Color.WHITE, true).apply {
             setPadding(0, dp(13), 0, dp(4))
             setShadowLayer(8f, 0f, 0f, Color.rgb(174, 128, 36))
@@ -316,6 +317,70 @@ class MainActivity : Activity() {
             setBackgroundResource(R.drawable.app_background)
             addView(root)
         })
+    }
+
+    // High-resolution, density-aware metallic mascot artwork drawn natively (no blurry bitmap assets).
+    private inner class AurumHeroArt(context: Context) : android.view.View(context) {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat(); val h = height.toFloat()
+            val cx = w * .5f; val cy = h * .52f
+            p.style = android.graphics.Paint.Style.FILL
+            p.shader = android.graphics.RadialGradient(cx, cy, h * .72f,
+                intArrayOf(Color.argb(65, 227, 177, 65), Color.argb(20, 180, 125, 35), Color.TRANSPARENT),
+                floatArrayOf(0f, .62f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, h * .72f, p); p.shader = null
+
+            // Horns with metallic bevel gradients.
+            val horn = android.graphics.Path().apply {
+                moveTo(cx - h*.22f, cy - h*.12f); cubicTo(cx-h*.48f, cy-h*.12f, cx-h*.47f, cy-h*.48f, cx-h*.62f, cy-h*.45f)
+                cubicTo(cx-h*.53f, cy-h*.17f, cx-h*.48f, cy+h*.02f, cx-h*.27f, cy+h*.10f); close()
+                moveTo(cx + h*.22f, cy - h*.12f); cubicTo(cx+h*.48f, cy-h*.12f, cx+h*.47f, cy-h*.48f, cx+h*.62f, cy-h*.45f)
+                cubicTo(cx+h*.53f, cy-h*.17f, cx+h*.48f, cy+h*.02f, cx+h*.27f, cy+h*.10f); close()
+            }
+            p.shader = android.graphics.LinearGradient(0f, cy-h*.5f, 0f, cy+h*.12f,
+                intArrayOf(Color.WHITE, goldLight, gold, Color.rgb(83,55,17)), null, android.graphics.Shader.TileMode.CLAMP)
+            canvas.drawPath(horn, p); p.shader = null
+            p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = dp(1.2f).toInt().toFloat()
+            p.color = Color.rgb(255, 238, 177); canvas.drawPath(horn, p); p.style = android.graphics.Paint.Style.FILL
+
+            // Angular armored face.
+            val face = android.graphics.Path().apply {
+                moveTo(cx-h*.31f, cy-h*.20f); lineTo(cx-h*.23f, cy-h*.42f); lineTo(cx, cy-h*.48f)
+                lineTo(cx+h*.23f, cy-h*.42f); lineTo(cx+h*.31f, cy-h*.20f)
+                lineTo(cx+h*.25f, cy+h*.25f); lineTo(cx, cy+h*.43f); lineTo(cx-h*.25f, cy+h*.25f); close()
+            }
+            p.shader = android.graphics.LinearGradient(cx-h*.3f, cy-h*.4f, cx+h*.3f, cy+h*.4f,
+                intArrayOf(Color.rgb(255,242,190), Color.rgb(179,132,43), Color.rgb(49,42,29), Color.rgb(214,166,66)),
+                null, android.graphics.Shader.TileMode.CLAMP)
+            canvas.drawPath(face, p); p.shader = null
+            p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = dp(2).toFloat()
+            p.color = Color.rgb(255,225,139); canvas.drawPath(face, p); p.style = android.graphics.Paint.Style.FILL
+
+            // Dark inset visor and luminous eyes.
+            val visor = android.graphics.Path().apply {
+                moveTo(cx-h*.24f, cy-h*.16f); lineTo(cx-h*.13f, cy-h*.29f); lineTo(cx+h*.13f, cy-h*.29f)
+                lineTo(cx+h*.24f, cy-h*.16f); lineTo(cx+h*.17f, cy+h*.02f); lineTo(cx-h*.17f, cy+h*.02f); close()
+            }
+            p.color = Color.rgb(12,15,19); canvas.drawPath(visor,p)
+            p.shader = android.graphics.LinearGradient(cx-h*.18f, cy, cx+h*.18f, cy,
+                intArrayOf(Color.rgb(255,235,154), Color.rgb(255,184,55), Color.rgb(255,235,154)),
+                null, android.graphics.Shader.TileMode.CLAMP)
+            canvas.drawRoundRect(cx-h*.17f, cy-h*.11f, cx-h*.035f, cy-h*.045f, dp(4).toFloat(), dp(4).toFloat(), p)
+            canvas.drawRoundRect(cx+h*.035f, cy-h*.11f, cx+h*.17f, cy-h*.045f, dp(4).toFloat(), dp(4).toFloat(), p)
+            p.shader = null
+            p.color = Color.rgb(255,224,132); p.strokeWidth = dp(2).toFloat()
+            canvas.drawLine(cx-h*.11f, cy+h*.13f, cx+h*.11f, cy+h*.13f, p)
+            canvas.drawLine(cx-h*.07f, cy+h*.20f, cx+h*.07f, cy+h*.20f, p)
+            // Side armor and fine engraved highlights.
+            p.color = Color.rgb(36,31,23)
+            canvas.drawRoundRect(cx-h*.36f, cy-h*.02f, cx-h*.27f, cy+h*.24f, dp(5).toFloat(), dp(5).toFloat(), p)
+            canvas.drawRoundRect(cx+h*.27f, cy-h*.02f, cx+h*.36f, cy+h*.24f, dp(5).toFloat(), dp(5).toFloat(), p)
+            p.color = Color.rgb(255,226,151); p.strokeWidth = dp(1).toFloat()
+            canvas.drawLine(cx-h*.29f, cy+h*.05f, cx-h*.29f, cy+h*.17f, p)
+            canvas.drawLine(cx+h*.29f, cy+h*.05f, cx+h*.29f, cy+h*.17f, p)
+        }
     }
 
     private fun updateTimeframeStyles() {
