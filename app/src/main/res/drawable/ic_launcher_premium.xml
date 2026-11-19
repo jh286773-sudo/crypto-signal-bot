@@ -3,22 +3,31 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#101216" android:pathData="M54,5 C81,5 103,27 103,54 C103,81 81,103 54,103 C27,103 5,81 5,54 C5,27 27,5 54,5 Z"/>
-    <path android:fillColor="#00000000" android:strokeColor="#76551D" android:strokeWidth="1.2" android:pathData="M54,9 C79,9 99,29 99,54 C99,79 79,99 54,99 C29,99 9,79 9,54 C9,29 29,9 54,9 Z"/>
-    <!-- Swept, tapered crescent horns -->
-    <path android:fillColor="#D9B45F" android:pathData="M37,40 C27,37 21,28 17,15 C29,22 40,26 46,34 C42,34 39,36 37,40 Z"/>
-    <path android:fillColor="#D9B45F" android:pathData="M71,40 C81,37 87,28 91,15 C79,22 68,26 62,34 C66,34 69,36 71,40 Z"/>
-    <path android:fillColor="#F5D98D" android:pathData="M21,19 C28,26 34,30 39,35 C31,32 25,27 21,19 Z M87,19 C80,26 74,30 69,35 C77,32 83,27 87,19 Z"/>
-    <!-- Rounded ears -->
-    <path android:fillColor="#986F2A" android:pathData="M36,43 C26,38 19,42 17,51 C24,52 31,51 39,48 Z M72,43 C82,38 89,42 91,51 C84,52 77,51 69,48 Z"/>
-    <!-- Natural broad forehead and cheeks -->
-    <path android:fillColor="#C99E4C" android:pathData="M54,28 C41,28 32,37 31,50 C29,65 37,79 47,84 C51,87 57,87 61,84 C71,79 79,65 77,50 C76,37 67,28 54,28 Z"/>
-    <path android:fillColor="#F0D18A" android:pathData="M54,31 C44,31 37,38 36,49 C35,60 40,72 48,78 C43,68 42,55 45,44 C47,38 50,34 54,31 Z"/>
-    <path android:fillColor="#4A351A" android:pathData="M34,51 C38,46 44,45 49,49 C45,53 40,55 35,55 Z M74,51 C70,46 64,45 59,49 C63,53 68,55 73,55 Z"/>
-    <path android:fillColor="#F7D98B" android:pathData="M39,50 C42,48 45,48 47,50 C44,52 42,52 39,50 Z M69,50 C66,48 63,48 61,50 C64,52 66,52 69,50 Z"/>
-    <!-- Wide soft muzzle -->
-    <path android:fillColor="#E1BD70" android:pathData="M54,58 C42,58 35,65 36,74 C37,83 46,88 54,88 C62,88 71,83 72,74 C73,65 66,58 54,58 Z"/>
-    <path android:fillColor="#5B421F" android:pathData="M42,68 C45,65 49,66 50,70 C50,74 46,76 42,74 C40,73 40,70 42,68 Z M66,68 C63,65 59,66 58,70 C58,74 62,76 66,74 C68,73 68,70 66,68 Z"/>
-    <path android:fillColor="#00000000" android:strokeColor="#8B6427" android:strokeWidth="1.4" android:strokeLineCap="round" android:pathData="M54,73 C53,77 53,79 54,81 M46,82 C50,85 58,85 62,82"/>
-    <path android:fillColor="#F4D78C" android:pathData="M54,12 C55,16 58,18 62,19 C58,20 55,22 54,26 C53,22 50,20 46,19 C50,18 53,16 54,12 Z"/>
+    <path android:fillColor="#080A0E" android:pathData="M54,4 C81.6,4 104,26.4 104,54 C104,81.6 81.6,104 54,104 C26.4,104 4,81.6 4,54 C4,26.4 26.4,4 54,4 Z"/>
+    <path android:fillColor="#17130C" android:pathData="M54,7 C79.9,7 101,28.1 101,54 C101,79.9 79.9,101 54,101 C28.1,101 7,79.9 7,54 C7,28.1 28.1,7 54,7 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#E2B95E" android:strokeWidth="1.25" android:pathData="M54,9 C78.8,9 99,29.2 99,54 C99,78.8 78.8,99 54,99 C29.2,99 9,78.8 9,54 C9,29.2 29.2,9 54,9 Z"/>
+    <!-- Swept, naturally curved horns with dark bevel underlay -->
+    <path android:fillColor="#493313" android:pathData="M36,41 C27,39 18,30 13,13 C25,20 40,25 47,35 C42,36 38,38 36,41 Z M72,41 C81,39 90,30 95,13 C83,20 68,25 61,35 C66,36 70,38 72,41 Z"/>
+    <path android:fillColor="#E4B85C" android:pathData="M36,38 C27,35 21,26 17,16 C28,22 39,27 45,35 C41,35 38,36 36,38 Z M72,38 C81,35 87,26 91,16 C80,22 69,27 63,35 C67,35 70,36 72,38 Z"/>
+    <path android:fillColor="#FFF0B7" android:pathData="M20,19 C26,25 33,29 39,34 C31,31 24,26 20,19 Z M88,19 C82,25 75,29 69,34 C77,31 84,26 88,19 Z"/>
+    <!-- Broad ears, softly swept outward -->
+    <path android:fillColor="#5C3D17" android:pathData="M35,43 C26,38 17,40 14,50 C20,57 29,55 39,49 Z M73,43 C82,38 91,40 94,50 C88,57 79,55 69,49 Z"/>
+    <path android:fillColor="#B98535" android:pathData="M35,44 C27,41 21,43 18,49 C24,52 30,51 37,48 Z M73,44 C81,41 87,43 90,49 C84,52 78,51 71,48 Z"/>
+    <!-- Deep sculpted head silhouette -->
+    <path android:fillColor="#4A3215" android:pathData="M54,25 C39,25 29,36 28,51 C27,68 36,84 48,91 C52,94 56,94 60,91 C72,84 81,68 80,51 C79,36 69,25 54,25 Z"/>
+    <path android:fillColor="#C9953F" android:pathData="M54,27 C41,27 32,37 31,51 C30,66 38,80 49,87 C52,89 56,89 59,87 C70,80 78,66 77,51 C76,37 67,27 54,27 Z"/>
+    <path android:fillColor="#F4D78C" android:pathData="M53,30 C44,31 38,39 37,50 C36,60 40,71 47,79 C43,67 43,53 46,43 C48,37 50,33 53,30 Z"/>
+    <path android:fillColor="#8B6126" android:pathData="M34,55 C38,48 45,46 51,51 C46,56 40,58 34,58 Z M74,55 C70,48 63,46 57,51 C62,56 68,58 74,58 Z"/>
+    <!-- Eyes, eyelids and warm highlights -->
+    <path android:fillColor="#21170D" android:pathData="M35,51 C40,46 46,46 50,51 C46,56 40,57 35,54 Z M73,51 C68,46 62,46 58,51 C62,56 68,57 73,54 Z"/>
+    <path android:fillColor="#F8E2A6" android:pathData="M40,50 C43,49 46,50 47,52 C44,53 42,52 40,50 Z M68,50 C65,49 62,50 61,52 C64,53 66,52 68,50 Z"/>
+    <path android:fillColor="#6B481C" android:pathData="M31,49 C37,43 45,43 51,48 M77,49 C71,43 63,43 57,48"/>
+    <!-- Broad rounded muzzle with nostrils -->
+    <path android:fillColor="#69471E" android:pathData="M54,59 C42,58 34,65 35,75 C36,85 46,91 54,91 C62,91 72,85 73,75 C74,65 66,58 54,59 Z"/>
+    <path android:fillColor="#E4C078" android:pathData="M54,59 C43,59 37,66 38,75 C39,83 47,87 54,87 C61,87 69,83 70,75 C71,66 65,59 54,59 Z"/>
+    <path android:fillColor="#3A2815" android:pathData="M43,68 C46,65 50,67 50,71 C50,75 46,77 42,74 C40,72 41,70 43,68 Z M65,68 C62,65 58,67 58,71 C58,75 62,77 66,74 C68,72 67,70 65,68 Z"/>
+    <path android:fillColor="#F9E4A9" android:pathData="M44,63 C49,61 59,61 64,63 C59,64 49,64 44,63 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#8B6228" android:strokeWidth="1.4" android:strokeLineCap="round" android:pathData="M54,75 C53,79 53,81 54,83 M46,84 C50,87 58,87 62,84"/>
+    <!-- Forehead glint -->
+    <path android:fillColor="#FFF0B7" android:pathData="M54,29 C55,34 58,37 63,38 C58,39 55,42 54,47 C53,42 50,39 45,38 C50,37 53,34 54,29 Z"/>
 </vector>
