@@ -34,6 +34,9 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var result: TextView
     private lateinit var coinPickerButton: Button
+    private lateinit var exchangePickerButton: Button
+    private val exchanges = listOf("Toobit", "Binance", "Bybit", "OKX", "KuCoin", "Gate.io", "Bitget", "MEXC", "BingX", "HTX", "Kraken", "Coinbase")
+    private val selectedExchanges = linkedSetOf("Toobit")
     private var coinChoices: LinearLayout? = null
     private val symbols = mutableListOf<String>()
     private val selectedSymbols = linkedSetOf<String>()
@@ -50,6 +53,7 @@ class MainActivity : Activity() {
         if (!prefs.getBoolean("manual_selection_initialized", false)) {
             prefs.edit().remove("selected_symbols").putBoolean("manual_selection_initialized", true).apply()
         }
+        selectedExchanges.clear(); selectedExchanges.addAll(prefs.getStringSet("selected_exchanges", setOf("Toobit")) ?: setOf("Toobit"))
         val saved = prefs.getStringSet("selected_symbols", null)
         if (saved != null) { selectedSymbols.clear(); selectedSymbols.addAll(saved) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -102,6 +106,18 @@ class MainActivity : Activity() {
         status = text("در حال اتصال به بازار فیوچرز Toobit…", 14, goldLight, true)
         marketCard.addView(status)
         root.addView(marketCard, marginParams(bottom = 14))
+
+        val exchangeCard = card()
+        exchangeCard.addView(text("انتخاب صرافی‌ها", 16, Color.WHITE, true))
+        exchangeCard.addView(text("می‌توانی چند صرافی را انتخاب کنی", 12, muted))
+        exchangePickerButton = Button(this).apply {
+            textSize = 14f; setTextColor(ink); background = rounded(gold, goldLight, 14)
+            elevation = 6f; setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        updateExchangeButton()
+        exchangeCard.addView(exchangePickerButton, marginParams(top = 10))
+        exchangePickerButton.setOnClickListener { showExchangePicker() }
+        root.addView(exchangeCard, marginParams(bottom = 14))
 
         val selectCard = card()
         selectCard.addView(text("دارایی‌های تحت نظر", 16, Color.WHITE, true))
@@ -190,6 +206,52 @@ class MainActivity : Activity() {
         menu.show()
     }
 
+    private fun updateExchangeButton() {
+        if (!::exchangePickerButton.isInitialized) return
+        exchangePickerButton.text = if (selectedExchanges.isEmpty()) "انتخاب صرافی‌ها" else "صرافی‌ها • ${selectedExchanges.size} انتخاب: " + selectedExchanges.joinToString("، ")
+    }
+
+    private fun showExchangePicker() {
+        val panelView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(14), dp(18), dp(14)); background = rounded(ink, gold, 20) }
+        panelView.addView(text("انتخاب صرافی‌ها", 19, goldLight, true))
+        val search = EditText(this).apply {
+            hint = "جستجوی صرافی…"; setSingleLine(true); textSize = 14f
+            setTextColor(Color.WHITE); setHintTextColor(muted); background = rounded(panel, gold, 12)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        panelView.addView(search, marginParams(bottom = 8))
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        panelView.addView(ScrollView(this).apply { addView(list); layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.heightPixels * .45).toInt()) })
+        fun render(q: String) {
+            list.removeAllViews()
+            exchanges.filter { it.contains(q.trim(), true) }.forEach { name ->
+                val chosen = selectedExchanges.contains(name)
+                val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = rounded(if (chosen) Color.rgb(38,34,22) else panel, gold, 12) }
+                row.addView(text(name, 15, Color.WHITE, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                val dot = TextView(this).apply {
+                    text = ""; background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(if (chosen) gold else Color.TRANSPARENT); setStroke(dp(2), gold)
+                    }; layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+                }
+                row.addView(dot)
+                row.setOnClickListener {
+                    if (selectedExchanges.contains(name)) selectedExchanges.remove(name) else selectedExchanges.add(name)
+                    getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_exchanges", selectedExchanges.toSet()).apply()
+                    render(search.text.toString()); updateExchangeButton()
+                }
+                list.addView(row, marginParams(bottom = 6))
+            }
+        }
+        render("")
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = render(s?.toString().orEmpty())
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        AlertDialog.Builder(this).setView(panelView).setPositiveButton("بستن", null).show().window?.setBackgroundDrawableResource(android.R.color.transparent)
+    }
+
     private fun showCoinPicker() {
         val picker = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -202,7 +264,7 @@ class MainActivity : Activity() {
         }
         val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         titleBlock.addView(text("انتخاب دارایی‌ها", 19, goldLight, true))
-        titleBlock.addView(text("قراردادهای دائمی USDT در Toobit", 11, muted))
+        titleBlock.addView(text("جستجو و انتخاب دستی ارزها", 11, muted))
         heading.addView(titleBlock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val countView = text("${selectedSymbols.size} انتخاب", 12, gold, true).apply { gravity = Gravity.CENTER }
         heading.addView(countView)
@@ -331,18 +393,23 @@ class MainActivity : Activity() {
             coinInfo.addView(text(base, 15, if (selectedSymbols.contains(symbol)) goldLight else Color.WHITE, true))
             coinInfo.addView(text("USDT PERPETUAL", 9, muted))
             row.addView(coinInfo, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            val check = CheckBox(this).apply {
-                buttonTintList = android.content.res.ColorStateList.valueOf(gold)
-                isChecked = selectedSymbols.contains(symbol)
-                setOnCheckedChangeListener { _, checked ->
-                    if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
-                    getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
-                    renderSelectedChoices()
-                    renderCoinChoices(query)
+            val selectedDot = TextView(this).apply {
+                text = "●"; textSize = 24f
+                gravity = Gravity.CENTER
+                setTextColor(if (selectedSymbols.contains(symbol)) gold else Color.TRANSPARENT)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(if (selectedSymbols.contains(symbol)) gold else Color.TRANSPARENT)
+                    setStroke(dp(2), gold)
                 }
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
             }
-            row.addView(check)
-            row.setOnClickListener { check.isChecked = !check.isChecked }
+            row.addView(selectedDot)
+            row.setOnClickListener {
+                if (selectedSymbols.contains(symbol)) selectedSymbols.remove(symbol) else selectedSymbols.add(symbol)
+                getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
+                renderSelectedChoices(); renderCoinChoices(query)
+            }
             choices.addView(row, marginParams(bottom = 7))
         }
         if (matches.isEmpty()) {
