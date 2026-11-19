@@ -29,8 +29,10 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
     private lateinit var result: TextView
-    private lateinit var symbolPicker: Spinner
-    private val symbols = mutableListOf("BTC-SWAP-USDT", "ETH-SWAP-USDT")
+    private lateinit var coinChoices: LinearLayout
+    private val symbols = mutableListOf("BTC-SWAP-USDT", "ETH-SWAP-USDT", "BNB-SWAP-USDT", "SOL-SWAP-USDT", "XRP-SWAP-USDT", "DOGE-SWAP-USDT", "ADA-SWAP-USDT", "TRX-SWAP-USDT", "LINK-SWAP-USDT", "AVAX-SWAP-USDT")
+    private val selectedSymbols = linkedSetOf<String>().apply { addAll(symbols) }
+    private val checkboxes = mutableMapOf<String, CheckBox>()
     private val lastSignals = mutableMapOf<String, String>()
     private var busy = false
     private val channelId = "scalp_signals"
@@ -60,9 +62,10 @@ class MainActivity : Activity() {
         val title = text("CRYPTO SCALP", 25, Color.WHITE, true)
         root.addView(title)
         root.addView(text("Toobit USDT Perpetual • سیگنال لانگ و شورت", 14, Color.LTGRAY))
-        symbolPicker = Spinner(this)
-        root.addView(symbolPicker)
-        val refresh = Button(this).apply { text = "به‌روزرسانی تحلیل" }
+        root.addView(text("ارزهای موردنظر را انتخاب کن (همه در ابتدا فعال‌اند):", 15, Color.WHITE, true))
+        coinChoices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(coinChoices)
+        val refresh = Button(this).apply { text = "تحلیل ارزهای انتخاب‌شده" }
         root.addView(refresh)
         status = text("در حال اتصال به بازار فیوچرز Toobit…", 14, Color.YELLOW)
         root.addView(status)
@@ -96,14 +99,30 @@ class MainActivity : Activity() {
                         if (s.endsWith("-SWAP-USDT")) active.add(s)
                     }
                 }
-                val preferred = listOf("BTC-SWAP-USDT", "ETH-SWAP-USDT", "SOL-SWAP-USDT", "XRP-SWAP-USDT", "DOGE-SWAP-USDT", "NOT-SWAP-USDT")
-                val ordered = preferred.filter { active.contains(it) } + active.filter { !preferred.contains(it) }.sorted()
+                val preferredBases = listOf("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK", "AVAX")
+                val ordered = preferredBases.map { "$it-SWAP-USDT" }.filter { active.contains(it) }
                 runOnUiThread {
                     symbols.clear()
                     symbols.addAll(ordered)
-                    if (symbols.isEmpty()) symbols.addAll(listOf("BTC-SWAP-USDT", "ETH-SWAP-USDT"))
-                    symbolPicker.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, symbols)
-                    status.text = if (ordered.any { it.startsWith("NOT-") }) "اتصال برقرار • قرارداد NOT در فهرست فعال است" else "اتصال برقرار • قرارداد NOT در فهرست فعال Toobit پیدا نشد"
+                    selectedSymbols.clear()
+                    selectedSymbols.addAll(ordered)
+                    coinChoices.removeAllViews()
+                    checkboxes.clear()
+                    for (symbol in ordered) {
+                        val base = symbol.removeSuffix("-SWAP-USDT")
+                        val box = CheckBox(this).apply {
+                            text = base
+                            textSize = 16f
+                            setTextColor(Color.WHITE)
+                            isChecked = true
+                            setOnCheckedChangeListener { _, checked ->
+                                if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
+                            }
+                        }
+                        checkboxes[symbol] = box
+                        coinChoices.addView(box)
+                    }
+                    status.text = "اتصال برقرار • ${ordered.size} ارز اصلی در دسترس"
                 }
             } catch (e: Exception) {
                 runOnUiThread { status.text = "خطای دریافت فهرست قراردادها: ${e.message}" }
@@ -114,29 +133,35 @@ class MainActivity : Activity() {
     private fun refresh() {
         if (busy) return
         busy = true
-        val symbol = if (::symbolPicker.isInitialized && symbolPicker.selectedItem != null) symbolPicker.selectedItem.toString() else "BTC-SWAP-USDT"
-        status.text = "در حال تحلیل $symbol …"
+        val chosen = selectedSymbols.toList()
+        if (chosen.isEmpty()) {
+            status.text = "حداقل یک ارز را تیک بزن."
+            return
+        }
+        status.text = "در حال تحلیل ${chosen.size} ارز انتخاب‌شده …"
         thread {
-            try {
-                val one = candles(symbol, "1m")
-                val five = candles(symbol, "5m")
-                val fifteen = candles(symbol, "15m")
-                val hour = candles(symbol, "1h")
-                val signal = analyze(one, five, fifteen, hour)
-                runOnUiThread {
-                    status.text = "آخرین بررسی: ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())}"
-                    result.text = signal.second
+            val reports = mutableListOf<String>()
+            var completed = 0
+            for (symbol in chosen) {
+                try {
+                    val one = candles(symbol, "1m")
+                    val five = candles(symbol, "5m")
+                    val fifteen = candles(symbol, "15m")
+                    val hour = candles(symbol, "1h")
+                    val signal = analyze(one, five, fifteen, hour)
+                    reports.add("【$symbol】\\n${signal.second}")
                     val previous = lastSignals[symbol]
                     if (signal.first != "WAIT" && signal.first != previous) notifySignal(symbol, signal.first, signal.second)
                     lastSignals[symbol] = signal.first
-                    busy = false
+                    completed++
+                } catch (e: Exception) {
+                    reports.add("【$symbol】\\nخطا در تحلیل: ${e.message}")
                 }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    status.text = "خطا در دریافت داده: ${e.message}"
-                    result.text = "اتصال یا نماد را بررسی کن و دوباره به‌روزرسانی بزن."
-                    busy = false
-                }
+            }
+            runOnUiThread {
+                status.text = "پایان تحلیل: $completed از ${chosen.size} ارز"
+                result.text = reports.joinToString("\\n\\n--------------------\\n\\n")
+                busy = false
             }
         }
     }
