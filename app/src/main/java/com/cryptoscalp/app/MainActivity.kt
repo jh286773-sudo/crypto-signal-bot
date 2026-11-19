@@ -49,6 +49,8 @@ class MainActivity : Activity() {
     private lateinit var marketPriceLabel: TextView
     private lateinit var marketSymbolLabel: TextView
     private lateinit var marketChangeLabel: TextView
+    private var selectedChartTimeframe = "5m"
+    private val timeframeButtons = mutableMapOf<String, TextView>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -209,17 +211,27 @@ class MainActivity : Activity() {
             topMargin = dp(5); bottomMargin = dp(8)
         })
         val visualFoot = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        visualFoot.addView(text("TIMEFRAMES", 9, muted, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        listOf("5 MIN", "15 MIN", "30 MIN").forEachIndexed { index, label ->
-            visualFoot.addView(TextView(this).apply {
-                text = label; textSize = 8f; typeface = Typeface.DEFAULT_BOLD
-                setTextColor(if (index == 1) ink else goldLight)
-                background = if (index == 1) rounded(gold, goldLight, 9) else rounded(Color.rgb(30, 29, 25), Color.rgb(105, 84, 43), 9)
-                setPadding(dp(8), dp(6), dp(8), dp(6))
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(5) })
+        visualFoot.addView(text("بازه نمودار", 10, muted, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        listOf("5m" to "۵ دقیقه", "15m" to "۱۵ دقیقه", "30m" to "۳۰ دقیقه").forEach { (tf, label) ->
+            val chip = TextView(this).apply {
+                text = label; textSize = 10f
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                gravity = Gravity.CENTER; isClickable = true; isFocusable = true
+                setPadding(dp(11), dp(8), dp(11), dp(8))
+                setOnClickListener {
+                    if (selectedChartTimeframe != tf) {
+                        selectedChartTimeframe = tf
+                        updateTimeframeStyles()
+                        refreshMarketChart()
+                    }
+                }
+            }
+            timeframeButtons[tf] = chip
+            visualFoot.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(6) })
         }
+        updateTimeframeStyles()
         visualCard.addView(visualFoot)
-        visualCard.addView(text("تصویرسازی گرافیکی رابط؛ داده و سیگنال واقعی فقط پس از دریافت اطلاعات Toobit.", 9, muted))
+        visualCard.addView(text("نمودار کندلی زنده بر اساس داده‌های واقعی Toobit", 9, muted))
         root.addView(visualCard, marginParams(bottom = 16))
 
         // Exchange identity card
@@ -306,6 +318,16 @@ class MainActivity : Activity() {
         })
     }
 
+    private fun updateTimeframeStyles() {
+        timeframeButtons.forEach { (tf, chip) ->
+            val active = tf == selectedChartTimeframe
+            chip.setTextColor(if (active) ink else goldLight)
+            chip.background = if (active) rounded(goldLight, Color.WHITE, 10)
+                else rounded(Color.rgb(27, 27, 29), Color.rgb(105, 84, 43), 10)
+            chip.elevation = if (active) dp(5).toFloat() else 0f
+        }
+    }
+
     private fun refreshMarketChart() {
         if (!::marketChart.isInitialized) return
         val symbol = selectedSymbols.firstOrNull() ?: symbols.firstOrNull()
@@ -316,17 +338,18 @@ class MainActivity : Activity() {
             marketChart.setCandles(emptyList())
             return
         }
-        marketSymbolLabel.text = "${symbol.removeSuffix("-SWAP-USDT")}  •  TOOBIT / 5m"
+        val timeframe = selectedChartTimeframe
+        marketSymbolLabel.text = symbol.removeSuffix("-SWAP-USDT") + "  •  TOOBIT / " + timeframe
         marketChangeLabel.text = "در حال دریافت…"
         thread(name = "toobit-chart") {
             try {
-                val candles = ExchangeMarketData.candles("Toobit", symbol, "5m")
+                val candles = ExchangeMarketData.candles("Toobit", symbol, timeframe)
                 val last = candles.last()
                 val first = candles[max(0, candles.size - 13)]
                 val change = if (first.close == 0.0) 0.0 else (last.close - first.close) / first.close * 100.0
                 runOnUiThread {
                     marketPriceLabel.text = fmt(last.close)
-                    marketChangeLabel.text = String.format(java.util.Locale.US, "%+.2f%% / 1h", change)
+                    marketChangeLabel.text = String.format(java.util.Locale.US, "%+.2f%%", change)
                     marketChangeLabel.setTextColor(if (change >= 0) Color.rgb(112, 231, 157) else Color.rgb(255, 119, 108))
                     marketChart.setCandles(candles.takeLast(36))
                 }
@@ -347,14 +370,20 @@ class MainActivity : Activity() {
             color = Color.argb(38, 220, 185, 105); strokeWidth = dp(1).toFloat()
         }
         private val wick = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            strokeWidth = dp(1.4f.toInt()).toFloat(); strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeWidth = dp(1).toFloat(); strokeCap = android.graphics.Paint.Cap.ROUND
         }
         private val body = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             style = android.graphics.Paint.Style.FILL
         }
         private val glow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(22, 218, 174, 75)
+            color = Color.argb(34, 218, 174, 75)
         }
+        private val lastLine = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(150, 239, 198, 91)
+            strokeWidth = dp(1).toFloat()
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(dp(4).toFloat(), dp(4).toFloat()), 0f)
+        }
+        private val areaPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
         fun setCandles(values: List<MarketCandle>) {
             candles.clear()
             candles.addAll(values)
@@ -378,7 +407,21 @@ class MainActivity : Activity() {
             val top = dp(9).toFloat(); val bottom = h - dp(9)
             fun y(value: Double) = bottom - (((value - low) / range).toFloat() * (bottom - top))
             val slot = w / candles.size
-            val candleWidth = (slot * .56f).coerceAtLeast(dp(2).toFloat())
+            val candleWidth = (slot * .58f).coerceAtLeast(dp(2).toFloat())
+            val closePath = android.graphics.Path()
+            candles.forEachIndexed { index, c ->
+                val x = slot * index + slot / 2f
+                if (index == 0) closePath.moveTo(x, y(c.close)) else closePath.lineTo(x, y(c.close))
+            }
+            val areaPath = android.graphics.Path(closePath).apply {
+                lineTo(slot * (candles.size - .5f), bottom)
+                lineTo(slot * .5f, bottom)
+                close()
+            }
+            areaPaint.shader = android.graphics.LinearGradient(0f, top, 0f, bottom,
+                intArrayOf(Color.argb(42, 212, 175, 55), Color.argb(0, 212, 175, 55)),
+                null, android.graphics.Shader.TileMode.CLAMP)
+            canvas.drawPath(areaPath, areaPaint)
             candles.forEachIndexed { index, c ->
                 val x = slot * index + slot / 2f
                 val up = c.close >= c.open
@@ -394,7 +437,14 @@ class MainActivity : Activity() {
                     dp(1).toFloat(), dp(1).toFloat(), body)
             }
             val lastY = y(candles.last().close)
-            canvas.drawCircle(w - dp(3).toFloat(), lastY, dp(4).toFloat(), glow)
+            canvas.drawLine(0f, lastY, w, lastY, lastLine)
+            canvas.drawCircle(w - dp(3).toFloat(), lastY, dp(7).toFloat(), glow)
+            val marker = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.rgb(245, 220, 135)
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = dp(1).toFloat()
+            }
+            canvas.drawCircle(w - dp(3).toFloat(), lastY, dp(3).toFloat(), marker)
         }
     }
 
