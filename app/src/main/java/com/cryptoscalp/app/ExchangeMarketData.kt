@@ -58,7 +58,7 @@ object ExchangeMarketData {
                 for(i in 0 until a.length()) { val o=a.getJSONObject(i); if(o.optString("symbolStatus")=="normal") out.add("${o.optString("baseCoin")}-SWAP-USDT") }
             }
             "BingX" -> {
-                val a=JSONObject(get("https://open-api.bingx.com/openApi/swap/v2/quote/contracts")).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
+                val a=JSONObject(get("https://open-api.bingx.com/openApi/swap/v2/quote/contracts")).optJSONArray("data") ?: JSONArray()
                 for(i in 0 until a.length()) { val sym=a.getJSONObject(i).optString("symbol"); if(sym.endsWith("-USDT")) out.add("${sym.removeSuffix("-USDT")}-SWAP-USDT") }
             }
         }
@@ -83,7 +83,7 @@ object ExchangeMarketData {
             "Binance","OKX","Gate.io" -> root as JSONArray
             "Bybit" -> (root as JSONObject).optJSONObject("result")?.optJSONArray("list") ?: JSONArray()
             "Bitget" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
-            "BingX" -> (root as JSONObject).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
+            "BingX" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             else -> JSONArray()
         }
         val result=mutableListOf<MarketCandle>()
@@ -94,7 +94,8 @@ object ExchangeMarketData {
                     "Toobit" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("volume")) }
                     "Gate.io" -> { val o=row as JSONObject; listOf(o.optString("o"),o.optString("h"),o.optString("l"),o.optString("c"),o.optString("v")) }
                     "Binance" -> { val a=row as JSONArray; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(5)) }
-                    "Bybit","OKX","Bitget","BingX" -> { val a=row as JSONArray; val volIndex=if(exchange=="OKX")5 else 5; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(volIndex)) }
+                    "Bybit","OKX","Bitget" -> { val a=row as JSONArray; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(5)) }
+                    "BingX" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("volume")) }
                     else -> emptyList()
                 }
                 val o=values[0].toDouble(); val h=values[1].toDouble(); val l=values[2].toDouble(); val c=values[3].toDouble(); val v=values[4].toDoubleOrNull()?:0.0
