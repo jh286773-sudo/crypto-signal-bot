@@ -338,17 +338,28 @@ class MainActivity : Activity() {
             start()
         }
         fun attachPressFeedback(view: android.view.View) {
+            view.isHapticFeedbackEnabled = true
             view.setOnTouchListener { target, event ->
                 when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> target.animate().scaleX(.975f).scaleY(.975f).setDuration(90L).start()
+                    android.view.MotionEvent.ACTION_DOWN -> target.animate().scaleX(.975f).scaleY(.975f)
+                        .translationZ(dp(2).toFloat()).setDuration(85L).start()
                     android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL ->
-                        target.animate().scaleX(1f).scaleY(1f).setDuration(130L).start()
+                        target.animate().scaleX(1f).scaleY(1f).translationZ(0f).setDuration(145L).start()
                 }
                 false
             }
         }
         fun visit(view: android.view.View) {
-            if (view is Button) attachPressFeedback(view)
+            if (view is Button) {
+                attachPressFeedback(view)
+                view.stateListAnimator = null
+                view.elevation = max(view.elevation, dp(8).toFloat())
+                view.minHeight = max(view.minHeight, dp(46))
+                view.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                view.letterSpacing = 0.015f
+            } else if (view.isClickable && view !is TextView) {
+                attachPressFeedback(view)
+            }
             if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
         }
         visit(root)
@@ -682,9 +693,15 @@ class MainActivity : Activity() {
         setPadding(dp(17), dp(15), dp(17), dp(17))
         background = android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.rgb(57, 47, 28), Color.rgb(30, 29, 27), Color.rgb(15, 17, 22), Color.rgb(9, 11, 15))
-        ).apply { cornerRadius = dp(22).toFloat(); setStroke(dp(1), Color.rgb(126, 96, 43)) }
-        elevation = dp(9).toFloat()
+            intArrayOf(Color.rgb(83, 65, 31), Color.rgb(42, 36, 25), Color.rgb(23, 24, 28), Color.rgb(8, 10, 14))
+        ).apply {
+            cornerRadius = dp(22).toFloat()
+            setStroke(dp(1), Color.rgb(171, 132, 54))
+        }
+        elevation = dp(12).toFloat()
+        translationZ = dp(1).toFloat()
+        clipToOutline = true
+        stateListAnimator = null
     }
 
     private fun marginParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
@@ -903,8 +920,16 @@ class MainActivity : Activity() {
     }
     private fun text(value: String, size: Int, color: Int, bold: Boolean = false) =
         TextView(this).apply {
-            text = value; textSize = size.toFloat(); setTextColor(color)
-            if (bold) typeface = Typeface.DEFAULT_BOLD
+            text = value
+            textSize = size.toFloat()
+            setTextColor(color)
+            includeFontPadding = false
+            letterSpacing = if (size <= 11) 0.025f else 0.008f
+            typeface = if (bold) Typeface.create("sans-serif", Typeface.BOLD)
+                else Typeface.create("sans-serif", Typeface.NORMAL)
+            if (bold && (color == gold || color == goldLight)) {
+                setShadowLayer(dp(5).toFloat(), 0f, dp(2).toFloat(), Color.argb(115, 185, 132, 34))
+            }
             setPadding(0, dp(8), 0, dp(8))
         }
 
