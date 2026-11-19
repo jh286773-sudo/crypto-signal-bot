@@ -76,7 +76,7 @@ object ExchangeMarketData {
             "HTX Futures" -> {
                 val a=JSONObject(get("https://api.hbdm.com/linear-swap-api/v1/swap_contract_info")).optJSONArray("data") ?: JSONArray()
                 for(i in 0 until a.length()) { val o=a.getJSONObject(i); if(o.optString("contract_status")=="1" && o.optString("contract_code").endsWith("-USDT")) out.add(o.optString("symbol")+"-SWAP-USDT") }
-
+            }
             "Bitunix Futures" -> {
                 val a=JSONObject(get("https://fapi.bitunix.com/api/v1/futures/market/trading_pairs")).optJSONArray("data") ?: JSONArray()
                 for(i in 0 until a.length()) { val o=a.getJSONObject(i); if(o.optString("quote")=="USDT" && o.optString("symbolStatus")=="OPEN") out.add(o.optString("base")+"-SWAP-USDT") }
