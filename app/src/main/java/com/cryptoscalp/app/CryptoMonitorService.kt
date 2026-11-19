@@ -57,7 +57,8 @@ class CryptoMonitorService : Service() {
         if(!online()){updateStatus("اینترنت قطع است؛ منتظر اتصال");return}
         val list=symbols()
         if(list.isEmpty()){updateStatus("هیچ ارزی انتخاب نشده؛ از داخل برنامه نمادها را دستی انتخاب کن.");return}
-        val exchange=prefs.getStringSet("selected_exchanges",setOf("Toobit"))?.firstOrNull() ?: "Toobit"\n        scanning=true;updateStatus("در حال پایش خودکار $exchange • ۱۰ ابزار و اسمارت‌مانی…")
+        val exchange=prefs.getStringSet("selected_exchanges",setOf("Toobit"))?.firstOrNull() ?: "Toobit"
+        scanning=true;updateStatus("در حال پایش خودکار $exchange • ۱۰ ابزار و اسمارت‌مانی…")
         thread(name="market-monitor"){
             var ok=0;
             for(symbol in list)try{
