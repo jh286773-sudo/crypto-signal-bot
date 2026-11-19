@@ -2,6 +2,7 @@ package com.cryptoscalp.app
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -31,9 +32,8 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
     private lateinit var result: TextView
-    private lateinit var coinChoices: LinearLayout
-    private lateinit var selectedChoices: LinearLayout
-    private lateinit var coinSearch: EditText
+    private lateinit var coinPickerButton: Button
+    private var coinChoices: LinearLayout? = null
     private val symbols = mutableListOf("BTC-SWAP-USDT", "ETH-SWAP-USDT", "BNB-SWAP-USDT", "SOL-SWAP-USDT", "XRP-SWAP-USDT", "DOGE-SWAP-USDT", "ADA-SWAP-USDT", "TRX-SWAP-USDT", "LINK-SWAP-USDT", "AVAX-SWAP-USDT")
     private val selectedSymbols = linkedSetOf<String>().apply { addAll(symbols) }
     private val checkboxes = mutableMapOf<String, CheckBox>()
@@ -63,27 +63,12 @@ class MainActivity : Activity() {
             setPadding(24, 24, 24, 24)
             setBackgroundColor(Color.rgb(12, 18, 30))
         }
-        val title = text("CRYPTO SCALP", 25, Color.WHITE, true)
-        root.addView(title)
+        root.addView(text("CRYPTO SCALP", 25, Color.WHITE, true))
         root.addView(text("Toobit USDT Perpetual • سیگنال لانگ و شورت", 14, Color.LTGRAY))
-        root.addView(text("ارزهای انتخاب‌شده:", 15, Color.WHITE, true))
-        selectedChoices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(selectedChoices)
-        root.addView(text("ارزهای موردنظر را جستجو و انتخاب کن:", 15, Color.WHITE, true))
-        coinSearch = EditText(this).apply {
-            hint = "جستجوی نماد ارز؛ مثلاً BTC یا SOL"
-            setSingleLine(true)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.LTGRAY)
-        }
-        root.addView(coinSearch)
-        coinSearch.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderCoinChoices(s?.toString().orEmpty()) }
-            override fun afterTextChanged(s: Editable?) {}
-        })
-        coinChoices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(coinChoices)
+        coinPickerButton = Button(this)
+        root.addView(coinPickerButton)
+        renderSelectedChoices()
+        coinPickerButton.setOnClickListener { showCoinPicker() }
         val refresh = Button(this).apply { text = "تحلیل ارزهای انتخاب‌شده" }
         root.addView(refresh)
         status = text("در حال اتصال به بازار فیوچرز Toobit…", 14, Color.YELLOW)
@@ -91,14 +76,32 @@ class MainActivity : Activity() {
         result = text("منتظر دریافت داده بازار…", 17, Color.WHITE)
         result.setPadding(0, 24, 0, 0)
         root.addView(result)
-        val note = text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. قیمت‌ها و سطوح تخمینی‌اند.", 12, Color.LTGRAY)
-        note.setPadding(0, 28, 0, 0)
-        root.addView(note)
+        root.addView(text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. قیمت‌ها و سطوح تخمینی‌اند.", 12, Color.LTGRAY))
         setContentView(ScrollView(this).apply { addView(root) })
-        renderSelectedChoices()
         refresh.setOnClickListener { refresh() }
     }
 
+    private fun showCoinPicker() {
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 12, 28, 8) }
+        panel.addView(text("همه قراردادهای فعال USDT", 17, Color.WHITE, true))
+        val search = EditText(this).apply { hint = "جستجوی نماد؛ مثلاً BTC یا SOL"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        panel.addView(search)
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply { addView(list); layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.heightPixels * 0.55).toInt()) }
+        panel.addView(scroll)
+        coinChoices = list
+        renderCoinChoices("")
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderCoinChoices(s?.toString().orEmpty()) }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        val dialog = AlertDialog.Builder(this).setTitle("انتخاب ارزها").setView(panel).setPositiveButton("بستن", null).setNegativeButton("پاک‌کردن انتخاب‌ها", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { selectedSymbols.clear(); renderCoinChoices(search.text.toString()); renderSelectedChoices() }
+        }
+        dialog.show()
+    }
     private fun text(value: String, size: Int, color: Int, bold: Boolean = false) =
         TextView(this).apply {
             text = value; textSize = size.toFloat(); setTextColor(color)
@@ -127,7 +130,6 @@ class MainActivity : Activity() {
                     symbols.addAll(ordered)
                     selectedSymbols.retainAll(ordered.toSet())
                     if (selectedSymbols.isEmpty()) selectedSymbols.addAll(preferred)
-                    renderCoinChoices(coinSearch.text.toString())
                     renderSelectedChoices()
                     status.text = "اتصال برقرار • ${ordered.size} قرارداد فعال USDT فیوچرز؛ ۱۰ ارز اصلی انتخاب‌شده"
                 }
@@ -138,50 +140,27 @@ class MainActivity : Activity() {
     }
 
     private fun renderCoinChoices(query: String) {
-        if (!::coinChoices.isInitialized) return
+        val choices = coinChoices ?: return
         val q = query.trim().uppercase()
-        coinChoices.removeAllViews()
-        val matches = symbols.filter { symbol ->
-            val base = symbol.removeSuffix("-SWAP-USDT")
-            q.isEmpty() || base.contains(q) || symbol.contains(q)
-        }
+        choices.removeAllViews()
+        val matches = symbols.filter { symbol -> val base = symbol.removeSuffix("-SWAP-USDT"); q.isEmpty() || base.contains(q) || symbol.contains(q) }
         for (symbol in matches) {
-            val base = symbol.removeSuffix("-SWAP-USDT")
-            val box = checkboxes.getOrPut(symbol) {
-                CheckBox(this).apply {
-                    text = base
-                    textSize = 16f
-                    setTextColor(Color.WHITE)
-                    setOnCheckedChangeListener { _, checked ->
-                        if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
-                        renderSelectedChoices()
-                    }
-                }
+            val box = CheckBox(this).apply {
+                text = symbol.removeSuffix("-SWAP-USDT"); textSize = 16f; setTextColor(Color.WHITE)
+                isChecked = selectedSymbols.contains(symbol)
+                setOnCheckedChangeListener { _, checked -> if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol); renderSelectedChoices() }
             }
-            box.setOnCheckedChangeListener(null)
-            box.isChecked = selectedSymbols.contains(symbol)
-            box.setOnCheckedChangeListener { _, checked ->
-                if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
-                renderSelectedChoices()
-            }
-            coinChoices.addView(box)
+            choices.addView(box)
         }
-        if (matches.isEmpty()) coinChoices.addView(text("ارزی با این نماد پیدا نشد.", 14, Color.LTGRAY))
+        if (matches.isEmpty()) choices.addView(text("ارزی با این نماد پیدا نشد.", 14, Color.LTGRAY))
     }
 
     private fun renderSelectedChoices() {
-        if (!::selectedChoices.isInitialized) return
-        selectedChoices.removeAllViews()
-        val chosen = selectedSymbols.toList()
-        if (chosen.isEmpty()) {
-            selectedChoices.addView(text("هنوز ارزی انتخاب نشده است.", 14, Color.LTGRAY))
-            return
-        }
-        val names = chosen.map { it.removeSuffix("-SWAP-USDT") }
-        selectedChoices.addView(text(names.joinToString("  •  "), 15, Color.rgb(80, 220, 150), true))
-        selectedChoices.addView(text("تعداد انتخاب‌شده: ${chosen.size}", 12, Color.LTGRAY))
+        if (!::coinPickerButton.isInitialized) return
+        val count = selectedSymbols.size
+        val names = selectedSymbols.map { it.removeSuffix("-SWAP-USDT") }
+        coinPickerButton.text = if (count == 0) "انتخاب ارزها (هیچ ارزی انتخاب نشده)" else "انتخاب ارزها • $count انتخاب‌شده: " + names.take(5).joinToString("، ") + if (count > 5) " و ${count - 5} ارز دیگر" else ""
     }
-
     private fun refresh() {
         if (busy) return
         busy = true
