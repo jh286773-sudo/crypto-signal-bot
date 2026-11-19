@@ -72,7 +72,7 @@ class MainActivity : Activity() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 22, 20, 28)
-            setBackgroundColor(ink)
+            setBackgroundResource(R.drawable.app_background)
         }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -81,8 +81,8 @@ class MainActivity : Activity() {
         }
         val brandBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         brandBlock.addView(text("GOLD • CRYPTO", 12, gold, true))
-        brandBlock.addView(text("CRYPTO SCALP", 25, Color.WHITE, true))
-        brandBlock.addView(text("تحلیل هوشمند بازار فیوچرز", 12, muted))
+        brandBlock.addView(text("AURUM X", 25, goldLight, true))
+        brandBlock.addView(text("by JAVAD  •  تحلیل هوشمند بازار", 12, muted, true))
         header.addView(brandBlock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val settings = Button(this).apply {
             text = "⚙"
@@ -146,7 +146,7 @@ class MainActivity : Activity() {
         root.addView(disclaimer)
         setContentView(ScrollView(this).apply {
             isFillViewport = true
-            setBackgroundColor(ink)
+            setBackgroundResource(R.drawable.app_background)
             addView(root)
         })
     }
