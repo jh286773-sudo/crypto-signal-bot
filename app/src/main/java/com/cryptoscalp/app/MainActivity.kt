@@ -34,8 +34,6 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
     private lateinit var coinPickerButton: Button
-    private lateinit var exchangePickerButton: Button
-    private val exchanges = ExchangeMarketData.supported
     private val selectedExchanges = linkedSetOf("Toobit")
     private var coinChoices: LinearLayout? = null
     private val symbols = mutableListOf<String>()
@@ -108,15 +106,9 @@ class MainActivity : Activity() {
         root.addView(marketCard, marginParams(bottom = 14))
 
         val exchangeCard = card()
-        exchangeCard.addView(text("انتخاب صرافی", 16, Color.WHITE, true))
-        exchangeCard.addView(text("فقط یک صرافی برای دریافت داده و تحلیل انتخاب کن", 12, muted))
-        exchangePickerButton = Button(this).apply {
-            textSize = 14f; setTextColor(ink); background = rounded(gold, goldLight, 14)
-            elevation = 6f; setPadding(dp(12), dp(8), dp(12), dp(8))
-        }
-        updateExchangeButton()
-        exchangeCard.addView(exchangePickerButton, marginParams(top = 10))
-        exchangePickerButton.setOnClickListener { showExchangePicker() }
+        exchangeCard.addView(text("منبع داده و تحلیل", 16, Color.WHITE, true))
+        exchangeCard.addView(text("Toobit", 20, goldLight, true))
+        exchangeCard.addView(text("تنها صرافی فعال برای دریافت قیمت، کندل و تحلیل فیوچرز", 12, muted))
         root.addView(exchangeCard, marginParams(bottom = 14))
 
         val selectCard = card()
