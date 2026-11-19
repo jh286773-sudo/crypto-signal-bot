@@ -9,217 +9,147 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
-import kotlin.math.abs
-import kotlin.math.max
 
 class CryptoMonitorService : Service() {
-    private val handler = Handler(Looper.getMainLooper())
-    private val serviceChannel = "monitor_service"
-    private val alertChannel = "scalp_signals"
-    private val defaultSymbols = listOf("BTC-SWAP-USDT","ETH-SWAP-USDT","BNB-SWAP-USDT","SOL-SWAP-USDT","XRP-SWAP-USDT","DOGE-SWAP-USDT","ADA-SWAP-USDT","TRX-SWAP-USDT","LINK-SWAP-USDT","AVAX-SWAP-USDT")
-    private val lastSignals = mutableMapOf<String,String>()
-    private val tradePrefs by lazy { getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE) }
-    private data class OpenSetup(val side:String, val entry:Double, val stop:Double, val tp1:Double, val tp2:Double, val tp1Done:Boolean)
-    @Volatile private var scanning = false
-    private var callback: ConnectivityManager.NetworkCallback? = null
-    private val loop = object : Runnable { override fun run() { scan(); handler.postDelayed(this, 30_000L) } }
+    private val handler=Handler(Looper.getMainLooper())
+    private val serviceChannel="monitor_service"
+    private val alertChannel="scalp_signals"
+    private val defaults=listOf("BTC-SWAP-USDT","ETH-SWAP-USDT","BNB-SWAP-USDT","SOL-SWAP-USDT","XRP-SWAP-USDT","DOGE-SWAP-USDT","ADA-SWAP-USDT","TRX-SWAP-USDT","LINK-SWAP-USDT","AVAX-SWAP-USDT")
+    private val prefs by lazy { getSharedPreferences("crypto_monitor",Context.MODE_PRIVATE) }
+    @Volatile private var scanning=false
+    private var networkCallback:ConnectivityManager.NetworkCallback?=null
+    private val loop=object:Runnable{override fun run(){scan();handler.postDelayed(this,60_000L)}}
 
-    override fun onCreate() {
-        super.onCreate()
-        createChannels()
-        val foregroundNotification = serviceNotification("پایش بازار فعال است")
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(9100, foregroundNotification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(9100, foregroundNotification)
+    override fun onCreate(){
+        super.onCreate();createChannels()
+        val n=serviceNotification("پایش خودکار بازار فعال است")
+        if(Build.VERSION.SDK_INT>=34) startForeground(9100,n,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(9100,n)
+        val cm=getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cb=object:ConnectivityManager.NetworkCallback(){
+            override fun onAvailable(network:Network){handler.post{updateStatus("اینترنت وصل شد؛ تحلیل از سر گرفته شد");scan()}}
+            override fun onLost(network:Network){handler.post{updateStatus("اینترنت قطع است؛ منتظر اتصال مجدد")}}
         }
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val cb = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { handler.post { updateStatus("اینترنت وصل شد؛ تحلیل از سر گرفته می‌شود"); scan() } }
-            override fun onLost(network: Network) { handler.post { updateStatus("اینترنت قطع است؛ تلاش مجدد خودکار") } }
-        }
-        callback = cb
-        try { cm.registerDefaultNetworkCallback(cb) } catch (_: Exception) {}
+        networkCallback=cb
+        try{cm.registerDefaultNetworkCallback(cb)}catch(_:Exception){}
     }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
-        handler.removeCallbacks(loop)
-        scan()
-        handler.postDelayed(loop, 30_000L)
-        return START_STICKY
+    override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
+        if(intent?.action==ACTION_STOP){handler.removeCallbacks(loop);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();return START_NOT_STICKY}
+        handler.removeCallbacks(loop);scan();handler.postDelayed(loop,60_000L);return START_STICKY
     }
-
-    override fun onDestroy() {
+    override fun onDestroy(){
         handler.removeCallbacksAndMessages(null)
-        callback?.let { try { (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it) } catch (_: Exception) {} }
+        networkCallback?.let{try{(getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it)}catch(_:Exception){}}
         super.onDestroy()
     }
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun online(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val n = cm.activeNetwork ?: return false
-        val c = cm.getNetworkCapabilities(n) ?: return false
+    override fun onBind(intent:Intent?)=null
+    private fun online():Boolean{
+        val cm=getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val n=cm.activeNetwork?:return false
+        val c=cm.getNetworkCapabilities(n)?:return false
         return c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
-
-    private fun scan() {
-        if (scanning) return
-        if (!online()) { updateStatus("اینترنت قطع است؛ منتظر اتصال مجدد"); return }
-        scanning = true
-        updateStatus("در حال تحلیل قراردادهای فیوچرز؛ چرخه ۳۰ ثانیه‌ای")
-        thread(name="market-monitor") {
-            var count=0
-            val activeSymbols = selectedSymbols()
-            for (s in activeSymbols) try {
-                val price = markPrice(s)
-                manageOpenSetup(s, price)
-                val one=closes(s,"1m"); val five=closes(s,"5m"); val fifteen=closes(s,"15m"); val hour=closes(s,"1h")
-                val r=analyze(one,five,fifteen,hour); count++
-                val open = loadOpenSetup(s)
-                val previousSignal = tradePrefs.getString("last_signal_" + s, null)
-                if (open == null && r.first != "WAIT" && previousSignal != r.first) {
-                    val setup = makeSetup(r.first, one.last(), five)
-                    saveOpenSetup(s, setup)
-                    notifySignal(s, r.first, r.second)
-                } else if (open != null && r.first != "WAIT" && r.first != open.side) {
-                    closeOpenSetup(s, "سیگنال معکوس صادر شد؛ موقعیت قبلی بسته شد.")
-                    val setup = makeSetup(r.first, one.last(), five)
-                    saveOpenSetup(s, setup)
-                    notifySignal(s, r.first, r.second)
+    private fun symbols():List<String>{
+        val selected=if(prefs.contains("selected_symbols"))prefs.getStringSet("selected_symbols",emptySet())?.toList().orEmpty() else defaults
+        val open=prefs.all.keys.filter{it.startsWith("open_setup_")}.map{it.removePrefix("open_setup_")}
+        return (selected+open).distinct().take(100)
+    }
+    private fun scan(){
+        if(scanning)return
+        if(!online()){updateStatus("اینترنت قطع است؛ منتظر اتصال");return}
+        scanning=true;updateStatus("در حال تحلیل ۶ اندیکاتور و اسمارت‌مانی…")
+        thread(name="market-monitor"){
+            var ok=0;val list=symbols()
+            for(symbol in list)try{
+                val one=candles(symbol,"1m");val five=candles(symbol,"5m");val fifteen=candles(symbol,"15m");val hour=candles(symbol,"1h")
+                val price=markPrice(symbol)
+                manageOpen(symbol,price)
+                val r=TradingStrategy.evaluate(one,five,fifteen,hour)
+                val open=prefs.getString("open_setup_$symbol",null)
+                val previous=prefs.getString("last_signal_$symbol",null)
+                if(open==null && r.signal!="WAIT" && previous!=r.signal) {
+                    saveOpen(symbol,r)
+                    notifySignal(symbol,r)
+                } else if(open!=null && r.signal!="WAIT"){
+                    val old=JSONObject(open).optString("side")
+                    if(old!=r.signal){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
                 }
-                lastSignals[s]=r.first
-                tradePrefs.edit().putString("last_signal_" + s, r.first).apply()
-            } catch (_: Exception) { /* retry on next cycle */ }
+                prefs.edit().putString("last_signal_$symbol",r.signal).apply();ok++
+            }catch(_:Exception){}
             scanning=false
-            handler.post { updateStatus("پایش فعال • تحلیل موفق $count از ${activeSymbols.size} قرارداد • چرخه بعدی ۳۰ ثانیه") }
+            handler.post{updateStatus("پایش فعال • تحلیل موفق $ok از ${list.size} نماد • هر ۶۰ ثانیه")}
         }
     }
-
-    private fun closes(symbol:String, interval:String):List<Double> {
+    private fun candles(symbol:String,interval:String):List<MarketCandle>{
+        val duration=when(interval){"1m"->60_000L;"5m"->300_000L;"15m"->900_000L;else->3_600_000L}
         val now=System.currentTimeMillis()
-        val span=when(interval){"1m"->60_000L;"5m"->300_000L;"15m"->900_000L;else->3_600_000L}
-        val path="/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-span*160}&to=$now&limit=160"
-        val c=URL("https://api.toobit.com$path").openConnection() as HttpURLConnection
-        c.connectTimeout=12_000;c.readTimeout=15_000
-        try {
-            val data=JSONObject(c.inputStream.bufferedReader().use{it.readText()}).optJSONArray("data")?:JSONArray()
-            val out=mutableListOf<Double>()
-            for(i in 0 until data.length()) { val v=data.getJSONObject(i).optString("close").toDoubleOrNull(); if(v!=null&&v>0)out.add(v) }
-            if(out.size<60) throw IllegalStateException("کندل کافی نیست")
+        val url="https://api.toobit.com/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*160}&to=$now&limit=160"
+        val conn=URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout=12_000;conn.readTimeout=15_000
+        try{
+            val data=JSONObject(conn.inputStream.bufferedReader().use{it.readText()}).optJSONArray("data")?:JSONArray()
+            val out=mutableListOf<MarketCandle>()
+            for(i in 0 until data.length()){
+                val o=data.getJSONObject(i)
+                val open=o.optString("open").toDoubleOrNull()?:continue
+                val high=o.optString("high").toDoubleOrNull()?:continue
+                val low=o.optString("low").toDoubleOrNull()?:continue
+                val close=o.optString("close").toDoubleOrNull()?:continue
+                val volume=o.optString("volume").toDoubleOrNull()?:0.0
+                if(open>0&&high>0&&low>0&&close>0)out.add(MarketCandle(open,high,low,close,volume))
+            }
+            if(out.size<60)throw IllegalStateException("کندل کافی نیست")
             return out
-        } finally { c.disconnect() }
+        }finally{conn.disconnect()}
     }
-
-    private fun ema(v:List<Double>,p:Int):Double {
-        val k=2.0/(p+1);var x=v.take(p).average()
-        for(a in v.drop(p))x=a*k+x*(1-k)
-        return x
+    private fun markPrice(symbol:String):Double{
+        val c=URL("https://api.toobit.com/quote/v1/markPrice?symbol=$symbol").openConnection() as HttpURLConnection
+        c.connectTimeout=10_000;c.readTimeout=12_000
+        try{return JSONObject(c.inputStream.bufferedReader().use{it.readText()}).optString("price").toDoubleOrNull()?.takeIf{it>0}?:throw IllegalStateException("قیمت نامعتبر")}
+        finally{c.disconnect()}
     }
-    private fun rsi(v:List<Double>):Double {
-        val d=v.takeLast(15).zipWithNext{a,b->b-a}
-        val gain=d.filter{it>0}.sum()/14.0;val loss=-d.filter{it<0}.sum()/14.0
-        if(loss==0.0)return 100.0
-        return 100-100/(1+gain/loss)
+    private fun saveOpen(symbol:String,r:StrategyResult){
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp1Done",false)
+        prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
     }
-    private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
-    private fun analyze(one:List<Double>,five:List<Double>,fifteen:List<Double>,hour:List<Double>):Pair<String,String> {
-        val p=one.last()
-        val u1=ema(hour,9)>ema(hour,21)&&ema(hour,21)>ema(hour,50)
-        val d1=ema(hour,9)<ema(hour,21)&&ema(hour,21)<ema(hour,50)
-        val u15=ema(fifteen,9)>ema(fifteen,21)&&ema(fifteen,21)>ema(fifteen,50)
-        val d15=ema(fifteen,9)<ema(fifteen,21)&&ema(fifteen,21)<ema(fifteen,50)
-        val u5=ema(five,9)>ema(five,21)&&rsi(five)>52
-        val d5=ema(five,9)<ema(five,21)&&rsi(five)<48
-        val sig=when{u1&&u15&&u5->"LONG";d1&&d15&&d5->"SHORT";else->"WAIT"}
-        val atr=max(five.takeLast(15).zipWithNext{a,b->abs(b-a)}.average()*1.8,p*0.0005)
-        val stop=if(sig=="LONG")p-1.5*atr else p+1.5*atr
-        val t1=if(sig=="LONG")p+1.5*atr else p-1.5*atr
-        val t2=if(sig=="LONG")p+2.5*atr else p-2.5*atr
-        val dir=if(sig=="LONG")"لانگ" else if(sig=="SHORT")"شورت" else "بدون ورود"
-        return Pair(sig,"وضعیت: $dir\nورود مرجع: ${fmt(p)}\nحد ضرر: ${fmt(stop)}\nحد سود ۱: ${fmt(t1)}\nحد سود ۲: ${fmt(t2)}\nRSI پنج‌دقیقه: ${"%.1f".format(rsi(five))}\nتأیید روند: ۱ساعت، ۱۵دقیقه و ۵دقیقه")
-    }
-
-    private fun selectedSymbols(): List<String> {
-        val saved = if (tradePrefs.contains("selected_symbols")) tradePrefs.getStringSet("selected_symbols", emptySet())?.toList().orEmpty() else defaultSymbols
-        val openSymbols = tradePrefs.all.keys.filter { it.startsWith("open_setup_") }.map { it.removePrefix("open_setup_") }
-        return (saved + openSymbols).distinct().take(100)
-    }
-
-    private fun markPrice(symbol: String): Double {
-        val conn = URL("https://api.toobit.com/quote/v1/markPrice?symbol=" + symbol).openConnection() as HttpURLConnection
-        conn.connectTimeout = 10000; conn.readTimeout = 12000
-        try {
-            val obj = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            return obj.optString("price").toDoubleOrNull()?.takeIf { it > 0 } ?: throw IllegalStateException("قیمت لحظه‌ای نامعتبر")
-        } finally { conn.disconnect() }
-    }
-
-    private fun makeSetup(side: String, entry: Double, five: List<Double>): OpenSetup {
-        val changes = five.takeLast(15).zipWithNext { a, b -> abs(b - a) }
-        val range = max((changes.average().takeIf { it.isFinite() } ?: 0.0) * 1.8, entry * 0.0005)
-        val stop = if (side == "LONG") entry - 1.5 * range else entry + 1.5 * range
-        val tp1 = if (side == "LONG") entry + 1.5 * range else entry - 1.5 * range
-        val tp2 = if (side == "LONG") entry + 2.5 * range else entry - 2.5 * range
-        return OpenSetup(side, entry, stop, tp1, tp2, false)
-    }
-
-    private fun setupKey(symbol: String) = "open_setup_" + symbol
-    private fun loadOpenSetup(symbol: String): OpenSetup? {
-        val raw = tradePrefs.getString(setupKey(symbol), null) ?: return null
-        return try {
-            val o = JSONObject(raw)
-            OpenSetup(o.getString("side"), o.getDouble("entry"), o.getDouble("stop"), o.getDouble("tp1"), o.getDouble("tp2"), o.optBoolean("tp1Done"))
-        } catch (_: Exception) { null }
-    }
-    private fun saveOpenSetup(symbol: String, s: OpenSetup) {
-        val o = JSONObject().put("side", s.side).put("entry", s.entry).put("stop", s.stop).put("tp1", s.tp1).put("tp2", s.tp2).put("tp1Done", s.tp1Done)
-        tradePrefs.edit().putString(setupKey(symbol), o.toString()).apply()
-    }
-    private fun clearOpenSetup(symbol: String) { tradePrefs.edit().remove(setupKey(symbol)).apply() }
-
-    private fun manageOpenSetup(symbol: String, price: Double) {
-        val s = loadOpenSetup(symbol) ?: return
-        val stopHit = if (s.side == "LONG") price <= s.stop else price >= s.stop
-        if (stopHit) { closeOpenSetup(symbol, "حد ضرر فعال شد. قیمت فعلی: " + fmt(price)); return }
-        val tp1Hit = if (s.side == "LONG") price >= s.tp1 else price <= s.tp1
-        if (tp1Hit && !s.tp1Done) {
-            saveOpenSetup(symbol, s.copy(tp1Done = true))
-            notifyExit(symbol, "حد سود اول فعال شد", "قیمت فعلی: " + fmt(price) + "\\nحد سود دوم: " + fmt(s.tp2) + "\\nموقعیت هنوز باز است.")
+    private fun manageOpen(symbol:String,price:Double){
+        val raw=prefs.getString("open_setup_$symbol",null)?:return
+        val s=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("open_setup_$symbol").apply();return}
+        val long=s.optString("side")=="LONG"
+        val stop=if(long)price<=s.optDouble("stop") else price>=s.optDouble("stop")
+        if(stop){closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(price)}");return}
+        val tp1=if(long)price>=s.optDouble("tp1") else price<=s.optDouble("tp1")
+        if(tp1&&!s.optBoolean("tp1Done")){
+            s.put("tp1Done",true);prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
+            notifyExit(symbol,"حد سود اول فعال شد","قیمت فعلی: ${fmt(price)} • حد سود دوم: ${fmt(s.optDouble("tp2"))}")
         }
-        val tp2Hit = if (s.side == "LONG") price >= s.tp2 else price <= s.tp2
-        if (tp2Hit) closeOpenSetup(symbol, "حد سود دوم فعال شد. قیمت فعلی: " + fmt(price))
+        val tp2=if(long)price>=s.optDouble("tp2") else price<=s.optDouble("tp2")
+        if(tp2)closeOpen(symbol,"حد سود دوم فعال شد • قیمت ${fmt(price)}")
     }
-    private fun closeOpenSetup(symbol: String, reason: String) {
-        clearOpenSetup(symbol)
-        notifyExit(symbol, "خروج از معامله • " + symbol, reason)
+    private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}
+    private fun closeOpen(symbol:String,reason:String){clearOpen(symbol);notifyExit(symbol,"خروج از موقعیت • $symbol",reason)}
+    private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
+    private fun notifySignal(symbol:String,r:StrategyResult){
+        val body=buildString{
+            append("جهت: ${if(r.signal=="LONG")"لانگ" else "شورت"}\nورود: ${fmt(r.entry)}\nحد ضرر: ${fmt(r.stop)}\nحد سود ۱: ${fmt(r.target1)}\nحد سود ۲: ${fmt(r.target2)}\nامتیاز تأیید: ${r.score}\n")
+            append("دلایل: ${(r.reasons+r.smc).joinToString("، ")}")
+        }
+        val b=Notification.Builder(this,alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("سیگنال ${r.signal} • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
     }
-    private fun notifyExit(symbol: String, title: String, body: String) {
-        val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, alertChannel) else Notification.Builder(this)
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode() xor title.hashCode(),
-            b.setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(title).setContentText(body).setStyle(Notification.BigTextStyle().bigText(body)).build())
+    private fun notifyExit(symbol:String,title:String,body:String){
+        val b=Notification.Builder(this,alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(title).setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode() xor title.hashCode(),b.build())
     }
-
-    private fun createChannels() {
-        if(Build.VERSION.SDK_INT>=26) {
+    private fun createChannels(){
+        if(Build.VERSION.SDK_INT>=26){
             val nm=getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.createNotificationChannel(NotificationChannel(serviceChannel,"وضعیت پایش ربات",NotificationManager.IMPORTANCE_LOW))
+            nm.createNotificationChannel(NotificationChannel(serviceChannel,"وضعیت پایش",NotificationManager.IMPORTANCE_LOW))
             nm.createNotificationChannel(NotificationChannel(alertChannel,"هشدار سیگنال‌ها",NotificationManager.IMPORTANCE_HIGH))
         }
     }
-    private fun serviceNotification(msg:String):Notification {
-        val b=if(Build.VERSION.SDK_INT>=26)Notification.Builder(this,serviceChannel) else Notification.Builder(this)
-        return b.setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("Crypto Scalp • پایش فعال").setContentText(msg).setOngoing(true).build()
-    }
-    private fun updateStatus(msg:String) { (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(9100,serviceNotification(msg)) }
-    private fun notifySignal(symbol:String,signal:String,body:String) {
-        val b=if(Build.VERSION.SDK_INT>=26)Notification.Builder(this,alertChannel) else Notification.Builder(this)
-        val title=if(signal=="LONG")"سیگنال لانگ" else "سیگنال شورت"
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),
-            b.setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("$title • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body)).build())
-    }
-    companion object {
+    private fun serviceNotification(message:String)=Notification.Builder(this,serviceChannel).setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("Crypto Scalp • پایش فعال").setContentText(message).setOngoing(true).build()
+    private fun updateStatus(message:String){(getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(9100,serviceNotification(message))}
+    companion object{
         const val ACTION_START="com.cryptoscalp.app.START_MONITOR"
         const val ACTION_STOP="com.cryptoscalp.app.STOP_MONITOR"
     }
