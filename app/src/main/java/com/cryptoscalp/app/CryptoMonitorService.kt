@@ -14,7 +14,6 @@ class CryptoMonitorService : Service() {
     private val handler=Handler(Looper.getMainLooper())
     private val serviceChannel="monitor_service"
     private val alertChannel="scalp_signals"
-    private val defaults=listOf("BTC-SWAP-USDT","ETH-SWAP-USDT","BNB-SWAP-USDT","SOL-SWAP-USDT","XRP-SWAP-USDT","DOGE-SWAP-USDT","ADA-SWAP-USDT","TRX-SWAP-USDT","LINK-SWAP-USDT","AVAX-SWAP-USDT")
     private val prefs by lazy { getSharedPreferences("crypto_monitor",Context.MODE_PRIVATE) }
     @Volatile private var scanning=false
     private var networkCallback:ConnectivityManager.NetworkCallback?=null
@@ -49,16 +48,18 @@ class CryptoMonitorService : Service() {
         return c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
     private fun symbols():List<String>{
-        val selected=if(prefs.contains("selected_symbols"))prefs.getStringSet("selected_symbols",emptySet())?.toList().orEmpty() else defaults
+        val selected=prefs.getStringSet("selected_symbols",emptySet())?.toList().orEmpty()
         val open=prefs.all.keys.filter{it.startsWith("open_setup_")}.map{it.removePrefix("open_setup_")}
         return (selected+open).distinct().take(100)
     }
     private fun scan(){
         if(scanning)return
         if(!online()){updateStatus("اینترنت قطع است؛ منتظر اتصال");return}
+        val list=symbols()
+        if(list.isEmpty()){updateStatus("هیچ ارزی انتخاب نشده؛ از داخل برنامه نمادها را دستی انتخاب کن.");return}
         scanning=true;updateStatus("در حال تحلیل ۱۰ ابزار حرفه‌ای و اسمارت‌مانی…")
         thread(name="market-monitor"){
-            var ok=0;val list=symbols()
+            var ok=0;
             for(symbol in list)try{
                 val one=candles(symbol,"1m");val five=candles(symbol,"5m");val fifteen=candles(symbol,"15m");val hour=candles(symbol,"1h")
                 val price=markPrice(symbol)
