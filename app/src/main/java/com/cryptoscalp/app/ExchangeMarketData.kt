@@ -7,7 +7,7 @@ import java.net.URL
 
 /** Public USDT perpetual market-data adapters. Symbols are stored internally as BASE-SWAP-USDT. */
 object ExchangeMarketData {
-    val supported = listOf("Toobit", "Binance", "Bybit", "OKX", "Gate.io", "Bitget", "BingX", "CoinEx", "KuCoin Futures", "MEXC Futures", "HTX Futures", "Bitunix Futures", "WEEX Futures")
+    val supported = listOf("Toobit")
 
     private fun get(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
