@@ -160,6 +160,43 @@ class MainActivity : Activity() {
         hero.addView(text("داده‌های بازار فیوچرز  •  منبع رسمی تحلیل: Toobit", 10, goldLight))
         root.addView(hero, marginParams(bottom = 16))
 
+        // Premium visual dashboard. The artwork is decorative, not fabricated market data.
+        val visualCard = card().apply {
+            setPadding(dp(17), dp(16), dp(17), dp(15))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(43, 36, 22), Color.rgb(20, 21, 26), Color.rgb(8, 10, 14))
+            ).apply { cornerRadius = dp(22).toFloat(); setStroke(dp(1), Color.rgb(145, 108, 42)) }
+            elevation = dp(12).toFloat()
+        }
+        val visualHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val visualTitle = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        visualTitle.addView(text("MARKET INTELLIGENCE", 9, gold, true))
+        visualTitle.addView(text("نمای حرفه‌ای بازار", 18, Color.WHITE, true))
+        visualHeader.addView(visualTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        visualHeader.addView(TextView(this).apply {
+            text = "TOOBIT  /  FUTURES"; textSize = 9f; typeface = Typeface.DEFAULT_BOLD
+            setTextColor(goldLight); background = rounded(Color.rgb(38, 33, 23), gold, 18)
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+        })
+        visualCard.addView(visualHeader)
+        visualCard.addView(MarketVisualView(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(116)).apply {
+            topMargin = dp(8); bottomMargin = dp(5)
+        })
+        val visualFoot = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        visualFoot.addView(text("TIMEFRAMES", 9, muted, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        listOf("5 MIN", "15 MIN", "30 MIN").forEachIndexed { index, label ->
+            visualFoot.addView(TextView(this).apply {
+                text = label; textSize = 8f; typeface = Typeface.DEFAULT_BOLD
+                setTextColor(if (index == 1) ink else goldLight)
+                background = if (index == 1) rounded(gold, goldLight, 9) else rounded(Color.rgb(30, 29, 25), Color.rgb(105, 84, 43), 9)
+                setPadding(dp(8), dp(6), dp(8), dp(6))
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(5) })
+        }
+        visualCard.addView(visualFoot)
+        visualCard.addView(text("تصویرسازی گرافیکی رابط؛ داده و سیگنال واقعی فقط پس از دریافت اطلاعات Toobit.", 9, muted))
+        root.addView(visualCard, marginParams(bottom = 16))
+
         // Exchange identity card
         val exchangeCard = card()
         val exchangeHead = LinearLayout(this).apply {
@@ -242,6 +279,39 @@ class MainActivity : Activity() {
             setBackgroundResource(R.drawable.app_background)
             addView(root)
         })
+    }
+
+    // Vector artwork stays sharp on HD/QHD screens without loading large bitmap assets.
+    private inner class MarketVisualView(context: Context) : android.view.View(context) {
+        private val grid = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(42, 220, 185, 105); strokeWidth = dp(1).toFloat()
+        }
+        private val stroke = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = goldLight; style = android.graphics.Paint.Style.STROKE
+            strokeWidth = dp(2).toFloat(); strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND; setShadowLayer(dp(7).toFloat(), 0f, 0f, gold)
+        }
+        private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private val line = android.graphics.Path()
+        private val area = android.graphics.Path()
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat(); val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            for (i in 0..4) canvas.drawLine(0f, h * i / 4f, w, h * i / 4f, grid)
+            for (i in 0..8) canvas.drawLine(w * i / 8f, 0f, w * i / 8f, h, grid)
+            val p = floatArrayOf(0f,.70f,.10f,.60f,.20f,.66f,.30f,.39f,.40f,.49f,.50f,.31f,.60f,.43f,.70f,.24f,.80f,.34f,.90f,.14f,1f,.20f)
+            line.reset(); line.moveTo(0f, h * p[1])
+            var i = 2
+            while (i < p.size) { line.lineTo(w * p[i], h * p[i + 1]); i += 2 }
+            area.set(line); area.lineTo(w, h); area.lineTo(0f, h); area.close()
+            fill.shader = android.graphics.LinearGradient(0f, 0f, 0f, h,
+                intArrayOf(Color.argb(105,190,145,48), Color.argb(3,190,145,48)), null, android.graphics.Shader.TileMode.CLAMP)
+            canvas.drawPath(area, fill); canvas.drawPath(line, stroke)
+            fill.shader = null
+            fill.color = Color.argb(70,245,220,135); canvas.drawCircle(w, h*.20f, dp(9).toFloat(), fill)
+            fill.color = Color.WHITE; canvas.drawCircle(w, h*.20f, dp(3).toFloat(), fill)
+        }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
