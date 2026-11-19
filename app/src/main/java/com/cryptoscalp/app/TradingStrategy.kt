@@ -152,21 +152,23 @@ object TradingStrategy {
         return Smc(score,notes.distinct())
     }
 
-    fun evaluate(one:List<MarketCandle>,five:List<MarketCandle>,fifteen:List<MarketCandle>,hour:List<MarketCandle>):StrategyResult{
-        require(one.size>=60&&five.size>=60&&fifteen.size>=60&&hour.size>=60){"کندل کافی نیست"}
-        val c=five.map{it.close};val h=fifteen.map{it.close};val d=hour.map{it.close}
-        val price=one.last().close
+    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>):StrategyResult{
+        require(five.size>=60&&fifteen.size>=60&&thirty.size>=60){"کندل کافی نیست"}
+        val c=five.map{it.close};val h=fifteen.map{it.close};val d=thirty.map{it.close}
+        val price=five.last().close
         var score=0;val reasons=mutableListOf<String>()
         // 1 RSI: trend regime with overbought/oversold rejection.
         val r=rsi(c);when{r>=55->{score+=1;reasons.add("RSI(14) مومنتوم صعودی")};r<=45->{score--;reasons.add("RSI(14) مومنتوم نزولی")};else->reasons.add("RSI خنثی")}
         // 2 MACD line/signal/histogram agreement.
         val m=macd(c);if(m.third>0&&m.first>0){score+=1;reasons.add("MACD و هیستوگرام صعودی")}else if(m.third<0&&m.first<0){score--;reasons.add("MACD و هیستوگرام نزولی")}
         // 3 EMA 9/21/50/200 trend stack, multi timeframe.
-        val upH=ema(d,9)>ema(d,21)&&ema(d,21)>ema(d,50)&&ema(d,50)>ema(d, min(200,d.size))
-        val dnH=ema(d,9)<ema(d,21)&&ema(d,21)<ema(d,50)&&ema(d,50)<ema(d,min(200,d.size))
+        val up5=ema(c,9)>ema(c,21)&&ema(c,21)>ema(c,50)
+        val dn5=ema(c,9)<ema(c,21)&&ema(c,21)<ema(c,50)
         val up15=ema(h,9)>ema(h,21)&&ema(h,21)>ema(h,50)
         val dn15=ema(h,9)<ema(h,21)&&ema(h,21)<ema(h,50)
-        if(upH&&up15){score+=2;reasons.add("EMA 9/21/50/200 هم‌راستای صعودی در تایم‌فریم‌ها")}else if(dnH&&dn15){score-=2;reasons.add("EMA هم‌راستای نزولی در تایم‌فریم‌ها")}
+        val up30=ema(d,9)>ema(d,21)&&ema(d,21)>ema(d,50)&&ema(d,50)>ema(d,min(200,d.size))
+        val dn30=ema(d,9)<ema(d,21)&&ema(d,21)<ema(d,50)&&ema(d,50)<ema(d,min(200,d.size))
+        if(up5&&up15&&up30){score+=2;reasons.add("EMA هم‌راستای صعودی در تایم‌فریم‌های ۵، ۱۵ و ۳۰ دقیقه")}else if(dn5&&dn15&&dn30){score-=2;reasons.add("EMA هم‌راستای نزولی در تایم‌فریم‌های ۵، ۱۵ و ۳۰ دقیقه")}
         // 4 Bollinger: avoid blindly fading a band; score reclaim/rejection.
         val bb=bands(c);if(price<bb.first&&c.last()>c[c.size-2]){score++;reasons.add("بازگشت از باند پایین بولینگر")}else if(price>bb.third&&c.last()<c[c.size-2]){score--;reasons.add("رد قیمت از باند بالای بولینگر")}
         // 5 ATR is used as a volatility/risk filter and dynamic stop distance.
@@ -184,7 +186,7 @@ object TradingStrategy {
         // 10 Smart Money Concepts, separate structural confirmation layer.
         val smart=smc(five);score+=smart.score
         if(!volatilityOk){score=0;reasons.add("سیگنال به‌علت فیلتر ریسک متوقف شد")}
-        val signal=when{score>=5&&smart.score>=1&&up15->"LONG";score<=-5&&smart.score<=-1&&dn15->"SHORT";else->"WAIT"}
+        val signal=when{score>=5&&smart.score>=1&&up5&&up15&&up30->"LONG";score<=-5&&smart.score<=-1&&dn5&&dn15&&dn30->"SHORT";else->"WAIT"}
         val risk=max(if(a.isFinite()&&a>0)a else price*0.001,price*0.0005)
         val stop=when(signal){"LONG"->price-1.5*risk;"SHORT"->price+1.5*risk;else->price}
         val t1=when(signal){"LONG"->price+1.5*risk;"SHORT"->price-1.5*risk;else->price}
