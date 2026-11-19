@@ -133,7 +133,7 @@ class CryptoMonitorService : Service() {
             append("جهت: ${if(r.signal=="LONG")"لانگ" else "شورت"}\nورود: ${fmt(r.entry)}\nحد ضرر: ${fmt(r.stop)}\nحد سود ۱: ${fmt(r.target1)}\nحد سود ۲: ${fmt(r.target2)}\nامتیاز تأیید: ${r.score}\n")
             append("دلایل: ${(r.reasons+r.smc).joinToString("، ")}")
         }
-        val b=Notification.Builder(this,alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("سیگنال ${r.signal} • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
+        val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("سیگنال ${r.signal} • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
     }
     private fun notifyExit(symbol:String,title:String,body:String){
@@ -147,7 +147,7 @@ class CryptoMonitorService : Service() {
             nm.createNotificationChannel(NotificationChannel(alertChannel,"هشدار سیگنال‌ها",NotificationManager.IMPORTANCE_HIGH))
         }
     }
-    private fun serviceNotification(message:String)=Notification.Builder(this,serviceChannel).setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("Crypto Scalp • پایش فعال").setContentText(message).setOngoing(true).build()
+    private fun notificationBuilder(channel:String):Notification.Builder = if(Build.VERSION.SDK_INT>=26) Notification.Builder(this,channel) else Notification.Builder(this)\n    private fun serviceNotification(message:String)=notificationBuilder(serviceChannel).setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("Crypto Scalp • پایش فعال").setContentText(message).setOngoing(true).build()
     private fun updateStatus(message:String){(getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(9100,serviceNotification(message))}
     companion object{
         const val ACTION_START="com.cryptoscalp.app.START_MONITOR"
