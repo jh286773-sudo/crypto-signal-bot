@@ -56,7 +56,7 @@ class CryptoMonitorService : Service() {
     private fun scan(){
         if(scanning)return
         if(!online()){updateStatus("اینترنت قطع است؛ منتظر اتصال");return}
-        scanning=true;updateStatus("در حال تحلیل ۶ اندیکاتور و اسمارت‌مانی…")
+        scanning=true;updateStatus("در حال تحلیل ۱۰ ابزار حرفه‌ای و اسمارت‌مانی…")
         thread(name="market-monitor"){
             var ok=0;val list=symbols()
             for(symbol in list)try{
