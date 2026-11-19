@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.graphics.Typeface
+import android.graphics.BitmapFactory
 import android.view.Gravity
 import android.widget.*
 import android.text.Editable
@@ -44,6 +45,7 @@ class MainActivity : Activity() {
     private val lastSignals = mutableMapOf<String, String>()
     private var busy = false
     private val channelId = "scalp_signals"
+    private val logoCache = mutableMapOf<String, android.graphics.Bitmap>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -214,20 +216,56 @@ class MainActivity : Activity() {
         exchangePickerButton.text = if (selected == null) "انتخاب صرافی" else "صرافی فعال • $selected"
     }
 
-    private fun exchangeMark(name: String): String = when (name) {
-        "Binance" -> "B"
-        "Bybit" -> "BY"
-        "Toobit" -> "T"
-        "OKX" -> "OK"
-        "KuCoin" -> "K"
-        "Gate.io" -> "G"
-        "Bitget" -> "BG"
-        "MEXC" -> "M"
-        "BingX" -> "X"
-        "HTX" -> "H"
-        "Kraken" -> "K"
-        "Coinbase" -> "C"
-        else -> name.take(2).uppercase()
+    private fun exchangeLogoUrl(name: String): String {
+        val domain = when (name) {
+            "Binance" -> "binance.com"
+            "Bybit" -> "bybit.com"
+            "Toobit" -> "toobit.com"
+            "OKX" -> "okx.com"
+            "KuCoin" -> "kucoin.com"
+            "Gate.io" -> "gate.io"
+            "Bitget" -> "bitget.com"
+            "MEXC" -> "mexc.com"
+            "BingX" -> "bingx.com"
+            "HTX" -> "htx.com"
+            "Kraken" -> "kraken.com"
+            "Coinbase" -> "coinbase.com"
+            else -> return ""
+        }
+        return "https://www.google.com/s2/favicons?domain=$domain&sz=128"
+    }
+
+    private fun coinLogoUrl(base: String): String =
+        "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/${base.lowercase()}.png"
+
+    private fun loadLogo(view: ImageView, imageUrl: String) {
+        if (imageUrl.isBlank()) return
+        view.tag = imageUrl
+        synchronized(logoCache) { logoCache[imageUrl] }?.let {
+            view.setImageBitmap(it)
+            return
+        }
+        thread {
+            try {
+                val connection = (URL(imageUrl).openConnection() as HttpURLConnection)
+                connection.connectTimeout = 8000
+                connection.readTimeout = 10000
+                connection.setRequestProperty("User-Agent", "AURUM-X-Android")
+                val bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                connection.disconnect()
+                if (bitmap != null) {
+                    synchronized(logoCache) { logoCache[imageUrl] = bitmap }
+                    runOnUiThread { if (view.tag == imageUrl) view.setImageBitmap(bitmap) }
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    private fun logoView(size: Int): ImageView = ImageView(this).apply {
+        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size)).apply { marginEnd = dp(14) }
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        background = rounded(Color.WHITE, Color.rgb(90, 90, 90), 12)
+        setPadding(dp(3), dp(3), dp(3), dp(3))
     }
 
     private fun showExchangePicker() {
@@ -275,18 +313,9 @@ class MainActivity : Activity() {
                     background = rounded(if (chosen) Color.rgb(38, 34, 22) else panel,
                         if (chosen) gold else Color.rgb(83, 70, 42), 16)
                 }
-                val mark = TextView(this).apply {
-                    text = exchangeMark(name); textSize = 13f; gravity = Gravity.CENTER
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(if (chosen) ink else goldLight)
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(if (chosen) gold else Color.rgb(12, 13, 16))
-                        setStroke(dp(1), gold)
-                    }
-                    layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(14) }
-                }
+                val mark = logoView(42)
                 row.addView(mark)
+                loadLogo(mark, exchangeLogoUrl(name))
                 row.addView(text(name, 16, Color.WHITE, true),
                     LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 val radio = TextView(this).apply {
@@ -479,6 +508,9 @@ class MainActivity : Activity() {
                 background = rounded(if (selectedSymbols.contains(symbol)) Color.rgb(38, 34, 22) else panel,
                     if (selectedSymbols.contains(symbol)) gold else Color.rgb(58, 59, 63), 14)
             }
+            val coinLogo = logoView(38)
+            row.addView(coinLogo)
+            loadLogo(coinLogo, coinLogoUrl(base))
             val coinInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             coinInfo.addView(text(base, 15, if (selectedSymbols.contains(symbol)) goldLight else Color.WHITE, true))
             coinInfo.addView(text("USDT PERPETUAL", 9, muted))
