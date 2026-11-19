@@ -40,8 +40,6 @@ class MainActivity : Activity() {
     private val lastSignals = mutableMapOf<String, String>()
     private var busy = false
     private val channelId = "scalp_signals"
-    private val handler = Handler(Looper.getMainLooper())
-    private val periodicRefresh = object : Runnable { override fun run() { refresh(); handler.postDelayed(this, 30_000) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,11 +49,8 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 71)
         }
         loadContracts()
-        refresh()
-        handler.postDelayed(periodicRefresh, 30_000)
     }
 
-    override fun onDestroy() { handler.removeCallbacks(periodicRefresh); super.onDestroy() }
 
     private fun buildUi() {
         root = LinearLayout(this).apply {
@@ -69,8 +64,12 @@ class MainActivity : Activity() {
         root.addView(coinPickerButton)
         renderSelectedChoices()
         coinPickerButton.setOnClickListener { showCoinPicker() }
-        val refresh = Button(this).apply { text = "تحلیل ارزهای انتخاب‌شده" }
+        val refresh = Button(this).apply { text = "تحلیل دستی همین حالا" }
         root.addView(refresh)
+        val startMonitor = Button(this).apply { text = "▶ شروع پایش دائمی در پس‌زمینه" }
+        root.addView(startMonitor)
+        val stopMonitor = Button(this).apply { text = "■ توقف پایش پس‌زمینه" }
+        root.addView(stopMonitor)
         status = text("در حال اتصال به بازار فیوچرز Toobit…", 14, Color.YELLOW)
         root.addView(status)
         result = text("منتظر دریافت داده بازار…", 17, Color.WHITE)
@@ -79,6 +78,15 @@ class MainActivity : Activity() {
         root.addView(text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. قیمت‌ها و سطوح تخمینی‌اند.", 12, Color.LTGRAY))
         setContentView(ScrollView(this).apply { addView(root) })
         refresh.setOnClickListener { refresh() }
+        startMonitor.setOnClickListener {
+            val i = Intent(this, CryptoMonitorService::class.java).apply { action = CryptoMonitorService.ACTION_START }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
+            status.text = "درخواست شروع پایش پس‌زمینه ارسال شد؛ اعلان دائمی را بررسی کن."
+        }
+        stopMonitor.setOnClickListener {
+            stopService(Intent(this, CryptoMonitorService::class.java))
+            status.text = "پایش پس‌زمینه متوقف شد."
+        }
     }
 
     private fun showCoinPicker() {
