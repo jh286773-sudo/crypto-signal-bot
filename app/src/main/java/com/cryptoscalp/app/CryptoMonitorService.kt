@@ -57,10 +57,14 @@ class CryptoMonitorService : Service() {
         if(!online()){updateStatus("اینترنت قطع است؛ منتظر اتصال");return}
         val list=symbols()
         if(list.isEmpty()){updateStatus("هیچ ارزی انتخاب نشده؛ از داخل برنامه نمادها را دستی انتخاب کن.");return}
-        val exchange=prefs.getStringSet("selected_exchanges",setOf("Toobit"))?.firstOrNull() ?: "Toobit"
+        val exchange=prefs.getString("selected_exchange",null)
+            ?: prefs.getStringSet("selected_exchanges",setOf("Toobit"))?.firstOrNull()
+            ?: "Toobit"
         scanning=true;updateStatus("در حال پایش خودکار $exchange • ۱۰ ابزار و اسمارت‌مانی…")
         thread(name="market-monitor"){
-            var ok=0;
+            var ok=0
+            var failed=0
+            var firstError=""
             for(symbol in list)try{
                 val five=ExchangeMarketData.candles(exchange,symbol,"5m");val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m");val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
                 val price=five.last().close
@@ -76,9 +80,15 @@ class CryptoMonitorService : Service() {
                     if(old!=r.signal){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
                 }
                 prefs.edit().putString("last_signal_$symbol",r.signal).apply();ok++
-            }catch(_:Exception){}
+            }catch(e:Exception){
+                failed++
+                if(firstError.isBlank()) firstError="$symbol: ${e.message ?: e.javaClass.simpleName}"
+            }
             scanning=false
-            handler.post{updateStatus("پایش $exchange فعال • تحلیل موفق $ok از ${list.size} نماد • هر ۶۰ ثانیه")}
+            handler.post{
+                val detail=if(failed>0) " • خطا $failed: $firstError" else ""
+                updateStatus("پایش $exchange • موفق $ok از ${list.size} نماد$detail • هر ۶۰ ثانیه")
+            }
         }
     }
     private fun saveOpen(symbol:String,r:StrategyResult){
