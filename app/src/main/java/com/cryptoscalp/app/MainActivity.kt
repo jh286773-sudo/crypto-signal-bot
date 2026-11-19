@@ -411,7 +411,7 @@ class MainActivity : Activity() {
             detail.color = Color.rgb(255, 235, 180)
             canvas.drawCircle(cx, cy-h*.405f, dp(2).toFloat(), detail)
             canvas.drawCircle(cx-h*.285f, cy+h*.19f, dp(2).toFloat(), detail)
-            canvas.drawCircle(cx+h*.285f, cy+h*.19f, dp(1.7f).toFloat(), detail)
+            canvas.drawCircle(cx+h*.285f, cy+h*.19f, dp(2).toFloat(), detail)
 
             // Dark inset visor and luminous eyes.
             val visor = android.graphics.Path().apply {
