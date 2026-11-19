@@ -27,7 +27,12 @@ class CryptoMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannels()
-        startForeground(9100, serviceNotification("پایش بازار فعال است"))
+        val foregroundNotification = serviceNotification("پایش بازار فعال است")
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(9100, foregroundNotification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(9100, foregroundNotification)
+        }
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { handler.post { updateStatus("اینترنت وصل شد؛ تحلیل از سر گرفته می‌شود"); scan() } }
