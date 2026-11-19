@@ -78,7 +78,8 @@ class CryptoMonitorService : Service() {
                 val one=closes(s,"1m"); val five=closes(s,"5m"); val fifteen=closes(s,"15m"); val hour=closes(s,"1h")
                 val r=analyze(one,five,fifteen,hour); count++
                 val open = loadOpenSetup(s)
-                if (open == null && r.first != "WAIT") {
+                val previousSignal = tradePrefs.getString("last_signal_" + s, null)
+                if (open == null && r.first != "WAIT" && previousSignal != r.first) {
                     val setup = makeSetup(r.first, one.last(), five)
                     saveOpenSetup(s, setup)
                     notifySignal(s, r.first, r.second)
@@ -89,6 +90,7 @@ class CryptoMonitorService : Service() {
                     notifySignal(s, r.first, r.second)
                 }
                 lastSignals[s]=r.first
+                tradePrefs.edit().putString("last_signal_" + s, r.first).apply()
             } catch (_: Exception) { /* retry on next cycle */ }
             scanning=false
             handler.post { updateStatus("پایش فعال • تحلیل موفق $count از ${activeSymbols.size} قرارداد • چرخه بعدی ۳۰ ثانیه") }
