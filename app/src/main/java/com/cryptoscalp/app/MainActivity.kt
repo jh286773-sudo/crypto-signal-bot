@@ -52,9 +52,10 @@ class MainActivity : Activity() {
             prefs.edit().remove("selected_symbols").putBoolean("manual_selection_initialized", true).apply()
         }
         selectedExchanges.clear()
-        val savedExchange = prefs.getString("selected_exchange", null)
-            ?: prefs.getStringSet("selected_exchanges", setOf("Toobit"))?.firstOrNull()
-        selectedExchanges.add(savedExchange?.takeIf { exchanges.contains(it) } ?: "Toobit")
+        selectedExchanges.clear()
+        selectedExchanges.add("Toobit")
+        prefs.edit().putString("selected_exchange", "Toobit")
+            .putStringSet("selected_exchanges", setOf("Toobit")).apply()
         val saved = prefs.getStringSet("selected_symbols", null)
         if (saved != null) { selectedSymbols.clear(); selectedSymbols.addAll(saved) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
