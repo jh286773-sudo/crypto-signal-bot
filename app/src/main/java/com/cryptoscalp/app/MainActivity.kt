@@ -201,15 +201,16 @@ class MainActivity : Activity() {
             var completed = 0
             for (symbol in chosen) {
                 try {
-                    val one = candles(symbol, "1m")
-                    val five = candles(symbol, "5m")
-                    val fifteen = candles(symbol, "15m")
-                    val hour = candles(symbol, "1h")
-                    val signal = analyze(one, five, fifteen, hour)
-                    reports.add("【$symbol】\\n${signal.second}")
+                    val one = marketCandles(symbol, "1m")
+                    val five = marketCandles(symbol, "5m")
+                    val fifteen = marketCandles(symbol, "15m")
+                    val hour = marketCandles(symbol, "1h")
+                    val signal = TradingStrategy.evaluate(one, five, fifteen, hour)
+                    val detail = "جهت: ${signal.signal}\\nورود: ${fmt(signal.entry)}\\nحد ضرر: ${fmt(signal.stop)}\\nحد سود ۱: ${fmt(signal.target1)}\\nحد سود ۲: ${fmt(signal.target2)}\\nامتیاز: ${signal.score}\\nاندیکاتورها: ${signal.reasons.joinToString("، ")}\\nاسمارت‌مانی: ${signal.smc.joinToString("، ")}"
+                    reports.add("【$symbol】\\n$detail")
                     val previous = lastSignals[symbol]
-                    if (signal.first != "WAIT" && signal.first != previous) notifySignal(symbol, signal.first, signal.second)
-                    lastSignals[symbol] = signal.first
+                    if (signal.signal != "WAIT" && signal.signal != previous) notifySignal(symbol, signal.signal, detail)
+                    lastSignals[symbol] = signal.signal
                     completed++
                 } catch (e: Exception) {
                     reports.add("【$symbol】\\nخطا در تحلیل: ${e.message}")
@@ -221,6 +222,25 @@ class MainActivity : Activity() {
                 busy = false
             }
         }
+    }
+
+    private fun marketCandles(symbol: String, interval: String): List<MarketCandle> {
+        val now = System.currentTimeMillis()
+        val duration = when (interval) { "1m" -> 60000L; "5m" -> 300000L; "15m" -> 900000L; else -> 3600000L }
+        val json = getJson("/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*160}&to=$now&limit=160")
+        val data = json.optJSONArray("data") ?: JSONArray()
+        val out = mutableListOf<MarketCandle>()
+        for (i in 0 until data.length()) {
+            val row = data.getJSONObject(i)
+            val o = row.optString("open").toDoubleOrNull() ?: continue
+            val h = row.optString("high").toDoubleOrNull() ?: continue
+            val l = row.optString("low").toDoubleOrNull() ?: continue
+            val c = row.optString("close").toDoubleOrNull() ?: continue
+            val v = row.optString("volume").toDoubleOrNull() ?: 0.0
+            if (o > 0 && h > 0 && l > 0 && c > 0) out.add(MarketCandle(o,h,l,c,v))
+        }
+        if (out.size < 60) throw IllegalStateException("کندل OHLC کافی نیست")
+        return out
     }
 
     private fun candles(symbol: String, interval: String): List<Double> {
