@@ -46,7 +46,11 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         createChannel()
         buildUi()
-        val saved = getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).getStringSet("selected_symbols", null)
+        val prefs = getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("manual_selection_initialized", false)) {
+            prefs.edit().remove("selected_symbols").putBoolean("manual_selection_initialized", true).apply()
+        }
+        val saved = prefs.getStringSet("selected_symbols", null)
         if (saved != null) { selectedSymbols.clear(); selectedSymbols.addAll(saved) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 71)
