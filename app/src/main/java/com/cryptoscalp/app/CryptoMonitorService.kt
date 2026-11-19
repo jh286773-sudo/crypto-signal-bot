@@ -66,21 +66,21 @@ class CryptoMonitorService : Service() {
             var analyzed=0
             var firstError=""
             val now=System.currentTimeMillis()
-            val fiveMinuteBucket=now/300_000L
             for(symbol in list)try{
-                // Every minute: observe the latest Toobit price and manage open risk.
-                val five=ExchangeMarketData.candles(exchange,symbol,"5m")
-                val price=five.last().close
+                // Every 60 seconds: use Toobit's live futures ticker for real-time stop/target checks.
+                val price=ExchangeMarketData.lastPrice(exchange,symbol)
                 manageOpen(symbol,price)
 
-                // Run the multi-timeframe strategy only once for each newly closed 5m slot.
-                val key="last_analysis_bucket_$symbol"
-                val previousBucket=prefs.getLong(key,-1L)
-                val insideCloseWindow=(now%300_000L)<70_000L
-                if(previousBucket<0L){
-                    // Establish a baseline on first launch; never analyze a still-forming candle.
-                    prefs.edit().putLong(key,fiveMinuteBucket).apply()
-                } else if(insideCloseWindow && previousBucket!=fiveMinuteBucket){
+                // Strategy runs only when a newer fully closed 5m candle is available.
+                val five=ExchangeMarketData.candles(exchange,symbol,"5m")
+                val latestClosedCandleTime=five.last().time
+                val key="last_analysis_candle_$symbol"
+                val previousCandleTime=prefs.getLong(key,-1L)
+                if(previousCandleTime<0L){
+                    // First launch establishes a baseline instead of issuing a delayed historical signal.
+                    prefs.edit().putLong(key,latestClosedCandleTime).apply()
+                } else if(latestClosedCandleTime>previousCandleTime){
+                    // All three datasets contain closed candles only; 15m/30m may be unchanged between scans.
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m")
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
                     val r=TradingStrategy.evaluate(five,fifteen,thirty)
@@ -93,7 +93,8 @@ class CryptoMonitorService : Service() {
                         val old=JSONObject(open).optString("side")
                         if(old!=r.signal){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
                     }
-                    prefs.edit().putString("last_signal_$symbol",r.signal).putLong(key,fiveMinuteBucket).apply()
+                    prefs.edit().putString("last_signal_$symbol",r.signal)
+                        .putLong(key,latestClosedCandleTime).apply()
                     analyzed++
                 }
                 ok++
