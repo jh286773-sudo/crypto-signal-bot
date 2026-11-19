@@ -103,8 +103,8 @@ object TradingStrategy {
             val w=rsis.subList(max(0,i-p+1),i+1);val lo=w.minOrNull()!!;val hi=w.maxOrNull()!!
             if(hi==lo)50.0 else 100*(w.last()-lo)/(hi-lo)
         }
-        val k=raw.takeLast(3).average()
-        val d=raw.takeLast(3).chunked(1).flatten().takeLast(3).average()
+        val k=raw.last()
+        val d=raw.takeLast(3).average()
         return Pair(k,d)
     }
     // Candle-volume histogram POC and approximate 70% value area.
