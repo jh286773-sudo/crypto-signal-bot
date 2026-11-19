@@ -205,6 +205,7 @@ class MainActivity : Activity() {
             "MEXC", "MEXC Futures" -> "mexc.com"
             "BingX" -> "bingx.com"
             "HTX", "HTX Futures" -> "htx.com"
+            "CoinEx" -> "coinex.com"
             "Kraken" -> "kraken.com"
             "Coinbase" -> "coinbase.com"
             else -> return ""
