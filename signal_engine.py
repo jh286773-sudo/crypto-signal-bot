@@ -3,8 +3,8 @@ from smart_money import analyze_smc
 
 
 def analyze_market(multi_timeframe):
-    """Use 15m direction and 5m entry; 1h is a risk/context filter."""
-    required = ("5m", "15m", "1h")
+    """Compare 5m entry, 15m setup direction, and 30m trend confirmation."""
+    required = ("5m", "15m", "30m")
     if not isinstance(multi_timeframe, dict):
         return {"signal": "WAIT", "reason": "Expected multi-timeframe candle data"}
 
@@ -18,7 +18,7 @@ def analyze_market(multi_timeframe):
     trends = {tf: detect_trend(data[tf]) for tf in required}
     signals = {tf: generate_signal(data[tf]) for tf in required}
 
-    trend_1h = trends["1h"]
+    trend_30m = trends["30m"]
     trend_15m = trends["15m"]
     reasons = []
 
@@ -47,12 +47,12 @@ def analyze_market(multi_timeframe):
 
     score = 3
     reasons.append("5m scalp entry confirmed")
-    if trend_1h == trend_15m:
+    if trend_30m == trend_15m:
         score += 1
-        reasons.append("1h trend confirms 15m direction")
+        reasons.append("30m trend confirms 15m direction")
     else:
         score -= 1
-        reasons.append("1h trend does not confirm; confidence reduced")
+        reasons.append("30m trend does not confirm; confidence reduced")
 
     df = data["5m"]
     smc = analyze_smc(df)
