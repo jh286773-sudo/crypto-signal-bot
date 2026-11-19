@@ -7,7 +7,7 @@ import java.net.URL
 
 /** Public USDT perpetual market-data adapters. Symbols are stored internally as BASE-SWAP-USDT. */
 object ExchangeMarketData {
-    val supported = listOf("Toobit", "Binance", "Bybit", "OKX", "Gate.io", "Bitget", "BingX", "CoinEx")
+    val supported = listOf("Toobit", "Binance", "Bybit", "OKX", "Gate.io", "Bitget", "BingX", "CoinEx", "KuCoin Futures", "MEXC Futures", "HTX Futures")
 
     private fun get(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -65,6 +65,18 @@ object ExchangeMarketData {
                 val a=JSONObject(get("https://api.coinex.com/v2/futures/market")).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
                 for(i in 0 until a.length()) { val o=a.getJSONObject(i); val sym=o.optString("market"); if(sym.endsWith("USDT")) out.add(sym.removeSuffix("USDT")+"-SWAP-USDT") }
             }
+            "KuCoin Futures" -> {
+                val a=JSONObject(get("https://api-futures.kucoin.com/api/v1/contracts/active")).optJSONArray("data") ?: JSONArray()
+                for(i in 0 until a.length()) { val o=a.getJSONObject(i); if(o.optString("quoteCurrency")=="USDT" && o.optString("status")=="Open") out.add(o.optString("baseCurrency")+"-SWAP-USDT") }
+            }
+            "MEXC Futures" -> {
+                val a=JSONObject(get("https://contract.mexc.com/api/v1/contract/detail")).optJSONArray("data") ?: JSONArray()
+                for(i in 0 until a.length()) { val o=a.getJSONObject(i); val s=o.optString("symbol"); if(s.endsWith("_USDT") && o.optInt("state",0)==0) out.add(s.removeSuffix("_USDT")+"-SWAP-USDT") }
+            }
+            "HTX Futures" -> {
+                val a=JSONObject(get("https://api.hbdm.com/linear-swap-api/v1/swap_contract_info")).optJSONArray("data") ?: JSONArray()
+                for(i in 0 until a.length()) { val o=a.getJSONObject(i); if(o.optString("contract_status")=="1" && o.optString("contract_code").endsWith("-USDT")) out.add(o.optString("symbol")+"-SWAP-USDT") }
+            }
         }
         return out.distinct().sorted()
     }
@@ -80,6 +92,9 @@ object ExchangeMarketData {
             "Bitget" -> "https://api.bitget.com/api/v2/mix/market/candles?productType=USDT-FUTURES&symbol=${b}USDT&granularity=${bitgetGranularity(interval)}&limit=260"
             "BingX" -> "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=${b}-USDT&interval=$interval&limit=260"
             "CoinEx" -> "https://api.coinex.com/v2/futures/kline?market="+b+"USDT&period="+(when(interval){"1m"->"1min";"5m"->"5min";"15m"->"15min";else->"1hour"})+"&limit=260"
+            "KuCoin Futures" -> { val g=when(interval){"1m"->1;"5m"->5;"15m"->15;else->60}; val e=System.currentTimeMillis()/1000; "https://api-futures.kucoin.com/api/v1/kline/query?symbol="+b+"USDTM&granularity="+g+"&from="+(e-g*60*260)+"&to="+e }
+            "MEXC Futures" -> "https://contract.mexc.com/api/v1/contract/kline/"+b+"_USDT?interval="+(when(interval){"1m"->"Min1";"5m"->"Min5";"15m"->"Min15";else->"Min60"})+"&limit=260"
+            "HTX Futures" -> "https://api.hbdm.com/linear-swap-ex/market/history/kline?contract_code="+b+"-USDT&period="+(when(interval){"1m"->"1min";"5m"->"5min";"15m"->"15min";else->"60min"})+"&size=260"
             else -> throw IllegalArgumentException("صرافی پشتیبانی نمی‌شود: $exchange")
         }
         val root=JSONObjectOrArray(get(url))
@@ -90,6 +105,9 @@ object ExchangeMarketData {
             "Bitget" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             "BingX" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             "CoinEx" -> (root as JSONObject).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
+            "KuCoin Futures" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
+            "MEXC Futures" -> (root as JSONObject).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
+            "HTX Futures" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             else -> JSONArray()
         }
         val result=mutableListOf<MarketCandle>()
@@ -103,6 +121,9 @@ object ExchangeMarketData {
                     "Bybit","OKX","Bitget" -> { val a=row as JSONArray; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(5)) }
                     "BingX" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("volume")) }
                     "CoinEx" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("volume")) }
+                    "KuCoin Futures" -> { val a=row as JSONArray; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(5)) }
+                    "MEXC Futures" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("vol")) }
+                    "HTX Futures" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("vol")) }
                     else -> emptyList()
                 }
                 val o=values[0].toDouble(); val h=values[1].toDouble(); val l=values[2].toDouble(); val c=values[3].toDouble(); val v=values[4].toDoubleOrNull()?:0.0
@@ -111,7 +132,7 @@ object ExchangeMarketData {
         }
         if(result.size<60) throw IllegalStateException("$exchange: کندل کافی دریافت نشد (${result.size})")
         // Bybit, OKX and Bitget return newest-first candles; the strategy expects oldest-first.
-        if(exchange=="Bybit" || exchange=="OKX" || exchange=="Bitget" || exchange=="BingX") result.reverse()
+        if(exchange=="Bybit" || exchange=="OKX" || exchange=="Bitget" || exchange=="BingX" || exchange=="KuCoin Futures") result.reverse()
         return result
     }
 
