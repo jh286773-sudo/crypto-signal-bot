@@ -73,10 +73,10 @@ class CryptoMonitorService : Service() {
             var count=0
             val activeSymbols = selectedSymbols()
             for (s in activeSymbols) try {
-                val one=closes(s,"1m"); val five=closes(s,"5m"); val fifteen=closes(s,"15m"); val hour=closes(s,"1h")
-                val r=analyze(one,five,fifteen,hour); count++
                 val price = markPrice(s)
                 manageOpenSetup(s, price)
+                val one=closes(s,"1m"); val five=closes(s,"5m"); val fifteen=closes(s,"15m"); val hour=closes(s,"1h")
+                val r=analyze(one,five,fifteen,hour); count++
                 val open = loadOpenSetup(s)
                 if (open == null && r.first != "WAIT") {
                     val setup = makeSetup(r.first, one.last(), five)
@@ -141,7 +141,8 @@ class CryptoMonitorService : Service() {
 
     private fun selectedSymbols(): List<String> {
         val saved = tradePrefs.getStringSet("selected_symbols", null)?.toList().orEmpty()
-        return (if (saved.isEmpty()) defaultSymbols else saved).distinct().take(100)
+        val openSymbols = tradePrefs.all.keys.filter { it.startsWith("open_setup_") }.map { it.removePrefix("open_setup_") }
+        return ((if (saved.isEmpty()) defaultSymbols else saved) + openSymbols).distinct().take(100)
     }
 
     private fun markPrice(symbol: String): Double {
