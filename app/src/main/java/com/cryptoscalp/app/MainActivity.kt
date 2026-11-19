@@ -52,7 +52,6 @@ class MainActivity : Activity() {
             prefs.edit().remove("selected_symbols").putBoolean("manual_selection_initialized", true).apply()
         }
         selectedExchanges.clear()
-        selectedExchanges.clear()
         selectedExchanges.add("Toobit")
         prefs.edit().putString("selected_exchange", "Toobit")
             .putStringSet("selected_exchanges", setOf("Toobit")).apply()
