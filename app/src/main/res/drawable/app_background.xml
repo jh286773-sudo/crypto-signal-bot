@@ -1,4 +1,4 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item><shape android:shape="rectangle"><gradient android:startColor="#08090C" android:centerColor="#101014" android:endColor="#08090C" android:angle="270"/></shape></item>
-    <item android:gravity="center"><inset android:inset="18dp"><bitmap android:src="@drawable/bull_watermark" android:gravity="center" android:filter="true"/></inset></item>
+    <item android:drawable="@drawable/bull_watermark" android:gravity="center" />
 </layer-list>
