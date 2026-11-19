@@ -45,6 +45,10 @@ class MainActivity : Activity() {
     private val selectedSymbols = linkedSetOf<String>()
     private val channelId = "scalp_signals"
     private val logoCache = mutableMapOf<String, android.graphics.Bitmap>()
+    private lateinit var marketChart: MarketVisualView
+    private lateinit var marketPriceLabel: TextView
+    private lateinit var marketSymbolLabel: TextView
+    private lateinit var marketChangeLabel: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -180,8 +184,29 @@ class MainActivity : Activity() {
             setPadding(dp(10), dp(7), dp(10), dp(7))
         })
         visualCard.addView(visualHeader)
-        visualCard.addView(MarketVisualView(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(116)).apply {
-            topMargin = dp(8); bottomMargin = dp(5)
+        val quoteRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, dp(4))
+        }
+        val quoteInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        marketSymbolLabel = text("در انتظار داده بازار", 10, muted, true)
+        marketPriceLabel = text("—", 25, Color.WHITE, true).apply {
+            setShadowLayer(dp(8).toFloat(), 0f, 0f, Color.rgb(165, 119, 31))
+        }
+        quoteInfo.addView(marketSymbolLabel)
+        quoteInfo.addView(marketPriceLabel)
+        quoteRow.addView(quoteInfo, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        marketChangeLabel = text("دریافت کندل…", 11, goldLight, true).apply {
+            gravity = Gravity.CENTER
+            background = rounded(Color.rgb(38, 33, 23), gold, 12)
+            setPadding(dp(11), dp(7), dp(11), dp(7))
+        }
+        quoteRow.addView(marketChangeLabel)
+        visualCard.addView(quoteRow)
+        marketChart = MarketVisualView(this)
+        visualCard.addView(marketChart, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(142)).apply {
+            topMargin = dp(5); bottomMargin = dp(8)
         })
         val visualFoot = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         visualFoot.addView(text("TIMEFRAMES", 9, muted, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -281,36 +306,95 @@ class MainActivity : Activity() {
         })
     }
 
-    // Vector artwork stays sharp on HD/QHD screens without loading large bitmap assets.
+    private fun refreshMarketChart() {
+        if (!::marketChart.isInitialized) return
+        val symbol = selectedSymbols.firstOrNull() ?: symbols.firstOrNull()
+        if (symbol == null) {
+            marketSymbolLabel.text = "ابتدا یک دارایی انتخاب کن"
+            marketPriceLabel.text = "—"
+            marketChangeLabel.text = "بدون نماد"
+            marketChart.setCandles(emptyList())
+            return
+        }
+        marketSymbolLabel.text = "${symbol.removeSuffix("-SWAP-USDT")}  •  TOOBIT / 5m"
+        marketChangeLabel.text = "در حال دریافت…"
+        thread(name = "toobit-chart") {
+            try {
+                val candles = ExchangeMarketData.candles("Toobit", symbol, "5m")
+                val last = candles.last()
+                val first = candles[max(0, candles.size - 13)]
+                val change = if (first.close == 0.0) 0.0 else (last.close - first.close) / first.close * 100.0
+                runOnUiThread {
+                    marketPriceLabel.text = fmt(last.close)
+                    marketChangeLabel.text = String.format(java.util.Locale.US, "%+.2f%% / 1h", change)
+                    marketChangeLabel.setTextColor(if (change >= 0) Color.rgb(112, 231, 157) else Color.rgb(255, 119, 108))
+                    marketChart.setCandles(candles.takeLast(36))
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    marketChangeLabel.text = "داده در دسترس نیست"
+                    marketPriceLabel.text = "—"
+                    marketChart.setCandles(emptyList())
+                }
+            }
+        }
+    }
+
+    // Native candle renderer: plots actual Toobit OHLC values, not decorative sample data.
     private inner class MarketVisualView(context: Context) : android.view.View(context) {
+        private val candles = mutableListOf<MarketCandle>()
         private val grid = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(42, 220, 185, 105); strokeWidth = dp(1).toFloat()
+            color = Color.argb(38, 220, 185, 105); strokeWidth = dp(1).toFloat()
         }
-        private val stroke = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = goldLight; style = android.graphics.Paint.Style.STROKE
-            strokeWidth = dp(2).toFloat(); strokeCap = android.graphics.Paint.Cap.ROUND
-            strokeJoin = android.graphics.Paint.Join.ROUND; setShadowLayer(dp(7).toFloat(), 0f, 0f, gold)
+        private val wick = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            strokeWidth = dp(1.4f.toInt()).toFloat(); strokeCap = android.graphics.Paint.Cap.ROUND
         }
-        private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-        private val line = android.graphics.Path()
-        private val area = android.graphics.Path()
+        private val body = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+        }
+        private val glow = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(22, 218, 174, 75)
+        }
+        fun setCandles(values: List<MarketCandle>) {
+            candles.clear()
+            candles.addAll(values)
+            invalidate()
+        }
         override fun onDraw(canvas: android.graphics.Canvas) {
             super.onDraw(canvas)
             val w = width.toFloat(); val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
             for (i in 0..4) canvas.drawLine(0f, h * i / 4f, w, h * i / 4f, grid)
-            for (i in 0..8) canvas.drawLine(w * i / 8f, 0f, w * i / 8f, h, grid)
-            val p = floatArrayOf(0f,.70f,.10f,.60f,.20f,.66f,.30f,.39f,.40f,.49f,.50f,.31f,.60f,.43f,.70f,.24f,.80f,.34f,.90f,.14f,1f,.20f)
-            line.reset(); line.moveTo(0f, h * p[1])
-            var i = 2
-            while (i < p.size) { line.lineTo(w * p[i], h * p[i + 1]); i += 2 }
-            area.set(line); area.lineTo(w, h); area.lineTo(0f, h); area.close()
-            fill.shader = android.graphics.LinearGradient(0f, 0f, 0f, h,
-                intArrayOf(Color.argb(105,190,145,48), Color.argb(3,190,145,48)), null, android.graphics.Shader.TileMode.CLAMP)
-            canvas.drawPath(area, fill); canvas.drawPath(line, stroke)
-            fill.shader = null
-            fill.color = Color.argb(70,245,220,135); canvas.drawCircle(w, h*.20f, dp(9).toFloat(), fill)
-            fill.color = Color.WHITE; canvas.drawCircle(w, h*.20f, dp(3).toFloat(), fill)
+            if (candles.size < 2) {
+                val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = muted; textSize = dp(11).toFloat(); textAlign = android.graphics.Paint.Align.CENTER
+                }
+                canvas.drawText("نمودار پس از دریافت داده Toobit نمایش داده می‌شود", w / 2f, h / 2f, p)
+                return
+            }
+            val low = candles.minOf { it.low }
+            val high = candles.maxOf { it.high }
+            val range = (high - low).takeIf { it > 0.0 } ?: (high * .001).coerceAtLeast(.0000001)
+            val top = dp(9).toFloat(); val bottom = h - dp(9)
+            fun y(value: Double) = bottom - (((value - low) / range).toFloat() * (bottom - top))
+            val slot = w / candles.size
+            val candleWidth = (slot * .56f).coerceAtLeast(dp(2).toFloat())
+            candles.forEachIndexed { index, c ->
+                val x = slot * index + slot / 2f
+                val up = c.close >= c.open
+                val color = if (up) Color.rgb(91, 211, 145) else Color.rgb(231, 91, 83)
+                wick.color = color
+                body.color = color
+                canvas.drawLine(x, y(c.high), x, y(c.low), wick)
+                val y1 = y(max(c.open, c.close))
+                val y2 = y(min(c.open, c.close))
+                val rectTop = min(y1, y2)
+                val rectBottom = max(y1, y2).let { if (it - rectTop < dp(2)) rectTop + dp(2) else it }
+                canvas.drawRoundRect(x - candleWidth / 2f, rectTop, x + candleWidth / 2f, rectBottom,
+                    dp(1).toFloat(), dp(1).toFloat(), body)
+            }
+            val lastY = y(candles.last().close)
+            canvas.drawCircle(w - dp(3).toFloat(), lastY, dp(4).toFloat(), glow)
         }
     }
 
@@ -567,6 +651,7 @@ class MainActivity : Activity() {
                     } else {
                         "$exchange متصل است • ${ordered.size} قرارداد؛ پایش خودکار ${selectedSymbols.size} ارز"
                     }
+                    refreshMarketChart()
                 }
             } catch (e: Exception) {
                 runOnUiThread { status.text = "خطای اتصال به ${selectedExchanges.firstOrNull()}: ${e.message}" }
