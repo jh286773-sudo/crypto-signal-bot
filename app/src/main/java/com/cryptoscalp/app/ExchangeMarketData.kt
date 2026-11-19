@@ -7,7 +7,7 @@ import java.net.URL
 
 /** Public USDT perpetual market-data adapters. Symbols are stored internally as BASE-SWAP-USDT. */
 object ExchangeMarketData {
-    val supported = listOf("Toobit", "Binance", "Bybit", "OKX", "Gate.io", "Bitget", "BingX")
+    val supported = listOf("Toobit", "Binance", "Bybit", "OKX", "Gate.io", "Bitget", "BingX", "CoinEx")
 
     private fun get(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -61,6 +61,10 @@ object ExchangeMarketData {
                 val a=JSONObject(get("https://open-api.bingx.com/openApi/swap/v2/quote/contracts")).optJSONArray("data") ?: JSONArray()
                 for(i in 0 until a.length()) { val sym=a.getJSONObject(i).optString("symbol"); if(sym.endsWith("-USDT")) out.add("${sym.removeSuffix("-USDT")}-SWAP-USDT") }
             }
+            "CoinEx" -> {
+                val a=JSONObject(get("https://api.coinex.com/v2/futures/market")).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
+                for(i in 0 until a.length()) { val o=a.getJSONObject(i); val sym=o.optString("market"); if(sym.endsWith("USDT")) out.add(sym.removeSuffix("USDT")+"-SWAP-USDT") }
+            }
         }
         return out.distinct().sorted()
     }
@@ -75,6 +79,7 @@ object ExchangeMarketData {
             "Gate.io" -> "https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=${b}_USDT&interval=$interval&limit=260"
             "Bitget" -> "https://api.bitget.com/api/v2/mix/market/candles?productType=USDT-FUTURES&symbol=${b}USDT&granularity=${bitgetGranularity(interval)}&limit=260"
             "BingX" -> "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=${b}-USDT&interval=$interval&limit=260"
+            "CoinEx" -> "https://api.coinex.com/v2/futures/kline?market="+b+"USDT&period="+(when(interval){"1m"->"1min";"5m"->"5min";"15m"->"15min";else->"1hour"})+"&limit=260"
             else -> throw IllegalArgumentException("صرافی پشتیبانی نمی‌شود: $exchange")
         }
         val root=JSONObjectOrArray(get(url))
@@ -84,6 +89,7 @@ object ExchangeMarketData {
             "Bybit" -> (root as JSONObject).optJSONObject("result")?.optJSONArray("list") ?: JSONArray()
             "Bitget" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             "BingX" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
+            "CoinEx" -> (root as JSONObject).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
             else -> JSONArray()
         }
         val result=mutableListOf<MarketCandle>()
@@ -96,6 +102,7 @@ object ExchangeMarketData {
                     "Binance" -> { val a=row as JSONArray; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(5)) }
                     "Bybit","OKX","Bitget" -> { val a=row as JSONArray; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(5)) }
                     "BingX" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("volume")) }
+                    "CoinEx" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("volume")) }
                     else -> emptyList()
                 }
                 val o=values[0].toDouble(); val h=values[1].toDouble(); val l=values[2].toDouble(); val c=values[3].toDouble(); val v=values[4].toDoubleOrNull()?:0.0
