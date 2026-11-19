@@ -32,9 +32,9 @@ jobs:
           pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
-      - name: Check Toobit and analyze BTC
+      - name: Scan liquid USDT perpetual contracts
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           NTFY_SERVER: https://ntfy.sh
-          SYMBOL: BTCUSDT
+          MAX_SYMBOLS: "40"
         run: python monitor.py
