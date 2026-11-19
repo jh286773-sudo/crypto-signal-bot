@@ -110,7 +110,7 @@ class MainActivity : Activity() {
         })
         val dialog = AlertDialog.Builder(this).setTitle("انتخاب ارزها").setView(panel).setPositiveButton("بستن", null).setNegativeButton("پاک‌کردن انتخاب‌ها", null).create()
         dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { selectedSymbols.clear(); renderCoinChoices(search.text.toString()); renderSelectedChoices() }
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { selectedSymbols.clear(); getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", emptySet()).apply(); renderCoinChoices(search.text.toString()); renderSelectedChoices() }
         }
         dialog.show()
     }
