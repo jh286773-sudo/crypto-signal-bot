@@ -13,6 +13,8 @@ import android.os.Looper
 import android.graphics.Typeface
 import android.view.Gravity
 import android.widget.*
+import android.text.Editable
+import android.text.TextWatcher
 import android.graphics.Color
 import android.view.ViewGroup
 import org.json.JSONArray
@@ -30,6 +32,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var result: TextView
     private lateinit var coinChoices: LinearLayout
+    private lateinit var coinSearch: EditText
     private val symbols = mutableListOf("BTC-SWAP-USDT", "ETH-SWAP-USDT", "BNB-SWAP-USDT", "SOL-SWAP-USDT", "XRP-SWAP-USDT", "DOGE-SWAP-USDT", "ADA-SWAP-USDT", "TRX-SWAP-USDT", "LINK-SWAP-USDT", "AVAX-SWAP-USDT")
     private val selectedSymbols = linkedSetOf<String>().apply { addAll(symbols) }
     private val checkboxes = mutableMapOf<String, CheckBox>()
@@ -62,7 +65,19 @@ class MainActivity : Activity() {
         val title = text("CRYPTO SCALP", 25, Color.WHITE, true)
         root.addView(title)
         root.addView(text("Toobit USDT Perpetual • سیگنال لانگ و شورت", 14, Color.LTGRAY))
-        root.addView(text("ارزهای موردنظر را انتخاب کن (همه در ابتدا فعال‌اند):", 15, Color.WHITE, true))
+        root.addView(text("ارزهای موردنظر را جستجو و انتخاب کن:", 15, Color.WHITE, true))
+        coinSearch = EditText(this).apply {
+            hint = "جستجوی نماد ارز؛ مثلاً BTC یا SOL"
+            setSingleLine(true)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.LTGRAY)
+        }
+        root.addView(coinSearch)
+        coinSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderCoinChoices(s?.toString().orEmpty()) }
+            override fun afterTextChanged(s: Editable?) {}
+        })
         coinChoices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(coinChoices)
         val refresh = Button(this).apply { text = "تحلیل ارزهای انتخاب‌شده" }
@@ -96,38 +111,54 @@ class MainActivity : Activity() {
                     val item = arr.getJSONObject(i)
                     if (item.optString("status") == "TRADING") {
                         val s = item.optString("symbol")
-                        if (s.endsWith("-SWAP-USDT")) active.add(s)
+                        if (s.endsWith("-SWAP-USDT") && (item.optString("quoteAsset").isBlank() || item.optString("quoteAsset") == "USDT")) active.add(s)
                     }
                 }
                 val preferredBases = listOf("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK", "AVAX")
-                val ordered = preferredBases.map { "$it-SWAP-USDT" }.filter { active.contains(it) }
+                val preferred = preferredBases.map { "$it-SWAP-USDT" }.filter { active.contains(it) }
+                val ordered = preferred + active.filterNot { preferred.contains(it) }.sorted()
                 runOnUiThread {
                     symbols.clear()
                     symbols.addAll(ordered)
-                    selectedSymbols.clear()
-                    selectedSymbols.addAll(ordered)
-                    coinChoices.removeAllViews()
-                    checkboxes.clear()
-                    for (symbol in ordered) {
-                        val base = symbol.removeSuffix("-SWAP-USDT")
-                        val box = CheckBox(this).apply {
-                            text = base
-                            textSize = 16f
-                            setTextColor(Color.WHITE)
-                            isChecked = true
-                            setOnCheckedChangeListener { _, checked ->
-                                if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
-                            }
-                        }
-                        checkboxes[symbol] = box
-                        coinChoices.addView(box)
-                    }
-                    status.text = "اتصال برقرار • ${ordered.size} ارز اصلی در دسترس"
+                    selectedSymbols.retainAll(ordered.toSet())
+                    if (selectedSymbols.isEmpty()) selectedSymbols.addAll(preferred)
+                    renderCoinChoices(coinSearch.text.toString())
+                    status.text = "اتصال برقرار • ${ordered.size} قرارداد فعال USDT فیوچرز؛ ۱۰ ارز اصلی انتخاب‌شده"
                 }
             } catch (e: Exception) {
                 runOnUiThread { status.text = "خطای دریافت فهرست قراردادها: ${e.message}" }
             }
         }
+    }
+
+    private fun renderCoinChoices(query: String) {
+        if (!::coinChoices.isInitialized) return
+        val q = query.trim().uppercase()
+        coinChoices.removeAllViews()
+        val matches = symbols.filter { symbol ->
+            val base = symbol.removeSuffix("-SWAP-USDT")
+            q.isEmpty() || base.contains(q) || symbol.contains(q)
+        }
+        for (symbol in matches) {
+            val base = symbol.removeSuffix("-SWAP-USDT")
+            val box = checkboxes.getOrPut(symbol) {
+                CheckBox(this).apply {
+                    text = base
+                    textSize = 16f
+                    setTextColor(Color.WHITE)
+                    setOnCheckedChangeListener { _, checked ->
+                        if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
+                    }
+                }
+            }
+            box.setOnCheckedChangeListener(null)
+            box.isChecked = selectedSymbols.contains(symbol)
+            box.setOnCheckedChangeListener { _, checked ->
+                if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
+            }
+            coinChoices.addView(box)
+        }
+        if (matches.isEmpty()) coinChoices.addView(text("ارزی با این نماد پیدا نشد.", 14, Color.LTGRAY))
     }
 
     private fun refresh() {
