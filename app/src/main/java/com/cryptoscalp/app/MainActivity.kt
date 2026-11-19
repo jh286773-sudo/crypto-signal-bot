@@ -158,7 +158,7 @@ class MainActivity : Activity() {
         }
         heroTop.addView(livePill)
         hero.addView(heroTop)
-        hero.addView(AurumHeroArt(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(154)).apply { topMargin = dp(5); bottomMargin = dp(3) })
+        hero.addView(AurumHeroArt(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(184)).apply { topMargin = dp(5); bottomMargin = dp(3) })
         status = text("در حال اتصال به Toobit…", 14, Color.WHITE, true).apply {
             setPadding(0, dp(13), 0, dp(4))
             setShadowLayer(8f, 0f, 0f, Color.rgb(174, 128, 36))
@@ -208,7 +208,7 @@ class MainActivity : Activity() {
         quoteRow.addView(marketChangeLabel)
         visualCard.addView(quoteRow)
         marketChart = MarketVisualView(this)
-        visualCard.addView(marketChart, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(142)).apply {
+        visualCard.addView(marketChart, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)).apply {
             topMargin = dp(5); bottomMargin = dp(8)
         })
         val visualFoot = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -596,18 +596,29 @@ class MainActivity : Activity() {
     private fun fallbackCoinLogo(symbol: String, sizePx: Int): android.graphics.Bitmap {
         val label = symbol.substringBefore("-").take(4).uppercase().ifBlank { "?" }
         val palette = intArrayOf(Color.rgb(188, 145, 42), Color.rgb(45, 105, 155), Color.rgb(42, 135, 105), Color.rgb(125, 78, 150), Color.rgb(170, 82, 65))
-        val color = palette[(label.hashCode() and 0x7fffffff) % palette.size]
+        val base = palette[(label.hashCode() and 0x7fffffff) % palette.size]
         val bitmap = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bitmap)
         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-        paint.color = color
-        canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx * .48f, paint)
+        val cx = sizePx / 2f
+        val cy = sizePx / 2f
+        paint.shader = android.graphics.RadialGradient(cx * .72f, cy * .68f, sizePx * .72f,
+            intArrayOf(Color.WHITE, base, Color.rgb(18, 20, 25)), null, android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawCircle(cx, cy, sizePx * .48f, paint)
+        paint.shader = null
+        paint.style = android.graphics.Paint.Style.STROKE
+        paint.strokeWidth = (sizePx * .035f).coerceAtLeast(1f)
+        paint.color = Color.rgb(245, 220, 135)
+        canvas.drawCircle(cx, cy, sizePx * .455f, paint)
+        paint.style = android.graphics.Paint.Style.FILL
         paint.color = Color.WHITE
-        paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        paint.typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
         paint.textAlign = android.graphics.Paint.Align.CENTER
-        paint.textSize = sizePx * if (label.length > 3) .27f else .34f
-        val y = sizePx / 2f - (paint.descent() + paint.ascent()) / 2f
-        canvas.drawText(label, sizePx / 2f, y, paint)
+        paint.setShadowLayer(sizePx * .035f, 0f, sizePx * .025f, Color.BLACK)
+        paint.textSize = sizePx * if (label.length > 3) .25f else .32f
+        val y = cy - (paint.descent() + paint.ascent()) / 2f
+        canvas.drawText(label, cx, y, paint)
+        paint.clearShadowLayer()
         return bitmap
     }
 
