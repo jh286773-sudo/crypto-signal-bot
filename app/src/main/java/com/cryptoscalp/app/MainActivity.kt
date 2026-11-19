@@ -165,7 +165,14 @@ class MainActivity : Activity() {
         }
         heroTop.addView(livePill)
         hero.addView(heroTop)
-        hero.addView(AurumHeroArt(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(240)).apply { topMargin = dp(5); bottomMargin = dp(3) })
+        val heroArtwork = ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher_full)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+            contentDescription = "AURUM X golden bull brand artwork"
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        }
+        hero.addView(heroArtwork, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(240)).apply { topMargin = dp(5); bottomMargin = dp(3) })
         status = text("در حال اتصال به Toobit…", 14, Color.WHITE, true).apply {
             setPadding(0, dp(13), 0, dp(4))
             setShadowLayer(8f, 0f, 0f, Color.rgb(174, 128, 36))
