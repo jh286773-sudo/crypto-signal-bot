@@ -342,7 +342,7 @@ class MainActivity : Activity() {
             p.shader = android.graphics.LinearGradient(0f, cy-h*.5f, 0f, cy+h*.12f,
                 intArrayOf(Color.WHITE, goldLight, gold, Color.rgb(83,55,17)), null, android.graphics.Shader.TileMode.CLAMP)
             canvas.drawPath(horn, p); p.shader = null
-            p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = dp(1.2f).toInt().toFloat()
+            p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = dp(1).toFloat()
             p.color = Color.rgb(255, 238, 177); canvas.drawPath(horn, p); p.style = android.graphics.Paint.Style.FILL
 
             // Angular armored face.
