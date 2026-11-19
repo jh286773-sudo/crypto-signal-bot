@@ -86,7 +86,7 @@ class CryptoMonitorService : Service() {
                 lastSignals[s]=r.first
             } catch (_: Exception) { /* retry on next cycle */ }
             scanning=false
-            handler.post { updateStatus("پایش فعال • تحلیل موفق $count از ${symbols.size} قرارداد • چرخه بعدی ۳۰ ثانیه") }
+            handler.post { updateStatus("پایش فعال • تحلیل موفق $count از ${activeSymbols.size} قرارداد • چرخه بعدی ۳۰ ثانیه") }
         }
     }
 
