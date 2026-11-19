@@ -52,8 +52,9 @@ class MainActivity : Activity() {
             prefs.edit().remove("selected_symbols").putBoolean("manual_selection_initialized", true).apply()
         }
         selectedExchanges.clear()
-        val savedExchanges = prefs.getStringSet("selected_exchanges", setOf("Toobit")) ?: setOf("Toobit")
-        selectedExchanges.add(savedExchanges.firstOrNull()?.takeIf { exchanges.contains(it) } ?: "Toobit")
+        val savedExchange = prefs.getString("selected_exchange", null)
+            ?: prefs.getStringSet("selected_exchanges", setOf("Toobit"))?.firstOrNull()
+        selectedExchanges.add(savedExchange?.takeIf { exchanges.contains(it) } ?: "Toobit")
         val saved = prefs.getStringSet("selected_symbols", null)
         if (saved != null) { selectedSymbols.clear(); selectedSymbols.addAll(saved) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -348,7 +349,8 @@ class MainActivity : Activity() {
             selectedExchanges.clear()
             selectedExchanges.add(pendingSelection)
             getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit()
-                .putStringSet("selected_exchanges", selectedExchanges.toSet()).apply()
+                .putStringSet("selected_exchanges", selectedExchanges.toSet())
+                .putString("selected_exchange", pendingSelection).apply()
             updateExchangeButton()
             val prefs = getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE)
             val editor = prefs.edit().putStringSet("selected_symbols", emptySet())
@@ -454,6 +456,11 @@ class MainActivity : Activity() {
             try {
                 val exchange = selectedExchanges.firstOrNull() ?: "Toobit"
                 val ordered = ExchangeMarketData.contracts(exchange)
+                // Do not label an exchange connected just because its contract list endpoint responds.
+                val candleProbeError = if (ordered.isNotEmpty()) {
+                    try { ExchangeMarketData.candles(exchange, ordered.first(), "5m"); null }
+                    catch (e: Exception) { e.message ?: e.javaClass.simpleName }
+                } else "فهرست قراردادها خالی است"
                 runOnUiThread {
                     symbols.clear()
                     symbols.addAll(ordered)
@@ -461,7 +468,13 @@ class MainActivity : Activity() {
                     val prefs = getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE)
                     prefs.edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
                     renderSelectedChoices()
-                    status.text = if (selectedSymbols.isEmpty()) "$exchange متصل شد • ${ordered.size} قرارداد؛ ارزها را دستی انتخاب کن." else "$exchange متصل است • ${ordered.size} قرارداد؛ پایش خودکار ${selectedSymbols.size} ارز"
+                    status.text = if (candleProbeError != null) {
+                        "$exchange • فهرست ${ordered.size} قرارداد دریافت شد، اما دریافت کندل ناموفق بود: $candleProbeError"
+                    } else if (selectedSymbols.isEmpty()) {
+                        "$exchange متصل شد • ${ordered.size} قرارداد؛ ارزها را دستی انتخاب کن."
+                    } else {
+                        "$exchange متصل است • ${ordered.size} قرارداد؛ پایش خودکار ${selectedSymbols.size} ارز"
+                    }
                 }
             } catch (e: Exception) {
                 runOnUiThread { status.text = "خطای اتصال به ${selectedExchanges.firstOrNull()}: ${e.message}" }
