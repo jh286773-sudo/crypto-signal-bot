@@ -72,54 +72,93 @@ class MainActivity : Activity() {
     private val muted = Color.rgb(166, 160, 145)
 
     private fun buildUi() {
+        window.statusBarColor = Color.rgb(8, 10, 15)
+        window.navigationBarColor = Color.rgb(8, 10, 15)
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 22, 20, 28)
+            setPadding(dp(18), dp(20), dp(18), dp(30))
             setBackgroundResource(R.drawable.app_background)
         }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 4, 0, 18)
+            setPadding(0, dp(4), 0, dp(20))
         }
+        val mark = TextView(this).apply {
+            text = "AX"; textSize = 20f
+            typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
+            setTextColor(ink); gravity = Gravity.CENTER
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(goldLight, gold, Color.rgb(137, 99, 25))
+            ).apply { cornerRadius = dp(16).toFloat() }
+            layoutParams = LinearLayout.LayoutParams(dp(54), dp(54)).apply { marginEnd = dp(13) }
+            elevation = dp(7).toFloat()
+        }
+        header.addView(mark)
         val brandBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        brandBlock.addView(text("GOLD • CRYPTO", 12, gold, true))
-        brandBlock.addView(text("AURUM X", 25, goldLight, true))
-        brandBlock.addView(text("by JAVAD  •  تحلیل هوشمند بازار", 12, muted, true))
+        brandBlock.addView(text("GOLD  •  CRYPTO", 10, gold, true))
+        brandBlock.addView(text("AURUM X", 27, goldLight, true))
+        brandBlock.addView(text("by JAVAD  |  تحلیل هوشمند بازار", 11, muted))
         header.addView(brandBlock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val settings = Button(this).apply {
-            text = "⚙"
-            textSize = 20f
-            setTextColor(goldLight)
-            background = rounded(panel, gold, 18)
-            elevation = 8f
-            minWidth = dp(52); minimumHeight = dp(48)
+            text = "⚙"; textSize = 21f; setTextColor(goldLight)
+            background = rounded(Color.rgb(27, 28, 33), Color.rgb(105, 86, 39), 16)
+            elevation = dp(3).toFloat(); minWidth = dp(50); minimumHeight = dp(50)
+            setPadding(0, 0, 0, 0)
         }
         header.addView(settings)
         settings.setOnClickListener { showMonitorSettings(settings) }
         root.addView(header)
 
-        val marketCard = card()
-        marketCard.addView(text("وضعیت بازار", 13, gold, true))
-        status = text("در حال اتصال به منبع داده صرافی انتخاب‌شده…", 14, goldLight, true)
-        marketCard.addView(status)
-        root.addView(marketCard, marginParams(bottom = 14))
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(17), dp(18), dp(18))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(38, 33, 21), Color.rgb(20, 22, 28), Color.rgb(14, 16, 22))
+            ).apply { cornerRadius = dp(22).toFloat(); setStroke(dp(1), Color.rgb(126, 99, 42)) }
+            elevation = dp(5).toFloat()
+        }
+        val heroTop = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        heroTop.addView(text("وضعیت اتصال بازار", 14, goldLight, true),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val livePill = TextView(this).apply {
+            text = "●  LIVE"; textSize = 10f; typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(116, 220, 157))
+            background = rounded(Color.rgb(22, 49, 39), Color.rgb(48, 111, 76), 20)
+            setPadding(dp(11), dp(5), dp(11), dp(5))
+        }
+        heroTop.addView(livePill); hero.addView(heroTop)
+        status = text("در حال اتصال به Toobit…", 13, Color.WHITE, true).apply { setPadding(0, dp(12), 0, dp(3)) }
+        hero.addView(status)
+        hero.addView(text("داده‌های بازار فیوچرز • منبع رسمی برنامه: Toobit", 10, muted))
+        root.addView(hero, marginParams(bottom = 14))
 
         val exchangeCard = card()
-        exchangeCard.addView(text("منبع داده و تحلیل", 16, Color.WHITE, true))
-        exchangeCard.addView(text("Toobit", 20, goldLight, true))
-        exchangeCard.addView(text("تنها صرافی فعال برای دریافت قیمت، کندل و تحلیل فیوچرز", 12, muted))
+        val exchangeHead = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val exchangeIcon = TextView(this).apply {
+            text = "T"; textSize = 19f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+            setTextColor(Color.WHITE); background = rounded(Color.rgb(37, 105, 91), Color.rgb(78, 170, 143), 12)
+            layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(12) }
+        }
+        exchangeHead.addView(exchangeIcon)
+        val exchangeInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        exchangeInfo.addView(text("منبع داده و تحلیل", 11, muted, true))
+        exchangeInfo.addView(text("TOOBIT", 19, goldLight, true))
+        exchangeHead.addView(exchangeInfo); exchangeCard.addView(exchangeHead)
+        exchangeCard.addView(text("قیمت، کندل و تحلیل بازار فقط از Toobit دریافت می‌شود.", 11, muted))
         root.addView(exchangeCard, marginParams(bottom = 14))
 
         val selectCard = card()
         selectCard.addView(text("دارایی‌های تحت نظر", 16, Color.WHITE, true))
-        selectCard.addView(text("انتخاب ارز فقط به‌صورت دستی انجام می‌شود", 12, muted))
+        selectCard.addView(text("ارزهای فیوچرز موردنظر را برای پایش انتخاب کن.", 11, muted))
         coinPickerButton = Button(this).apply {
-            textSize = 14f
-            setTextColor(ink)
-            background = rounded(gold, goldLight, 14)
-            elevation = 6f
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            textSize = 13f; typeface = Typeface.DEFAULT_BOLD; setTextColor(ink)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(goldLight, gold)
+            ).apply { cornerRadius = dp(14).toFloat() }
+            elevation = dp(4).toFloat(); setPadding(dp(14), dp(9), dp(14), dp(9)); minHeight = dp(48)
         }
         selectCard.addView(coinPickerButton, marginParams(top = 10))
         renderSelectedChoices()
@@ -127,17 +166,23 @@ class MainActivity : Activity() {
         root.addView(selectCard, marginParams(bottom = 14))
 
         val monitorCard = card()
-        monitorCard.addView(text("موتور پایش خودکار", 16, Color.WHITE, true))
-        monitorCard.addView(text("تحلیل پیوسته در پس‌زمینه • ۱۰ ابزار تحلیلی • اسمارت‌مانی • اعلان ورود و خروج", 12, muted))
-        root.addView(monitorCard, marginParams(bottom = 14))
+        val monitorHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val monitorMark = TextView(this).apply {
+            text = "◈"; textSize = 24f; setTextColor(gold); gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(10) }
+        }
+        monitorHeader.addView(monitorMark)
+        monitorHeader.addView(text("موتور پایش خودکار", 15, Color.WHITE, true))
+        monitorCard.addView(monitorHeader)
+        monitorCard.addView(text("پایش پس‌زمینه • ۱۰ ابزار تحلیلی • اسمارت‌مانی • هشدار لانگ و شورت", 11, muted))
+        root.addView(monitorCard, marginParams(bottom = 16))
 
-        val disclaimer = text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. سطوح قیمتی تخمینی‌اند و سود تضمین‌شده نیست.", 11, muted)
+        val disclaimer = text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. سطوح قیمتی تخمینی‌اند و سود تضمین‌شده نیست.", 10, muted)
         disclaimer.gravity = Gravity.CENTER
         root.addView(disclaimer)
         setContentView(ScrollView(this).apply {
-            isFillViewport = true
-            setBackgroundResource(R.drawable.app_background)
-            addView(root)
+            isFillViewport = true; clipToPadding = false
+            setBackgroundResource(R.drawable.app_background); addView(root)
         })
     }
 
@@ -152,9 +197,12 @@ class MainActivity : Activity() {
 
     private fun card(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(14), dp(16), dp(16))
-        background = rounded(panel, Color.rgb(105, 86, 39), 18)
-        elevation = dp(5).toFloat()
+        setPadding(dp(17), dp(15), dp(17), dp(17))
+        background = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.rgb(31, 32, 37), Color.rgb(19, 21, 27))
+        ).apply { cornerRadius = dp(19).toFloat(); setStroke(dp(1), Color.rgb(75, 66, 46)) }
+        elevation = dp(4).toFloat()
     }
 
     private fun marginParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
