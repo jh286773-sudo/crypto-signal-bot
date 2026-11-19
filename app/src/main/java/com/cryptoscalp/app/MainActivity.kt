@@ -292,7 +292,15 @@ class MainActivity : Activity() {
                     symbols.clear()
                     symbols.addAll(ordered)
                     selectedSymbols.retainAll(ordered.toSet())
-                    getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
+                    val prefs = getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE)
+                    if (!prefs.getBoolean("core_defaults_applied_v1", false)) {
+                        if (selectedSymbols.isEmpty()) {
+                            val coreBases = listOf("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC")
+                            selectedSymbols.addAll(coreBases.map { "$it-SWAP-USDT" }.filter { ordered.contains(it) })
+                        }
+                        prefs.edit().putBoolean("core_defaults_applied_v1", true).apply()
+                    }
+                    prefs.edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
                     renderSelectedChoices()
                     status.text = if (selectedSymbols.isEmpty()) "فهرست قراردادها آماده است؛ برای شروع، ارزها را دستی انتخاب کن." else "اتصال برقرار • ${ordered.size} قرارداد فعال؛ ${selectedSymbols.size} ارز با انتخاب دستی"
                 }
