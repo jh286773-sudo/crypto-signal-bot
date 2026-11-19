@@ -25,9 +25,9 @@ object ExchangeMarketData {
 
     private fun base(symbol: String) = symbol.removeSuffix("-SWAP-USDT").removeSuffix("USDT").removeSuffix("_USDT")
     private fun binanceInterval(i: String) = i
-    private fun bybitInterval(i: String) = when(i) { "1m"->"1"; "5m"->"5"; "15m"->"15"; else->"60" }
-    private fun okxBar(i: String) = when(i) { "1m"->"1m"; "5m"->"5m"; "15m"->"15m"; else->"1H" }
-    private fun bitgetGranularity(i: String) = when(i) { "1m"->"1min"; "5m"->"5min"; "15m"->"15min"; else->"1H" }
+    private fun bybitInterval(i: String) = when(i) { "1m"->"1"; "5m"->"5"; "15m"->"15"; "30m"->"30"; else->"60" }
+    private fun okxBar(i: String) = when(i) { "1m"->"1m"; "5m"->"5m"; "15m"->"15m"; "30m"->"30m"; else->"1H" }
+    private fun bitgetGranularity(i: String) = when(i) { "1m"->"1min"; "5m"->"5min"; "15m"->"15min"; "30m"->"30min"; else->"1H" }
 
     fun contracts(exchange: String): List<String> {
         val out = mutableListOf<String>()
@@ -92,20 +92,20 @@ object ExchangeMarketData {
     fun candles(exchange: String, symbol: String, interval: String): List<MarketCandle> {
         val b=base(symbol)
         val url=when(exchange) {
-            "Toobit" -> { val now=System.currentTimeMillis(); val d=when(interval){"1m"->60000L;"5m"->300000L;"15m"->900000L;else->3600000L}; "https://api.toobit.com/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-d*260}&to=$now&limit=260" }
+            "Toobit" -> { val now=System.currentTimeMillis(); val d=when(interval){"1m"->60000L;"5m"->300000L;"15m"->900000L;"30m"->1800000L;else->3600000L}; "https://api.toobit.com/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-d*260}&to=$now&limit=260" }
             "Binance" -> "https://fapi.binance.com/fapi/v1/klines?symbol=${b}USDT&interval=${binanceInterval(interval)}&limit=260"
             "Bybit" -> "https://api.bybit.com/v5/market/kline?category=linear&symbol=${b}USDT&interval=${bybitInterval(interval)}&limit=260"
             "OKX" -> "https://www.okx.com/api/v5/market/candles?instId=${b}-USDT-SWAP&bar=${okxBar(interval)}&limit=300"
             "Gate.io" -> "https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=${b}_USDT&interval=$interval&limit=260"
             "Bitget" -> "https://api.bitget.com/api/v2/mix/market/candles?productType=USDT-FUTURES&symbol=${b}USDT&granularity=${bitgetGranularity(interval)}&limit=260"
             "BingX" -> "https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol=${b}-USDT&interval=$interval&limit=260"
-            "CoinEx" -> "https://api.coinex.com/v2/futures/kline?market="+b+"USDT&period="+(when(interval){"1m"->"1min";"5m"->"5min";"15m"->"15min";else->"1hour"})+"&limit=260"
-            "KuCoin Futures" -> { val g=when(interval){"1m"->1;"5m"->5;"15m"->15;else->60}; val e=System.currentTimeMillis()/1000; "https://api-futures.kucoin.com/api/v1/kline/query?symbol="+b+"USDTM&granularity="+g+"&from="+(e-g*60*260)+"&to="+e }
-            "MEXC Futures" -> "https://contract.mexc.com/api/v1/contract/kline/"+b+"_USDT?interval="+(when(interval){"1m"->"Min1";"5m"->"Min5";"15m"->"Min15";else->"Min60"})+"&limit=260"
-            "HTX Futures" -> "https://api.hbdm.com/linear-swap-ex/market/history/kline?contract_code="+b+"-USDT&period="+(when(interval){"1m"->"1min";"5m"->"5min";"15m"->"15min";else->"60min"})+"&size=260"
+            "CoinEx" -> "https://api.coinex.com/v2/futures/kline?market="+b+"USDT&period="+(when(interval){"1m"->"1min";"5m"->"5min";"15m"->"15min";"30m"->"30min";else->"1hour"})+"&limit=260"
+            "KuCoin Futures" -> { val g=when(interval){"1m"->1;"5m"->5;"15m"->15;"30m"->30;else->60}; val e=System.currentTimeMillis()/1000; "https://api-futures.kucoin.com/api/v1/kline/query?symbol="+b+"USDTM&granularity="+g+"&from="+(e-g*60*260)+"&to="+e }
+            "MEXC Futures" -> "https://contract.mexc.com/api/v1/contract/kline/"+b+"_USDT?interval="+(when(interval){"1m"->"Min1";"5m"->"Min5";"15m"->"Min15";"30m"->"Min30";else->"Min60"})+"&limit=260"
+            "HTX Futures" -> "https://api.hbdm.com/linear-swap-ex/market/history/kline?contract_code="+b+"-USDT&period="+(when(interval){"1m"->"1min";"5m"->"5min";"15m"->"15min";"30m"->"30min";else->"60min"})+"&size=260"
 
             "Bitunix Futures" -> "https://fapi.bitunix.com/api/v1/futures/market/kline?symbol="+b+"USDT&interval="+interval+"&limit=200"
-            "WEEX Futures" -> "https://api-contract.weex.com/capi/v3/market/klines?symbol="+b+"USDT&granularity="+(when(interval){"1m"->"1m";"5m"->"5m";"15m"->"15m";else->"1H"})+"&limit=200"
+            "WEEX Futures" -> "https://api-contract.weex.com/capi/v3/market/klines?symbol="+b+"USDT&granularity="+(when(interval){"1m"->"1m";"5m"->"5m";"15m"->"15m";"30m"->"30m";else->"1H"})+"&limit=200"
             else -> throw IllegalArgumentException("صرافی پشتیبانی نمی‌شود: $exchange")
         }
         val root=JSONObjectOrArray(get(url))
@@ -149,7 +149,7 @@ object ExchangeMarketData {
         return result
     }
 
-    fun lastPrice(exchange:String,symbol:String):Double = candles(exchange,symbol,"1m").last().close
+    fun lastPrice(exchange:String,symbol:String):Double = candles(exchange,symbol,"5m").last().close
 
     private fun JSONObjectOrArray(body:String):Any {
         val t=body.trim()
