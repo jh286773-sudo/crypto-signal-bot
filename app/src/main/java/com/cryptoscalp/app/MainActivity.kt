@@ -162,6 +162,18 @@ class MainActivity : Activity() {
         }
         heroHeader.addView(livePill)
         hero.addView(heroHeader)
+        // Resolution-independent premium robot artwork; rendered sharply at device density.
+        val robotArt = ImageView(this).apply {
+            setImageResource(R.drawable.aurum_robot_hero)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "AURUM X premium black and gold trading robot"
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+            adjustViewBounds = true
+            elevation = dp(7).toFloat()
+        }
+        hero.addView(robotArt, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(236)).apply {
+            topMargin = dp(6); bottomMargin = dp(3)
+        })
         val sourceLine = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
