@@ -206,6 +206,8 @@ class MainActivity : Activity() {
             "BingX" -> "bingx.com"
             "HTX", "HTX Futures" -> "htx.com"
             "CoinEx" -> "coinex.com"
+            "Bitunix Futures" -> "bitunix.com"
+            "WEEX Futures" -> "weex.com"
             "Kraken" -> "kraken.com"
             "Coinbase" -> "coinbase.com"
             else -> return ""
