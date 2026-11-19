@@ -53,7 +53,9 @@ class MainActivity : Activity() {
         if (!prefs.getBoolean("manual_selection_initialized", false)) {
             prefs.edit().remove("selected_symbols").putBoolean("manual_selection_initialized", true).apply()
         }
-        selectedExchanges.clear(); selectedExchanges.addAll(prefs.getStringSet("selected_exchanges", setOf("Toobit")) ?: setOf("Toobit"))
+        selectedExchanges.clear()
+        val savedExchanges = prefs.getStringSet("selected_exchanges", setOf("Toobit")) ?: setOf("Toobit")
+        selectedExchanges.add(savedExchanges.firstOrNull() ?: "Toobit")
         val saved = prefs.getStringSet("selected_symbols", null)
         if (saved != null) { selectedSymbols.clear(); selectedSymbols.addAll(saved) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -108,8 +110,8 @@ class MainActivity : Activity() {
         root.addView(marketCard, marginParams(bottom = 14))
 
         val exchangeCard = card()
-        exchangeCard.addView(text("انتخاب صرافی‌ها", 16, Color.WHITE, true))
-        exchangeCard.addView(text("می‌توانی چند صرافی را انتخاب کنی", 12, muted))
+        exchangeCard.addView(text("انتخاب صرافی", 16, Color.WHITE, true))
+        exchangeCard.addView(text("فقط یک صرافی برای دریافت داده و تحلیل انتخاب کن", 12, muted))
         exchangePickerButton = Button(this).apply {
             textSize = 14f; setTextColor(ink); background = rounded(gold, goldLight, 14)
             elevation = 6f; setPadding(dp(12), dp(8), dp(12), dp(8))
@@ -208,39 +210,100 @@ class MainActivity : Activity() {
 
     private fun updateExchangeButton() {
         if (!::exchangePickerButton.isInitialized) return
-        exchangePickerButton.text = if (selectedExchanges.isEmpty()) "انتخاب صرافی‌ها" else "صرافی‌ها • ${selectedExchanges.size} انتخاب: " + selectedExchanges.joinToString("، ")
+        val selected = selectedExchanges.firstOrNull()
+        exchangePickerButton.text = if (selected == null) "انتخاب صرافی" else "صرافی فعال • $selected"
+    }
+
+    private fun exchangeMark(name: String): String = when (name) {
+        "Binance" -> "B"
+        "Bybit" -> "BY"
+        "Toobit" -> "T"
+        "OKX" -> "OK"
+        "KuCoin" -> "K"
+        "Gate.io" -> "G"
+        "Bitget" -> "BG"
+        "MEXC" -> "M"
+        "BingX" -> "X"
+        "HTX" -> "H"
+        "Kraken" -> "K"
+        "Coinbase" -> "C"
+        else -> name.take(2).uppercase()
     }
 
     private fun showExchangePicker() {
-        val panelView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(14), dp(18), dp(14)); background = rounded(ink, gold, 20) }
-        panelView.addView(text("انتخاب صرافی‌ها", 19, goldLight, true))
-        val search = EditText(this).apply {
-            hint = "جستجوی صرافی…"; setSingleLine(true); textSize = 14f
-            setTextColor(Color.WHITE); setHintTextColor(muted); background = rounded(panel, gold, 12)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+        val panelView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            background = rounded(ink, gold, 20)
         }
-        panelView.addView(search, marginParams(bottom = 8))
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        heading.addView(text("▣", 24, gold, true))
+        heading.addView(text("  انتخاب صرافی", 20, goldLight, true),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val close = TextView(this).apply {
+            text = "✕"; textSize = 22f; gravity = Gravity.CENTER
+            setTextColor(goldLight); background = rounded(panel, gold, 30)
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+        }
+        heading.addView(close)
+        panelView.addView(heading)
+        val search = EditText(this).apply {
+            hint = "⌕  جستجوی صرافی…"; setSingleLine(true); textSize = 14f
+            setTextColor(Color.WHITE); setHintTextColor(muted); background = rounded(panel, gold, 16)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        panelView.addView(search, marginParams(top = 14, bottom = 10))
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        panelView.addView(ScrollView(this).apply { addView(list); layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.heightPixels * .45).toInt()) })
-        fun render(q: String) {
+        val scroll = ScrollView(this).apply {
+            addView(list)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                (resources.displayMetrics.heightPixels * .43).toInt())
+        }
+        panelView.addView(scroll)
+        var pendingSelection = selectedExchanges.firstOrNull() ?: "Toobit"
+
+        fun render(query: String) {
             list.removeAllViews()
-            exchanges.filter { it.contains(q.trim(), true) }.forEach { name ->
-                val chosen = selectedExchanges.contains(name)
-                val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = rounded(if (chosen) Color.rgb(38,34,22) else panel, gold, 12) }
-                row.addView(text(name, 15, Color.WHITE, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                val dot = TextView(this).apply {
-                    text = ""; background = android.graphics.drawable.GradientDrawable().apply {
+            exchanges.filter { it.contains(query.trim(), true) }.forEach { name ->
+                val chosen = pendingSelection == name
+                val row = LinearLayout(this).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(9), dp(12), dp(9))
+                    background = rounded(if (chosen) Color.rgb(38, 34, 22) else panel,
+                        if (chosen) gold else Color.rgb(83, 70, 42), 16)
+                }
+                val mark = TextView(this).apply {
+                    text = exchangeMark(name); textSize = 13f; gravity = Gravity.CENTER
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(if (chosen) ink else goldLight)
+                    background = android.graphics.drawable.GradientDrawable().apply {
                         shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(if (chosen) gold else Color.TRANSPARENT); setStroke(dp(2), gold)
-                    }; layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+                        setColor(if (chosen) gold else Color.rgb(12, 13, 16))
+                        setStroke(dp(1), gold)
+                    }
+                    layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(14) }
                 }
-                row.addView(dot)
+                row.addView(mark)
+                row.addView(text(name, 16, Color.WHITE, true),
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                val radio = TextView(this).apply {
+                    text = ""
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(if (chosen) gold else Color.TRANSPARENT)
+                        setStroke(dp(2), gold)
+                    }
+                    layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+                }
+                row.addView(radio)
                 row.setOnClickListener {
-                    if (selectedExchanges.contains(name)) selectedExchanges.remove(name) else selectedExchanges.add(name)
-                    getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_exchanges", selectedExchanges.toSet()).apply()
-                    render(search.text.toString()); updateExchangeButton()
+                    pendingSelection = name
+                    render(search.text.toString())
                 }
-                list.addView(row, marginParams(bottom = 6))
+                list.addView(row, marginParams(bottom = 7))
             }
         }
         render("")
@@ -249,7 +312,34 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = render(s?.toString().orEmpty())
             override fun afterTextChanged(s: Editable?) {}
         })
-        AlertDialog.Builder(this).setView(panelView).setPositiveButton("بستن", null).show().window?.setBackgroundDrawableResource(android.R.color.transparent)
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val cancel = Button(this).apply {
+            text = "انصراف"; textSize = 13f; setTextColor(goldLight)
+            background = rounded(panel, gold, 14)
+        }
+        val confirm = Button(this).apply {
+            text = "✓  تأیید انتخاب"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD
+            setTextColor(ink); background = rounded(gold, goldLight, 14)
+        }
+        footer.addView(cancel, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+        footer.addView(confirm, LinearLayout.LayoutParams(0, dp(48), 1f))
+        panelView.addView(footer, marginParams(top = 14))
+        val dialog = AlertDialog.Builder(this).setView(panelView).create()
+        close.setOnClickListener { dialog.dismiss() }
+        cancel.setOnClickListener { dialog.dismiss() }
+        confirm.setOnClickListener {
+            selectedExchanges.clear()
+            selectedExchanges.add(pendingSelection)
+            getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit()
+                .putStringSet("selected_exchanges", selectedExchanges.toSet()).apply()
+            updateExchangeButton()
+            dialog.dismiss()
+        }
+        dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
     }
 
     private fun showCoinPicker() {
