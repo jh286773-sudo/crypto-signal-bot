@@ -66,13 +66,15 @@ object ExchangeMarketData {
         for (i in 0 until rows.length()) {
             val row = rows.optJSONObject(i) ?: continue
             try {
+                val candleTime = row.optLong("time", row.optLong("curId", 0L))
+                if (candleTime <= 0L || candleTime + duration > now) continue
                 val open = row.optString("open").toDouble()
                 val high = row.optString("high").toDouble()
                 val low = row.optString("low").toDouble()
                 val close = row.optString("close").toDouble()
                 val volume = row.optString("volume").toDoubleOrNull() ?: 0.0
                 if (open > 0.0 && high > 0.0 && low > 0.0 && close > 0.0) {
-                    result.add(MarketCandle(open, high, low, close, volume))
+                    result.add(MarketCandle(open, high, low, close, volume, candleTime))
                 }
             } catch (_: Exception) {
                 // Ignore malformed rows without discarding otherwise valid candles.
@@ -84,6 +86,18 @@ object ExchangeMarketData {
         return result
     }
 
-    fun lastPrice(exchange: String, symbol: String): Double =
-        candles(exchange, symbol, "5m").last().close
+    /** Latest traded futures price; used for 60-second risk checks, not candle-close analysis. */
+    fun lastPrice(exchange: String, symbol: String): Double {
+        require(exchange == "Toobit") { "فقط صرافی توبیت پشتیبانی می‌شود." }
+        require(symbol.endsWith("-SWAP-USDT")) { "نماد قرارداد توبیت نامعتبر است: $symbol" }
+        val root = JSONArray(get("https://api.toobit.com/quote/v1/contract/ticker/price?symbol=$symbol"))
+        for (i in 0 until root.length()) {
+            val row = root.optJSONObject(i) ?: continue
+            if (row.optString("s") == symbol) {
+                val price = row.optString("p").toDoubleOrNull() ?: 0.0
+                if (price > 0.0) return price
+            }
+        }
+        throw IllegalStateException("قیمت لحظه‌ای $symbol از توبیت دریافت نشد.")
+    }
 }
