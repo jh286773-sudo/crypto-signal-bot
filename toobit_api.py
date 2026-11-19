@@ -8,7 +8,7 @@ class ToobitAPI:
     INTERVALS = {
         "5m": 5 * 60 * 1000,
         "15m": 15 * 60 * 1000,
-        "1h": 60 * 60 * 1000,
+        "30m": 30 * 60 * 1000,
     }
 
     def __init__(self):
@@ -103,7 +103,7 @@ class ToobitAPI:
         return {
             "5m": self.get_klines(symbol, "5m", 200),
             "15m": self.get_klines(symbol, "15m", 200),
-            "1h": self.get_klines(symbol, "1h", 200),
+            "30m": self.get_klines(symbol, "30m", 200),
         }
 
 
