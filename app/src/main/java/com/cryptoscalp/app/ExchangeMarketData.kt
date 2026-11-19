@@ -7,7 +7,7 @@ import java.net.URL
 
 /** Public USDT perpetual market-data adapters. Symbols are stored internally as BASE-SWAP-USDT. */
 object ExchangeMarketData {
-    val supported = listOf("Toobit", "Binance", "Bybit", "OKX", "Gate.io", "Bitget", "BingX", "CoinEx", "KuCoin Futures", "MEXC Futures", "HTX Futures")
+    val supported = listOf("Toobit", "Binance", "Bybit", "OKX", "Gate.io", "Bitget", "BingX", "CoinEx", "KuCoin Futures", "MEXC Futures", "HTX Futures", "Bitunix Futures", "WEEX Futures")
 
     private fun get(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -76,6 +76,15 @@ object ExchangeMarketData {
             "HTX Futures" -> {
                 val a=JSONObject(get("https://api.hbdm.com/linear-swap-api/v1/swap_contract_info")).optJSONArray("data") ?: JSONArray()
                 for(i in 0 until a.length()) { val o=a.getJSONObject(i); if(o.optString("contract_status")=="1" && o.optString("contract_code").endsWith("-USDT")) out.add(o.optString("symbol")+"-SWAP-USDT") }
+
+            "Bitunix Futures" -> {
+                val a=JSONObject(get("https://fapi.bitunix.com/api/v1/futures/market/trading_pairs")).optJSONArray("data") ?: JSONArray()
+                for(i in 0 until a.length()) { val o=a.getJSONObject(i); if(o.optString("quote")=="USDT" && o.optString("symbolStatus")=="OPEN") out.add(o.optString("base")+"-SWAP-USDT") }
+            }
+            "WEEX Futures" -> {
+                val a=JSONObject(get("https://api-contract.weex.com/capi/v3/market/exchangeInfo?contractType=PERPETUAL")).optJSONArray("symbols") ?: JSONArray()
+                for(i in 0 until a.length()) { val o=a.getJSONObject(i); val sym=o.optString("symbol"); if(sym.endsWith("USDT") && (o.optString("status").isBlank() || o.optString("status")=="TRADING")) out.add(sym.removeSuffix("USDT")+"-SWAP-USDT") }
+            }
             }
         }
         return out.distinct().sorted()
@@ -95,6 +104,9 @@ object ExchangeMarketData {
             "KuCoin Futures" -> { val g=when(interval){"1m"->1;"5m"->5;"15m"->15;else->60}; val e=System.currentTimeMillis()/1000; "https://api-futures.kucoin.com/api/v1/kline/query?symbol="+b+"USDTM&granularity="+g+"&from="+(e-g*60*260)+"&to="+e }
             "MEXC Futures" -> "https://contract.mexc.com/api/v1/contract/kline/"+b+"_USDT?interval="+(when(interval){"1m"->"Min1";"5m"->"Min5";"15m"->"Min15";else->"Min60"})+"&limit=260"
             "HTX Futures" -> "https://api.hbdm.com/linear-swap-ex/market/history/kline?contract_code="+b+"-USDT&period="+(when(interval){"1m"->"1min";"5m"->"5min";"15m"->"15min";else->"60min"})+"&size=260"
+
+            "Bitunix Futures" -> "https://fapi.bitunix.com/api/v1/futures/market/kline?symbol="+b+"USDT&interval="+interval+"&limit=200"
+            "WEEX Futures" -> "https://api-contract.weex.com/capi/v3/market/klines?symbol="+b+"USDT&granularity="+(when(interval){"1m"->"1m";"5m"->"5m";"15m"->"15m";else->"1H"})+"&limit=200"
             else -> throw IllegalArgumentException("صرافی پشتیبانی نمی‌شود: $exchange")
         }
         val root=JSONObjectOrArray(get(url))
@@ -107,7 +119,7 @@ object ExchangeMarketData {
             "CoinEx" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             "KuCoin Futures" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             "MEXC Futures" -> (root as JSONObject).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
-            "HTX Futures" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
+            "HTX Futures","Bitunix Futures","WEEX Futures" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             else -> JSONArray()
         }
         val result=mutableListOf<MarketCandle>()
@@ -124,6 +136,8 @@ object ExchangeMarketData {
                     "KuCoin Futures" -> { val a=row as JSONArray; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(5)) }
                     "MEXC Futures" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("vol")) }
                     "HTX Futures" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("vol")) }
+                    "Bitunix Futures" -> { val o=row as JSONObject; listOf(o.optString("open"),o.optString("high"),o.optString("low"),o.optString("close"),o.optString("baseVol")) }
+                    "WEEX Futures" -> { val a=row as JSONArray; listOf(a.optString(1),a.optString(2),a.optString(3),a.optString(4),a.optString(5)) }
                     else -> emptyList()
                 }
                 val o=values[0].toDouble(); val h=values[1].toDouble(); val l=values[2].toDouble(); val c=values[3].toDouble(); val v=values[4].toDoubleOrNull()?:0.0
@@ -132,7 +146,7 @@ object ExchangeMarketData {
         }
         if(result.size<60) throw IllegalStateException("$exchange: کندل کافی دریافت نشد (${result.size})")
         // Bybit, OKX and Bitget return newest-first candles; the strategy expects oldest-first.
-        if(exchange=="Bybit" || exchange=="OKX" || exchange=="Bitget" || exchange=="BingX" || exchange=="KuCoin Futures") result.reverse()
+        if(exchange=="Bybit" || exchange=="OKX" || exchange=="Bitget" || exchange=="BingX" || exchange=="KuCoin Futures" || exchange=="WEEX Futures") result.reverse()
         return result
     }
 
