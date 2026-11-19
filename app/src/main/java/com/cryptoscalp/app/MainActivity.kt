@@ -227,7 +227,7 @@ class MainActivity : Activity() {
     private fun marketCandles(symbol: String, interval: String): List<MarketCandle> {
         val now = System.currentTimeMillis()
         val duration = when (interval) { "1m" -> 60000L; "5m" -> 300000L; "15m" -> 900000L; else -> 3600000L }
-        val json = getJson("/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*160}&to=$now&limit=160")
+        val json = getJson("/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*260}&to=$now&limit=260")
         val data = json.optJSONArray("data") ?: JSONArray()
         val out = mutableListOf<MarketCandle>()
         for (i in 0 until data.length()) {
@@ -246,7 +246,7 @@ class MainActivity : Activity() {
     private fun candles(symbol: String, interval: String): List<Double> {
         val now = System.currentTimeMillis()
         val duration = when (interval) { "1m" -> 60000L; "5m" -> 300000L; "15m" -> 900000L; else -> 3600000L }
-        val url = "/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*160}&to=$now&limit=160"
+        val url = "/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*260}&to=$now&limit=260"
         val json = getJson(url)
         val data = json.optJSONArray("data") ?: JSONArray()
         val closes = mutableListOf<Double>()
