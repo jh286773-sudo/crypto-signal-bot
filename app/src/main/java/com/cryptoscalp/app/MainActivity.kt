@@ -41,6 +41,8 @@ class MainActivity : Activity() {
     private var coinAdapter: CoinListAdapter? = null
     private val logoExecutor = Executors.newFixedThreadPool(4)
     private val failedLogoUrls = Collections.synchronizedSet(mutableSetOf<String>())
+    private val logoRequests = Collections.synchronizedSet(mutableSetOf<String>())
+    private val fallbackLogoCache = mutableMapOf<String, android.graphics.Bitmap>()
     private val symbols = mutableListOf<String>()
     private val selectedSymbols = linkedSetOf<String>()
     private val channelId = "scalp_signals"
@@ -734,6 +736,7 @@ class MainActivity : Activity() {
         val label = symbol.substringBefore("-").take(4).uppercase().ifBlank { "?" }
         val palette = intArrayOf(Color.rgb(188, 145, 42), Color.rgb(45, 105, 155), Color.rgb(42, 135, 105), Color.rgb(125, 78, 150), Color.rgb(170, 82, 65))
         val base = palette[(label.hashCode() and 0x7fffffff) % palette.size]
+        synchronized(fallbackLogoCache) { fallbackLogoCache["$label@$sizePx"] }?.let { return it }
         val bitmap = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bitmap)
         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
@@ -756,6 +759,10 @@ class MainActivity : Activity() {
         val y = cy - (paint.descent() + paint.ascent()) / 2f
         canvas.drawText(label, cx, y, paint)
         paint.clearShadowLayer()
+        synchronized(fallbackLogoCache) {
+            fallbackLogoCache["$label@$sizePx"] = bitmap
+            while (fallbackLogoCache.size > 96) fallbackLogoCache.remove(fallbackLogoCache.keys.first())
+        }
         return bitmap
     }
 
@@ -768,7 +775,7 @@ class MainActivity : Activity() {
             view.setImageBitmap(it)
             return
         }
-        if (failedLogoUrls.contains(imageUrl)) return
+        if (failedLogoUrls.contains(imageUrl) || !logoRequests.add(imageUrl)) return
         logoExecutor.execute {
             var connection: HttpURLConnection? = null
             try {
@@ -797,6 +804,7 @@ class MainActivity : Activity() {
                 failedLogoUrls.add(imageUrl)
             } finally {
                 connection?.disconnect()
+                logoRequests.remove(imageUrl)
             }
         }
     }
@@ -979,7 +987,12 @@ class MainActivity : Activity() {
                 row = LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(12), dp(5), dp(10), dp(5))
+                    setPadding(dp(12), dp(7), dp(10), dp(7))
+                    minimumHeight = dp(62)
+                    isFocusable = true
+                    clipToOutline = true
+                    elevation = dp(3).toFloat()
+                    stateListAnimator = null
                 }
                 val logo = logoView(38)
                 row.addView(logo)
@@ -1012,8 +1025,19 @@ class MainActivity : Activity() {
                 setColor(if (selected) gold else Color.TRANSPARENT)
                 setStroke(dp(2), gold)
             }
-            row.background = rounded(if (selected) Color.rgb(38, 34, 22) else panel,
-                if (selected) gold else Color.rgb(100, 91, 70), 14)
+            val rowFill = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                if (selected) intArrayOf(Color.rgb(83, 65, 30), Color.rgb(37, 32, 23), Color.rgb(20, 21, 24))
+                else intArrayOf(Color.rgb(39, 39, 37), Color.rgb(20, 22, 26), Color.rgb(12, 14, 18))
+            ).apply {
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), if (selected) Color.rgb(218, 176, 75) else Color.rgb(75, 69, 55))
+            }
+            row.background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.argb(45, 245, 210, 125)), rowFill, null
+            )
+            row.elevation = if (selected) dp(5).toFloat() else dp(2).toFloat()
+            row.translationZ = if (selected) dp(1).toFloat() else 0f
             loadLogo(holder.logo, coinLogoUrl(base), base)
             return row
         }
