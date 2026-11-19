@@ -88,7 +88,7 @@ class MainActivity : Activity() {
             setPadding(dp(2), dp(4), dp(2), dp(18))
         }
         val mark = TextView(this).apply {
-            text = "♛\\nAX"
+            text = "♛\nAX"
             textSize = 17f
             typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
             setTextColor(Color.rgb(20, 16, 8))
