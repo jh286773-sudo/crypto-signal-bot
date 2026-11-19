@@ -36,14 +36,12 @@ class MainActivity : Activity() {
     private lateinit var result: TextView
     private lateinit var coinPickerButton: Button
     private lateinit var exchangePickerButton: Button
-    private val exchanges = listOf("Toobit", "Binance", "Bybit", "OKX", "KuCoin", "Gate.io", "Bitget", "MEXC", "BingX", "HTX", "Kraken", "Coinbase")
+    private val exchanges = ExchangeMarketData.supported
     private val selectedExchanges = linkedSetOf("Toobit")
     private var coinChoices: LinearLayout? = null
     private val symbols = mutableListOf<String>()
     private val selectedSymbols = linkedSetOf<String>()
     private val checkboxes = mutableMapOf<String, CheckBox>()
-    private val lastSignals = mutableMapOf<String, String>()
-    private var busy = false
     private val channelId = "scalp_signals"
     private val logoCache = mutableMapOf<String, android.graphics.Bitmap>()
 
@@ -138,28 +136,10 @@ class MainActivity : Activity() {
         coinPickerButton.setOnClickListener { showCoinPicker() }
         root.addView(selectCard, marginParams(bottom = 14))
 
-        val actionCard = card()
-        actionCard.addView(text("موتور تحلیل", 16, Color.WHITE, true))
-        actionCard.addView(text("۱۰ ابزار تحلیلی • چند تایم‌فریم • اسمارت‌مانی", 12, muted))
-        val refresh = Button(this).apply {
-            text = "✦  شروع تحلیل بازار"
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(35, 27, 8))
-            background = rounded(goldLight, gold, 20)
-            elevation = 12f
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-        }
-        actionCard.addView(refresh, marginParams(top = 14))
-        refresh.setOnClickListener { refresh() }
-        root.addView(actionCard, marginParams(bottom = 14))
-
-        val resultCard = card()
-        resultCard.addView(text("سیگنال‌ها و نقاط معاملاتی", 16, goldLight, true))
-        result = text("هنوز گزارشی ثبت نشده است. ارزهای موردنظر را انتخاب و تحلیل را شروع کن.", 14, Color.WHITE)
-        result.setPadding(0, dp(12), 0, dp(4))
-        resultCard.addView(result)
-        root.addView(resultCard, marginParams(bottom = 14))
+        val monitorCard = card()
+        monitorCard.addView(text("موتور پایش خودکار", 16, Color.WHITE, true))
+        monitorCard.addView(text("تحلیل پیوسته در پس‌زمینه • ۱۰ ابزار تحلیلی • اسمارت‌مانی • اعلان ورود و خروج", 12, muted))
+        root.addView(monitorCard, marginParams(bottom = 14))
 
         val disclaimer = text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. سطوح قیمتی تخمینی‌اند و سود تضمین‌شده نیست.", 11, muted)
         disclaimer.gravity = Gravity.CENTER
@@ -488,10 +468,10 @@ class MainActivity : Activity() {
                     }
                     prefs.edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
                     renderSelectedChoices()
-                    status.text = if (selectedSymbols.isEmpty()) "فهرست قراردادها آماده است؛ برای شروع، ارزها را دستی انتخاب کن." else "اتصال برقرار • ${ordered.size} قرارداد فعال؛ ${selectedSymbols.size} ارز با انتخاب دستی"
+                    status.text = if (selectedSymbols.isEmpty()) "$exchange متصل شد • ${ordered.size} قرارداد؛ ارزها را دستی انتخاب کن." else "$exchange متصل است • ${ordered.size} قرارداد؛ پایش خودکار ${selectedSymbols.size} ارز"
                 }
             } catch (e: Exception) {
-                runOnUiThread { status.text = "خطای دریافت فهرست قراردادها: ${e.message}" }
+                runOnUiThread { status.text = "خطای اتصال به ${selectedExchanges.firstOrNull()}: ${e.message}" }
             }
         }
     }
@@ -552,125 +532,6 @@ class MainActivity : Activity() {
         val names = selectedSymbols.map { it.removeSuffix("-SWAP-USDT") }
         coinPickerButton.text = if (count == 0) "انتخاب ارزها (هیچ ارزی انتخاب نشده)" else "انتخاب ارزها • $count انتخاب‌شده: " + names.take(5).joinToString("، ") + if (count > 5) " و ${count - 5} ارز دیگر" else ""
     }
-    private fun refresh() {
-        if (busy) return
-        busy = true
-        val chosen = selectedSymbols.toList()
-        if (chosen.isEmpty()) {
-            status.text = "حداقل یک ارز را تیک بزن."
-            return
-        }
-        status.text = "در حال تحلیل ${chosen.size} ارز انتخاب‌شده …"
-        thread {
-            val reports = mutableListOf<String>()
-            var completed = 0
-            for (symbol in chosen) {
-                try {
-                    val one = marketCandles(symbol, "1m")
-                    val five = marketCandles(symbol, "5m")
-                    val fifteen = marketCandles(symbol, "15m")
-                    val hour = marketCandles(symbol, "1h")
-                    val signal = TradingStrategy.evaluate(one, five, fifteen, hour)
-                    val detail = "جهت: ${signal.signal}\\nورود: ${fmt(signal.entry)}\\nحد ضرر: ${fmt(signal.stop)}\\nحد سود ۱: ${fmt(signal.target1)}\\nحد سود ۲: ${fmt(signal.target2)}\\nامتیاز: ${signal.score}\\nاندیکاتورها: ${signal.reasons.joinToString("، ")}\\nاسمارت‌مانی: ${signal.smc.joinToString("، ")}"
-                    reports.add("【$symbol】\\n$detail")
-                    val previous = lastSignals[symbol]
-                    if (signal.signal != "WAIT" && signal.signal != previous) notifySignal(symbol, signal.signal, detail)
-                    lastSignals[symbol] = signal.signal
-                    completed++
-                } catch (e: Exception) {
-                    reports.add("【$symbol】\\nخطا در تحلیل: ${e.message}")
-                }
-            }
-            runOnUiThread {
-                status.text = "پایان تحلیل: $completed از ${chosen.size} ارز"
-                result.text = reports.joinToString("\\n\\n--------------------\\n\\n")
-                busy = false
-            }
-        }
-    }
-
-    private fun marketCandles(symbol: String, interval: String): List<MarketCandle> {
-        val now = System.currentTimeMillis()
-        val duration = when (interval) { "1m" -> 60000L; "5m" -> 300000L; "15m" -> 900000L; else -> 3600000L }
-        val json = getJson("/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*260}&to=$now&limit=260")
-        val data = json.optJSONArray("data") ?: JSONArray()
-        val out = mutableListOf<MarketCandle>()
-        for (i in 0 until data.length()) {
-            val row = data.getJSONObject(i)
-            val o = row.optString("open").toDoubleOrNull() ?: continue
-            val h = row.optString("high").toDoubleOrNull() ?: continue
-            val l = row.optString("low").toDoubleOrNull() ?: continue
-            val c = row.optString("close").toDoubleOrNull() ?: continue
-            val v = row.optString("volume").toDoubleOrNull() ?: 0.0
-            if (o > 0 && h > 0 && l > 0 && c > 0) out.add(MarketCandle(o,h,l,c,v))
-        }
-        if (out.size < 60) throw IllegalStateException("کندل OHLC کافی نیست")
-        return out
-    }
-
-    private fun candles(symbol: String, interval: String): List<Double> {
-        val now = System.currentTimeMillis()
-        val duration = when (interval) { "1m" -> 60000L; "5m" -> 300000L; "15m" -> 900000L; else -> 3600000L }
-        val url = "/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*260}&to=$now&limit=260"
-        val json = getJson(url)
-        val data = json.optJSONArray("data") ?: JSONArray()
-        val closes = mutableListOf<Double>()
-        for (i in 0 until data.length()) {
-            val row = data.getJSONObject(i)
-            val c = row.optString("close").toDoubleOrNull()
-            if (c != null && c > 0) closes.add(c)
-        }
-        if (closes.size < 60) throw IllegalStateException("کندل کافی برای $interval دریافت نشد")
-        return closes
-    }
-
-    private fun getJson(path: String): JSONObject {
-        val conn = (URL("https://api.toobit.com$path").openConnection() as HttpURLConnection)
-        conn.connectTimeout = 12000; conn.readTimeout = 15000; conn.requestMethod = "GET"
-        try {
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            return JSONObject(body)
-        } finally { conn.disconnect() }
-    }
-
-    private fun ema(values: List<Double>, period: Int): Double {
-        val k = 2.0 / (period + 1)
-        var value = values.take(period).average()
-        for (v in values.drop(period)) value = v * k + value * (1-k)
-        return value
-    }
-
-    private fun rsi(values: List<Double>): Double {
-        val changes = values.takeLast(15).zipWithNext { a, b -> b-a }
-        val gain = changes.filter { it > 0 }.sum() / 14.0
-        val loss = -changes.filter { it < 0 }.sum() / 14.0
-        if (loss == 0.0) return 100.0
-        return 100 - 100/(1 + gain/loss)
-    }
-
-    private fun atrProxy(values: List<Double>): Double {
-        val diffs = values.takeLast(15).zipWithNext { a, b -> abs(b-a) }
-        return diffs.average() * 1.8
-    }
-
-    private fun analyze(one: List<Double>, five: List<Double>, fifteen: List<Double>, hour: List<Double>): Pair<String, String> {
-        val price = one.last()
-        val up1h = ema(hour,9) > ema(hour,21) && ema(hour,21) > ema(hour,50)
-        val dn1h = ema(hour,9) < ema(hour,21) && ema(hour,21) < ema(hour,50)
-        val up15 = ema(fifteen,9) > ema(fifteen,21) && ema(fifteen,21) > ema(fifteen,50)
-        val dn15 = ema(fifteen,9) < ema(fifteen,21) && ema(fifteen,21) < ema(fifteen,50)
-        val up5 = ema(five,9) > ema(five,21) && rsi(five) > 52
-        val dn5 = ema(five,9) < ema(five,21) && rsi(five) < 48
-        val signal = when { up1h && up15 && up5 -> "LONG"; dn1h && dn15 && dn5 -> "SHORT"; else -> "WAIT" }
-        val atr = max(atrProxy(five), price*0.0005)
-        val stop = if (signal == "LONG") price-1.5*atr else price+1.5*atr
-        val tp1 = if (signal == "LONG") price+1.5*atr else price-1.5*atr
-        val tp2 = if (signal == "LONG") price+2.5*atr else price-2.5*atr
-        val direction = if (signal == "LONG") "لانگ" else if (signal == "SHORT") "شورت" else "بدون ورود"
-        val details = "وضعیت: $direction\n\nقیمت مرجع ورود: ${fmt(price)}\nحد ضرر: ${fmt(stop)}\nحد سود ۱: ${fmt(tp1)}\nحد سود ۲: ${fmt(tp2)}\n\nتأیید روند ۱ساعته: ${if(up1h) "صعودی" else if(dn1h) "نزولی" else "خنثی"}\nتأیید روند ۱۵دقیقه: ${if(up15) "صعودی" else if(dn15) "نزولی" else "خنثی"}\nتأیید ورود ۵دقیقه: ${if(up5) "لانگ" else if(dn5) "شورت" else "تأیید نشده"}\nRSI پنج‌دقیقه: ${"%.1f".format(rsi(five))}\n\nخروج: با برخورد به حد سود/ضرر یا صدور سیگنال معکوس؛ قیمت‌ها تضمینی نیستند."
-        return Pair(signal, details)
-    }
-
     private fun fmt(v: Double) = if (v >= 100) "%.2f".format(v) else if (v >= 1) "%.4f".format(v) else "%.7f".format(v)
 
     private fun createChannel() {
