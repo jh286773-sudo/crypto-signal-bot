@@ -62,7 +62,7 @@ object ExchangeMarketData {
                 for(i in 0 until a.length()) { val sym=a.getJSONObject(i).optString("symbol"); if(sym.endsWith("-USDT")) out.add("${sym.removeSuffix("-USDT")}-SWAP-USDT") }
             }
             "CoinEx" -> {
-                val a=JSONObject(get("https://api.coinex.com/v2/futures/market")).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
+                val a=JSONObject(get("https://api.coinex.com/v2/futures/market")).optJSONArray("data") ?: JSONArray()
                 for(i in 0 until a.length()) { val o=a.getJSONObject(i); val sym=o.optString("market"); if(sym.endsWith("USDT")) out.add(sym.removeSuffix("USDT")+"-SWAP-USDT") }
             }
             "KuCoin Futures" -> {
