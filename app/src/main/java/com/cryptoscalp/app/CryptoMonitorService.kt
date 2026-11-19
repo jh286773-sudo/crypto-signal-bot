@@ -76,7 +76,11 @@ class CryptoMonitorService : Service() {
                 // Run the multi-timeframe strategy only once for each newly closed 5m slot.
                 val key="last_analysis_bucket_$symbol"
                 val previousBucket=prefs.getLong(key,-1L)
-                if(previousBucket!=fiveMinuteBucket){
+                val insideCloseWindow=(now%300_000L)<70_000L
+                if(previousBucket<0L){
+                    // Establish a baseline on first launch; never analyze a still-forming candle.
+                    prefs.edit().putLong(key,fiveMinuteBucket).apply()
+                } else if(insideCloseWindow && previousBucket!=fiveMinuteBucket){
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m")
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
                     val r=TradingStrategy.evaluate(five,fifteen,thirty)
