@@ -104,7 +104,7 @@ object ExchangeMarketData {
             "Bybit" -> (root as JSONObject).optJSONObject("result")?.optJSONArray("list") ?: JSONArray()
             "Bitget" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             "BingX" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
-            "CoinEx" -> (root as JSONObject).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
+            "CoinEx" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             "KuCoin Futures" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
             "MEXC Futures" -> (root as JSONObject).optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
             "HTX Futures" -> (root as JSONObject).optJSONArray("data") ?: JSONArray()
