@@ -83,7 +83,7 @@ object ExchangeMarketData {
         if (result.size < 60) {
             throw IllegalStateException("توبیت: تعداد کندل معتبر $interval کافی نیست (${result.size}).")
         }
-        return result
+        return result.sortedBy { it.time }
     }
 
     /** Latest traded futures price; used for 60-second risk checks, not candle-close analysis. */
