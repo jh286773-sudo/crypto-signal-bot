@@ -82,9 +82,9 @@ class MainActivity : Activity() {
     }
 
     private fun showCoinPicker() {
-        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 12, 28, 8) }
-        panel.addView(text("همه قراردادهای فعال USDT", 17, Color.WHITE, true))
-        val search = EditText(this).apply { hint = "جستجوی نماد؛ مثلاً BTC یا SOL"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 12, 28, 8); setBackgroundColor(Color.WHITE) }
+        panel.addView(text("همه قراردادهای فعال USDT", 17, Color.BLACK, true))
+        val search = EditText(this).apply { hint = "جستجوی نماد؛ مثلاً BTC یا SOL"; setSingleLine(true); setTextColor(Color.BLACK); setHintTextColor(Color.GRAY) }
         panel.addView(search)
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply { addView(list); layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.heightPixels * 0.55).toInt()) }
@@ -146,13 +146,13 @@ class MainActivity : Activity() {
         val matches = symbols.filter { symbol -> val base = symbol.removeSuffix("-SWAP-USDT"); q.isEmpty() || base.contains(q) || symbol.contains(q) }
         for (symbol in matches) {
             val box = CheckBox(this).apply {
-                text = symbol.removeSuffix("-SWAP-USDT"); textSize = 16f; setTextColor(Color.WHITE)
+                text = symbol.removeSuffix("-SWAP-USDT"); textSize = 16f; setTextColor(Color.BLACK)
                 isChecked = selectedSymbols.contains(symbol)
                 setOnCheckedChangeListener { _, checked -> if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol); renderSelectedChoices() }
             }
             choices.addView(box)
         }
-        if (matches.isEmpty()) choices.addView(text("ارزی با این نماد پیدا نشد.", 14, Color.LTGRAY))
+        if (matches.isEmpty()) choices.addView(text("ارزی با این نماد پیدا نشد.", 14, Color.DKGRAY))
     }
 
     private fun renderSelectedChoices() {
