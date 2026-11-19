@@ -98,18 +98,18 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), dp(4), dp(2), dp(18))
         }
-        val mark = TextView(this).apply {
-            text = "♛\nAX"
-            textSize = 17f
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            setTextColor(Color.rgb(20, 16, 8))
-            gravity = Gravity.CENTER
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.WHITE, goldLight, gold, Color.rgb(111, 76, 17))
-            ).apply { cornerRadius = dp(17).toFloat(); setStroke(dp(1), Color.rgb(255, 235, 169)) }
+        val mark = ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher_premium)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(Color.rgb(8, 9, 12))
+                setStroke(dp(1), goldLight)
+            }
+            setPadding(dp(2), dp(2), dp(2), dp(2))
             layoutParams = LinearLayout.LayoutParams(dp(62), dp(62)).apply { marginEnd = dp(13) }
             elevation = dp(12).toFloat()
+            contentDescription = "AURUM X"
         }
         header.addView(mark)
         val brandBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -317,6 +317,41 @@ class MainActivity : Activity() {
             setBackgroundResource(R.drawable.app_background)
             addView(root)
         })
+        applyPremiumMotion(livePill)
+    }
+
+    private fun applyPremiumMotion(liveIndicator: TextView) {
+        root.post {
+            for (index in 0 until root.childCount) {
+                val child = root.getChildAt(index)
+                child.alpha = 0f
+                child.translationY = dp(14).toFloat()
+                child.animate().alpha(1f).translationY(0f)
+                    .setStartDelay((index * 55L).coerceAtMost(440L))
+                    .setDuration(420L).start()
+            }
+        }
+        android.animation.ValueAnimator.ofFloat(1f, .72f, 1f).apply {
+            duration = 1800L
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            addUpdateListener { liveIndicator.alpha = it.animatedValue as Float }
+            start()
+        }
+        fun attachPressFeedback(view: android.view.View) {
+            view.setOnTouchListener { target, event ->
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> target.animate().scaleX(.975f).scaleY(.975f).setDuration(90L).start()
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL ->
+                        target.animate().scaleX(1f).scaleY(1f).setDuration(130L).start()
+                }
+                false
+            }
+        }
+        fun visit(view: android.view.View) {
+            if (view is Button) attachPressFeedback(view)
+            if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
+        }
+        visit(root)
     }
 
     // High-resolution, density-aware metallic mascot artwork drawn natively (no blurry bitmap assets).
