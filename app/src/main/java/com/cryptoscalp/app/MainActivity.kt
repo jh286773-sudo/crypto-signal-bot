@@ -62,36 +62,116 @@ class MainActivity : Activity() {
     }
 
 
+    private val gold = Color.rgb(212, 175, 55)
+    private val goldLight = Color.rgb(245, 220, 135)
+    private val ink = Color.rgb(8, 9, 12)
+    private val panel = Color.rgb(22, 23, 27)
+    private val muted = Color.rgb(166, 160, 145)
+
     private fun buildUi() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            setBackgroundColor(Color.rgb(12, 18, 30))
+            setPadding(20, 22, 20, 28)
+            setBackgroundColor(ink)
         }
-        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val brand = text("CRYPTO SCALP", 25, Color.WHITE, true)
-        header.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val settings = Button(this).apply { text = "⚙ تنظیمات" }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 4, 0, 18)
+        }
+        val brandBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        brandBlock.addView(text("GOLD • CRYPTO", 12, gold, true))
+        brandBlock.addView(text("CRYPTO SCALP", 25, Color.WHITE, true))
+        brandBlock.addView(text("تحلیل هوشمند بازار فیوچرز", 12, muted))
+        header.addView(brandBlock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val settings = Button(this).apply {
+            text = "⚙"
+            textSize = 20f
+            setTextColor(goldLight)
+            background = rounded(panel, gold, 18)
+            elevation = 8f
+            minWidth = dp(52); minimumHeight = dp(48)
+        }
         header.addView(settings)
         settings.setOnClickListener { showMonitorSettings(settings) }
         root.addView(header)
-        root.addView(text("Toobit USDT Perpetual • سیگنال لانگ و شورت", 14, Color.LTGRAY))
-        coinPickerButton = Button(this)
-        root.addView(coinPickerButton)
+
+        val marketCard = card()
+        marketCard.addView(text("وضعیت بازار", 13, gold, true))
+        marketCard.addView(text("TOOBIT  /  USDT PERPETUAL", 11, muted, true))
+        status = text("در حال اتصال به بازار فیوچرز Toobit…", 14, goldLight, true)
+        marketCard.addView(status)
+        root.addView(marketCard, marginParams(bottom = 14))
+
+        val selectCard = card()
+        selectCard.addView(text("دارایی‌های تحت نظر", 16, Color.WHITE, true))
+        selectCard.addView(text("انتخاب ارز فقط به‌صورت دستی انجام می‌شود", 12, muted))
+        coinPickerButton = Button(this).apply {
+            textSize = 14f
+            setTextColor(ink)
+            background = rounded(gold, goldLight, 14)
+            elevation = 6f
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        selectCard.addView(coinPickerButton, marginParams(top = 10))
         renderSelectedChoices()
         coinPickerButton.setOnClickListener { showCoinPicker() }
-        val refresh = Button(this).apply { text = "تحلیل دستی همین حالا" }
-        root.addView(refresh)
-        status = text("در حال اتصال به بازار فیوچرز Toobit…", 14, Color.YELLOW)
-        root.addView(status)
-        result = text("منتظر دریافت داده بازار…", 17, Color.WHITE)
-        result.setPadding(0, 24, 0, 0)
-        root.addView(result)
-        root.addView(text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. قیمت‌ها و سطوح تخمینی‌اند.", 12, Color.LTGRAY))
-        setContentView(ScrollView(this).apply { addView(root) })
+        root.addView(selectCard, marginParams(bottom = 14))
+
+        val actionCard = card()
+        actionCard.addView(text("موتور تحلیل", 16, Color.WHITE, true))
+        actionCard.addView(text("۱۰ ابزار تحلیلی • چند تایم‌فریم • اسمارت‌مانی", 12, muted))
+        val refresh = Button(this).apply {
+            text = "✦  شروع تحلیل بازار"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(35, 27, 8))
+            background = rounded(goldLight, gold, 20)
+            elevation = 12f
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        actionCard.addView(refresh, marginParams(top = 14))
         refresh.setOnClickListener { refresh() }
-        // Background monitoring controls are intentionally kept in the top-right Settings menu.
+        root.addView(actionCard, marginParams(bottom = 14))
+
+        val resultCard = card()
+        resultCard.addView(text("سیگنال‌ها و نقاط معاملاتی", 16, goldLight, true))
+        result = text("هنوز گزارشی ثبت نشده است. ارزهای موردنظر را انتخاب و تحلیل را شروع کن.", 14, Color.WHITE)
+        result.setPadding(0, dp(12), 0, dp(4))
+        resultCard.addView(result)
+        root.addView(resultCard, marginParams(bottom = 14))
+
+        val disclaimer = text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. سطوح قیمتی تخمینی‌اند و سود تضمین‌شده نیست.", 11, muted)
+        disclaimer.gravity = Gravity.CENTER
+        root.addView(disclaimer)
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(ink)
+            addView(root)
+        })
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun rounded(fill: Int, stroke: Int, radius: Int): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(radius).toFloat()
+            setStroke(dp(1), stroke)
+        }
+
+    private fun card(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(14), dp(16), dp(16))
+        background = rounded(panel, Color.rgb(105, 86, 39), 18)
+        elevation = dp(5).toFloat()
+    }
+
+    private fun marginParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(top)
+            bottomMargin = dp(bottom)
+        }
 
     private fun showMonitorSettings(anchor: android.view.View) {
         val menu = PopupMenu(this, anchor)
