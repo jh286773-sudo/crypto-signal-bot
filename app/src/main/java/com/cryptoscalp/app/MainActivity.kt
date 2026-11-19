@@ -219,9 +219,29 @@ class MainActivity : Activity() {
     private fun coinLogoUrl(base: String): String =
         "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/${base.lowercase()}.png"
 
-    private fun loadLogo(view: ImageView, imageUrl: String) {
-        if (imageUrl.isBlank()) return
+    private fun fallbackCoinLogo(symbol: String, sizePx: Int): android.graphics.Bitmap {
+        val label = symbol.substringBefore("-").take(4).uppercase().ifBlank { "?" }
+        val palette = intArrayOf(Color.rgb(188, 145, 42), Color.rgb(45, 105, 155), Color.rgb(42, 135, 105), Color.rgb(125, 78, 150), Color.rgb(170, 82, 65))
+        val color = palette[(label.hashCode() and 0x7fffffff) % palette.size]
+        val bitmap = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = color
+        canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx * .48f, paint)
+        paint.color = Color.WHITE
+        paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        paint.textAlign = android.graphics.Paint.Align.CENTER
+        paint.textSize = sizePx * if (label.length > 3) .27f else .34f
+        val y = sizePx / 2f - (paint.descent() + paint.ascent()) / 2f
+        canvas.drawText(label, sizePx / 2f, y, paint)
+        return bitmap
+    }
+
+    private fun loadLogo(view: ImageView, imageUrl: String, symbol: String = "?") {
         view.tag = imageUrl
+        val fallback = fallbackCoinLogo(symbol, dp(64))
+        view.setImageBitmap(fallback)
+        if (imageUrl.isBlank()) return
         synchronized(logoCache) { logoCache[imageUrl] }?.let {
             view.setImageBitmap(it)
             return
@@ -245,8 +265,8 @@ class MainActivity : Activity() {
     private fun logoView(size: Int): ImageView = ImageView(this).apply {
         layoutParams = LinearLayout.LayoutParams(dp(size), dp(size)).apply { marginEnd = dp(14) }
         scaleType = ImageView.ScaleType.FIT_CENTER
-        background = rounded(Color.WHITE, Color.rgb(90, 90, 90), 12)
-        setPadding(dp(3), dp(3), dp(3), dp(3))
+        background = rounded(Color.rgb(22, 23, 27), gold, 12)
+        setPadding(dp(2), dp(2), dp(2), dp(2))
     }
 
     private fun showExchangePicker() {
@@ -301,7 +321,7 @@ class MainActivity : Activity() {
                 }
                 val mark = logoView(50)
                 row.addView(mark)
-                loadLogo(mark, exchangeLogoUrl(name))
+                loadLogo(mark, exchangeLogoUrl(name), name.take(3))
                 row.addView(text(name, 19, if (chosen) goldLight else Color.WHITE, true),
                     LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 val radio = TextView(this).apply {
@@ -501,7 +521,7 @@ class MainActivity : Activity() {
             }
             val coinLogo = logoView(38)
             row.addView(coinLogo)
-            loadLogo(coinLogo, coinLogoUrl(base))
+            loadLogo(coinLogo, coinLogoUrl(base), base)
             val coinInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             coinInfo.addView(text(base, 15, if (selectedSymbols.contains(symbol)) goldLight else Color.WHITE, true))
             coinInfo.addView(text("USDT PERPETUAL", 9, muted))
