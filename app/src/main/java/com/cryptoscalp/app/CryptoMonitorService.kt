@@ -70,10 +70,10 @@ class CryptoMonitorService : Service() {
                 val r=TradingStrategy.evaluate(five,fifteen,thirty)
                 val open=prefs.getString("open_setup_$symbol",null)
                 val previous=prefs.getString("last_signal_$symbol",null)
-                if(open==null && r.signal!="WAIT" && previous!=r.signal) {
+                if(open==null && isDirectionalSignal(r.signal) && previous!=r.signal) {
                     saveOpen(symbol,r)
                     notifySignal(symbol,r)
-                } else if(open!=null && r.signal!="WAIT"){
+                } else if(open!=null && isDirectionalSignal(r.signal)){
                     val old=JSONObject(open).optString("side")
                     if(old!=r.signal){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
                 }
@@ -89,6 +89,9 @@ class CryptoMonitorService : Service() {
             }
         }
     }
+    // WAIT is an internal no-trade state only; user-facing entry alerts are LONG or SHORT.
+    private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
+
     private fun saveOpen(symbol:String,r:StrategyResult){
         val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp1Done",false)
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
