@@ -61,7 +61,13 @@ class MainActivity : Activity() {
             setPadding(24, 24, 24, 24)
             setBackgroundColor(Color.rgb(12, 18, 30))
         }
-        root.addView(text("CRYPTO SCALP", 25, Color.WHITE, true))
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val brand = text("CRYPTO SCALP", 25, Color.WHITE, true)
+        header.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val settings = Button(this).apply { text = "⚙ تنظیمات" }
+        header.addView(settings)
+        settings.setOnClickListener { showMonitorSettings(settings) }
+        root.addView(header)
         root.addView(text("Toobit USDT Perpetual • سیگنال لانگ و شورت", 14, Color.LTGRAY))
         coinPickerButton = Button(this)
         root.addView(coinPickerButton)
@@ -69,10 +75,6 @@ class MainActivity : Activity() {
         coinPickerButton.setOnClickListener { showCoinPicker() }
         val refresh = Button(this).apply { text = "تحلیل دستی همین حالا" }
         root.addView(refresh)
-        val startMonitor = Button(this).apply { text = "▶ شروع پایش دائمی در پس‌زمینه" }
-        root.addView(startMonitor)
-        val stopMonitor = Button(this).apply { text = "■ توقف پایش پس‌زمینه" }
-        root.addView(stopMonitor)
         status = text("در حال اتصال به بازار فیوچرز Toobit…", 14, Color.YELLOW)
         root.addView(status)
         result = text("منتظر دریافت داده بازار…", 17, Color.WHITE)
@@ -81,16 +83,24 @@ class MainActivity : Activity() {
         root.addView(text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. قیمت‌ها و سطوح تخمینی‌اند.", 12, Color.LTGRAY))
         setContentView(ScrollView(this).apply { addView(root) })
         refresh.setOnClickListener { refresh() }
-        startMonitor.setOnClickListener {
+        // Background monitoring controls are intentionally kept in the top-right Settings menu.
+    }
+
+    private fun showMonitorSettings(anchor: android.view.View) {
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add("شروع پایش در پس‌زمینه").setOnMenuItemClickListener {
+            getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
             val i = Intent(this, CryptoMonitorService::class.java).apply { action = CryptoMonitorService.ACTION_START }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
-            getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
-            status.text = "درخواست شروع پایش پس‌زمینه ارسال شد؛ اعلان دائمی را بررسی کن."
+            status.text = "پایش پس‌زمینه فعال شد."
+            true
         }
-        stopMonitor.setOnClickListener {
+        menu.menu.add("بستن پایش در پس‌زمینه").setOnMenuItemClickListener {
             stopService(Intent(this, CryptoMonitorService::class.java))
             status.text = "پایش پس‌زمینه متوقف شد."
+            true
         }
+        menu.show()
     }
 
     private fun showCoinPicker() {
