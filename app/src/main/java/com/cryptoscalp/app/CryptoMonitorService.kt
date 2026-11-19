@@ -62,10 +62,10 @@ class CryptoMonitorService : Service() {
         thread(name="market-monitor"){
             var ok=0;
             for(symbol in list)try{
-                val one=ExchangeMarketData.candles(exchange,symbol,"1m");val five=ExchangeMarketData.candles(exchange,symbol,"5m");val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m");val hour=ExchangeMarketData.candles(exchange,symbol,"1h")
-                val price=one.last().close
+                val five=ExchangeMarketData.candles(exchange,symbol,"5m");val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m");val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
+                val price=five.last().close
                 manageOpen(symbol,price)
-                val r=TradingStrategy.evaluate(one,five,fifteen,hour)
+                val r=TradingStrategy.evaluate(five,fifteen,thirty)
                 val open=prefs.getString("open_setup_$symbol",null)
                 val previous=prefs.getString("last_signal_$symbol",null)
                 if(open==null && r.signal!="WAIT" && previous!=r.signal) {
