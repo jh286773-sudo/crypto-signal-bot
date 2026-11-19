@@ -595,7 +595,7 @@ class MainActivity : Activity() {
             for (i in 0..4) {
                 val gy = dp(8).toFloat() + (plotBottom - dp(8)) * i / 4f
                 canvas.drawLine(0f, gy, plotRight, gy, grid)
-                canvas.drawText("${100 - i * 25}", plotRight + dp(7), gy + dp(3), axisText)
+                
             }
             canvas.drawRoundRect(0f, 0f, w, h, dp(12).toFloat(), dp(12).toFloat(), borderPaint)
             if (candles.size < 2) {
@@ -608,6 +608,12 @@ class MainActivity : Activity() {
             val low = candles.minOf { it.low }
             val high = candles.maxOf { it.high }
             val range = (high - low).takeIf { it > 0.0 } ?: (high * .001).coerceAtLeast(.0000001)
+            axisText.textAlign = android.graphics.Paint.Align.RIGHT
+            for (i in 0..4) {
+                val gy = dp(8).toFloat() + (plotBottom - dp(8)) * i / 4f
+                canvas.drawText(fmt(high - range * i / 4.0), w - dp(5).toFloat(), gy + dp(3), axisText)
+            }
+            axisText.textAlign = android.graphics.Paint.Align.LEFT
             val top = dp(10).toFloat(); val bottom = plotBottom - dp(3)
             fun y(value: Double) = bottom - (((value - low) / range).toFloat() * (bottom - top))
             val slot = plotRight / candles.size
@@ -662,6 +668,7 @@ class MainActivity : Activity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Float): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun rounded(fill: Int, stroke: Int, radius: Int): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
@@ -898,7 +905,7 @@ class MainActivity : Activity() {
         TextView(this).apply {
             text = value; textSize = size.toFloat(); setTextColor(color)
             if (bold) typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 10, 0, 10)
+            setPadding(0, dp(8), 0, dp(8))
         }
 
     private fun loadContracts() {
