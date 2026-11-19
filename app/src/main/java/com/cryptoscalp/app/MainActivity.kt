@@ -162,17 +162,30 @@ class MainActivity : Activity() {
         }
         heroHeader.addView(livePill)
         hero.addView(heroHeader)
-        // Resolution-independent premium robot artwork; rendered sharply at device density.
+        // Premium hero artwork container with deeper contrast and a larger visual stage.
+        val robotStage = FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(30, 25, 18), Color.rgb(12, 14, 18), Color.rgb(7, 9, 12))
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.rgb(119, 88, 35))
+            }
+            clipToOutline = true
+        }
         val robotArt = ImageView(this).apply {
             setImageResource(R.drawable.aurum_robot_hero)
             scaleType = ImageView.ScaleType.FIT_CENTER
-            contentDescription = "AURUM X premium black and gold trading robot"
-            setPadding(dp(8), dp(3), dp(8), dp(3))
+            contentDescription = "AURUM X black and gold cybernetic bull"
+            setPadding(dp(8), dp(2), dp(8), dp(2))
             adjustViewBounds = true
-            elevation = dp(7).toFloat()
+            elevation = dp(8).toFloat()
         }
-        hero.addView(robotArt, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(236)).apply {
-            topMargin = dp(6); bottomMargin = dp(3)
+        robotStage.addView(robotArt, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        hero.addView(robotStage, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(270)).apply {
+            topMargin = dp(12); bottomMargin = dp(5)
         })
         val sourceLine = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
