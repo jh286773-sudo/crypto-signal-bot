@@ -9,6 +9,28 @@ MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", "40"))
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
 NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh").rstrip(" /")
 
+REASON_FA = {
+    "15m trend is bullish": "روند ۱۵ دقیقه‌ای صعودی است",
+    "15m trend is bearish": "روند ۱۵ دقیقه‌ای نزولی است",
+    "5m scalp entry confirmed": "ورود اسکالپ در تایم‌فریم ۵ دقیقه تأیید شد",
+    "1h trend confirms 15m direction": "روند یک‌ساعته جهت ۱۵ دقیقه‌ای را تأیید می‌کند",
+    "1h trend does not confirm; confidence reduced": "روند یک‌ساعته تأیید نمی‌کند؛ اطمینان کاهش یافته است",
+    "Bullish market structure": "ساختار بازار صعودی است",
+    "Bearish market structure": "ساختار بازار نزولی است",
+    "Bearish market structure warning": "هشدار: ساختار بازار نزولی است",
+    "Bullish market structure warning": "هشدار: ساختار بازار صعودی است",
+    "Bullish liquidity sweep": "جمع‌آوری نقدینگی صعودی",
+    "Bearish liquidity sweep": "جمع‌آوری نقدینگی نزولی",
+    "Bullish order block": "بلوک سفارش صعودی",
+    "Bearish order block": "بلوک سفارش نزولی",
+}
+
+
+def translate_reason(reason):
+    """Translate known signal-engine reasons while preserving unknown text."""
+    return REASON_FA.get(str(reason).strip(), str(reason).strip())
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -64,16 +86,22 @@ def main():
             direction = 1 if signal == "LONG" else -1
             stop = price - direction * 1.5 * atr
             target = price + direction * 3.0 * atr
+            signal_fa = "خرید (لانگ)" if signal == "LONG" else "فروش (شورت)"
+            reasons = result.get("reasons") or [result.get("reason", "")]
+            reasons_fa = "؛ ".join(translate_reason(item) for item in reasons if item)
+            score = result.get("score", "نامشخص")
+
             message = (
-                f"{symbol} | {signal}\n"
-                f"Entry reference: {price:.8g}\n"
-                f"Stop-loss reference: {stop:.8g}\n"
-                f"Take-profit reference: {target:.8g}\n"
-                f"Score: {result.get('score', 'n/a')}\n"
-                f"Reason: {'; '.join(result.get('reasons', []))}\n"
-                "Signal only — no order was placed."
+                f"جفت‌ارز: {symbol}\n"
+                f"نوع سیگنال: {signal_fa}\n"
+                f"قیمت ورود پیشنهادی: {price:.8g}\n"
+                f"حد ضرر: {stop:.8g}\n"
+                f"حد سود: {target:.8g}\n"
+                f"امتیاز سیگنال: {score}\n"
+                f"دلایل: {reasons_fa or 'در دسترس نیست'}\n"
+                "فقط سیگنال است؛ هیچ سفارشی ثبت نشده است."
             )
-            notify(f"{symbol} {signal}", message, "high")
+            notify(f"سیگنال {signal_fa} | {symbol}", message, "high")
             alerts += 1
 
         except Exception:
