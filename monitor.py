@@ -5,7 +5,8 @@ import requests
 from toobit_api import ToobitAPI
 from signal_engine import analyze_market
 
-MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", "40"))
+MAJOR_BASE_ASSETS = ("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK", "AVAX")
+MAX_SYMBOLS = min(10, max(1, int(os.getenv("MAX_SYMBOLS", "10"))))
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
 NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh").rstrip(" /")
 
@@ -56,8 +57,8 @@ def notify(title, message, priority="default"):
 
 def main():
     api = ToobitAPI()
-    symbols = api.get_futures_symbols(limit=MAX_SYMBOLS)
-    logging.info("Scanning %d most liquid active USDT perpetual contracts", len(symbols))
+    symbols = api.get_futures_symbols(limit=MAX_SYMBOLS, preferred_bases=MAJOR_BASE_ASSETS)
+    logging.info("Scanning %d supported major-coin USDT perpetual contracts: %s", len(symbols), ", ".join(symbols))
 
     checked = 0
     alerts = 0
