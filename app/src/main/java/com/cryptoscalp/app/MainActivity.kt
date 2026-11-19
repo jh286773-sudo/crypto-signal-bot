@@ -32,6 +32,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var result: TextView
     private lateinit var coinChoices: LinearLayout
+    private lateinit var selectedChoices: LinearLayout
     private lateinit var coinSearch: EditText
     private val symbols = mutableListOf("BTC-SWAP-USDT", "ETH-SWAP-USDT", "BNB-SWAP-USDT", "SOL-SWAP-USDT", "XRP-SWAP-USDT", "DOGE-SWAP-USDT", "ADA-SWAP-USDT", "TRX-SWAP-USDT", "LINK-SWAP-USDT", "AVAX-SWAP-USDT")
     private val selectedSymbols = linkedSetOf<String>().apply { addAll(symbols) }
@@ -65,6 +66,9 @@ class MainActivity : Activity() {
         val title = text("CRYPTO SCALP", 25, Color.WHITE, true)
         root.addView(title)
         root.addView(text("Toobit USDT Perpetual • سیگنال لانگ و شورت", 14, Color.LTGRAY))
+        root.addView(text("ارزهای انتخاب‌شده:", 15, Color.WHITE, true))
+        selectedChoices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(selectedChoices)
         root.addView(text("ارزهای موردنظر را جستجو و انتخاب کن:", 15, Color.WHITE, true))
         coinSearch = EditText(this).apply {
             hint = "جستجوی نماد ارز؛ مثلاً BTC یا SOL"
@@ -91,6 +95,7 @@ class MainActivity : Activity() {
         note.setPadding(0, 28, 0, 0)
         root.addView(note)
         setContentView(ScrollView(this).apply { addView(root) })
+        renderSelectedChoices()
         refresh.setOnClickListener { refresh() }
     }
 
@@ -123,6 +128,7 @@ class MainActivity : Activity() {
                     selectedSymbols.retainAll(ordered.toSet())
                     if (selectedSymbols.isEmpty()) selectedSymbols.addAll(preferred)
                     renderCoinChoices(coinSearch.text.toString())
+                    renderSelectedChoices()
                     status.text = "اتصال برقرار • ${ordered.size} قرارداد فعال USDT فیوچرز؛ ۱۰ ارز اصلی انتخاب‌شده"
                 }
             } catch (e: Exception) {
@@ -148,6 +154,7 @@ class MainActivity : Activity() {
                     setTextColor(Color.WHITE)
                     setOnCheckedChangeListener { _, checked ->
                         if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
+                        renderSelectedChoices()
                     }
                 }
             }
@@ -155,10 +162,24 @@ class MainActivity : Activity() {
             box.isChecked = selectedSymbols.contains(symbol)
             box.setOnCheckedChangeListener { _, checked ->
                 if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
+                renderSelectedChoices()
             }
             coinChoices.addView(box)
         }
         if (matches.isEmpty()) coinChoices.addView(text("ارزی با این نماد پیدا نشد.", 14, Color.LTGRAY))
+    }
+
+    private fun renderSelectedChoices() {
+        if (!::selectedChoices.isInitialized) return
+        selectedChoices.removeAllViews()
+        val chosen = selectedSymbols.toList()
+        if (chosen.isEmpty()) {
+            selectedChoices.addView(text("هنوز ارزی انتخاب نشده است.", 14, Color.LTGRAY))
+            return
+        }
+        val names = chosen.map { it.removeSuffix("-SWAP-USDT") }
+        selectedChoices.addView(text(names.joinToString("  •  "), 15, Color.rgb(80, 220, 150), true))
+        selectedChoices.addView(text("تعداد انتخاب‌شده: ${chosen.size}", 12, Color.LTGRAY))
     }
 
     private fun refresh() {
