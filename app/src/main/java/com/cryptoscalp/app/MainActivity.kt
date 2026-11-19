@@ -540,10 +540,11 @@ class MainActivity : Activity() {
             try {
                 val candles = ExchangeMarketData.candles("Toobit", symbol, timeframe)
                 val last = candles.last()
+                val livePrice = ExchangeMarketData.lastPrice("Toobit", symbol)
                 val first = candles[max(0, candles.size - 13)]
                 val change = if (first.close == 0.0) 0.0 else (last.close - first.close) / first.close * 100.0
                 runOnUiThread {
-                    marketPriceLabel.text = fmt(last.close)
+                    marketPriceLabel.text = fmt(livePrice)
                     marketChangeLabel.text = String.format(java.util.Locale.US, "%+.2f%%", change)
                     marketChangeLabel.setTextColor(if (change >= 0) Color.rgb(112, 231, 157) else Color.rgb(255, 119, 108))
                     marketChart.setCandles(candles.takeLast(36))
