@@ -84,6 +84,11 @@ class MainActivity : Activity() {
     private val panel = Color.rgb(22, 23, 27)
     private val muted = Color.rgb(166, 160, 145)
 
+    override fun onDestroy() {
+        logoExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
     private fun buildUi() {
         window.statusBarColor = Color.rgb(5, 6, 9)
         window.navigationBarColor = Color.rgb(5, 6, 9)
@@ -797,7 +802,10 @@ class MainActivity : Activity() {
                     }
                 }
                 if (bitmap != null) {
-                    synchronized(logoCache) { logoCache[imageUrl] = bitmap }
+                    synchronized(logoCache) {
+                        logoCache[imageUrl] = bitmap
+                        while (logoCache.size > 160) logoCache.remove(logoCache.keys.first())
+                    }
                     runOnUiThread { if (view.tag == imageUrl) view.setImageBitmap(bitmap) }
                 } else failedLogoUrls.add(imageUrl)
             } catch (_: Exception) {
