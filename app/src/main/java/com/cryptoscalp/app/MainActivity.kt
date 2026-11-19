@@ -277,10 +277,14 @@ class MainActivity : Activity() {
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(Color.rgb(18, 17, 13), gold, 22)
         }
-        heading.addView(text("▣", 24, gold, true))
-        heading.addView(text("  انتخاب صرافی", 20, goldLight, true),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        heading.addView(text("▤", 34, gold, true))
+        val headingText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        headingText.addView(text("انتخاب صرافی", 23, goldLight, true))
+        headingText.addView(text("لطفاً یک صرافی را برای تحلیل انتخاب کنید", 12, Color.WHITE))
+        heading.addView(headingText, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val close = TextView(this).apply {
             text = "✕"; textSize = 22f; gravity = Gravity.CENTER
             setTextColor(goldLight); background = rounded(panel, gold, 30)
@@ -289,16 +293,16 @@ class MainActivity : Activity() {
         heading.addView(close)
         panelView.addView(heading)
         val search = EditText(this).apply {
-            hint = "⌕  جستجوی صرافی…"; setSingleLine(true); textSize = 14f
+            hint = "⌕  جستجوی صرافی…"; setSingleLine(true); textSize = 16f
             setTextColor(Color.WHITE); setHintTextColor(muted); background = rounded(panel, gold, 16)
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setPadding(dp(18), dp(14), dp(18), dp(14))
         }
-        panelView.addView(search, marginParams(top = 14, bottom = 10))
+        panelView.addView(search, marginParams(top = 14, bottom = 12))
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply {
             addView(list)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                (resources.displayMetrics.heightPixels * .43).toInt())
+                (resources.displayMetrics.heightPixels * .46).toInt())
         }
         panelView.addView(scroll)
         var pendingSelection = selectedExchanges.firstOrNull() ?: "Toobit"
@@ -309,14 +313,15 @@ class MainActivity : Activity() {
                 val chosen = pendingSelection == name
                 val row = LinearLayout(this).apply {
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(12), dp(9), dp(12), dp(9))
-                    background = rounded(if (chosen) Color.rgb(38, 34, 22) else panel,
-                        if (chosen) gold else Color.rgb(83, 70, 42), 16)
+                    setPadding(dp(14), dp(13), dp(14), dp(13))
+                    background = rounded(if (chosen) Color.rgb(55, 43, 13) else Color.rgb(12, 13, 16),
+                        if (chosen) goldLight else Color.rgb(150, 112, 28), 20)
+                    elevation = if (chosen) dp(8).toFloat() else dp(2).toFloat()
                 }
-                val mark = logoView(42)
+                val mark = logoView(50)
                 row.addView(mark)
                 loadLogo(mark, exchangeLogoUrl(name))
-                row.addView(text(name, 16, Color.WHITE, true),
+                row.addView(text(name, 19, if (chosen) goldLight else Color.WHITE, true),
                     LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 val radio = TextView(this).apply {
                     text = ""
@@ -325,14 +330,14 @@ class MainActivity : Activity() {
                         setColor(if (chosen) gold else Color.TRANSPARENT)
                         setStroke(dp(2), gold)
                     }
-                    layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+                    layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
                 }
                 row.addView(radio)
                 row.setOnClickListener {
                     pendingSelection = name
                     render(search.text.toString())
                 }
-                list.addView(row, marginParams(bottom = 7))
+                list.addView(row, marginParams(bottom = 9))
             }
         }
         render("")
@@ -350,11 +355,11 @@ class MainActivity : Activity() {
             background = rounded(panel, gold, 14)
         }
         val confirm = Button(this).apply {
-            text = "✓  تأیید انتخاب"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD
+            text = "✓  تأیید انتخاب"; textSize = 17f; typeface = Typeface.DEFAULT_BOLD
             setTextColor(ink); background = rounded(gold, goldLight, 14)
         }
         footer.addView(cancel, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
-        footer.addView(confirm, LinearLayout.LayoutParams(0, dp(48), 1f))
+        footer.addView(confirm, LinearLayout.LayoutParams(0, dp(56), 1f))
         panelView.addView(footer, marginParams(top = 14))
         val dialog = AlertDialog.Builder(this).setView(panelView).create()
         close.setOnClickListener { dialog.dismiss() }
