@@ -82,7 +82,7 @@ class CryptoMonitorService : Service() {
     private fun candles(symbol:String,interval:String):List<MarketCandle>{
         val duration=when(interval){"1m"->60_000L;"5m"->300_000L;"15m"->900_000L;else->3_600_000L}
         val now=System.currentTimeMillis()
-        val url="https://api.toobit.com/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*160}&to=$now&limit=160"
+        val url="https://api.toobit.com/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*260}&to=$now&limit=260"
         val conn=URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout=12_000;conn.readTimeout=15_000
         try{
