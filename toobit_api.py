@@ -25,8 +25,8 @@ class ToobitAPI:
     def server_time(self):
         return self._get("/api/v1/time")
 
-    def get_futures_symbols(self, limit=40):
-        """Return the most liquid active USDT-margined perpetual contracts."""
+    def get_futures_symbols(self, limit=10, preferred_bases=None):
+        """Return liquid active USDT perpetuals, optionally limited to preferred base assets."""
         info = self._get("/api/v1/exchangeInfo")
         contracts = info.get("contracts", [])
         eligible = {
@@ -38,8 +38,12 @@ class ToobitAPI:
             and item.get("symbol", "").endswith("-SWAP-USDT")
         }
 
+        if preferred_bases:
+            preferred = tuple(f"{base}-" for base in preferred_bases)
+            eligible = {symbol for symbol in eligible if symbol.startswith(preferred)}
+
         if not eligible:
-            raise RuntimeError("No active USDT-margined perpetual contracts found")
+            raise RuntimeError("No active USDT-margined perpetuals found for the requested assets")
 
         tickers = self._get("/quote/v1/contract/ticker/24hr")
         ranked = []
