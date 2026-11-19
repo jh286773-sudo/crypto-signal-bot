@@ -58,26 +58,41 @@ class CryptoMonitorService : Service() {
         val list=symbols()
         if(list.isEmpty()){updateStatus("هیچ ارزی انتخاب نشده؛ از داخل برنامه نمادها را دستی انتخاب کن.");return}
         val exchange = "Toobit"
-        scanning=true;updateStatus("در حال پایش خودکار $exchange • ۱۰ ابزار و اسمارت‌مانی…")
+        scanning=true
+        updateStatus("پایش قیمت‌ها از توبیت • بررسی ریسک هر ۶۰ ثانیه")
         thread(name="market-monitor"){
             var ok=0
             var failed=0
+            var analyzed=0
             var firstError=""
+            val now=System.currentTimeMillis()
+            val fiveMinuteBucket=now/300_000L
             for(symbol in list)try{
-                val five=ExchangeMarketData.candles(exchange,symbol,"5m");val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m");val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
+                // Every minute: observe the latest Toobit price and manage open risk.
+                val five=ExchangeMarketData.candles(exchange,symbol,"5m")
                 val price=five.last().close
                 manageOpen(symbol,price)
-                val r=TradingStrategy.evaluate(five,fifteen,thirty)
-                val open=prefs.getString("open_setup_$symbol",null)
-                val previous=prefs.getString("last_signal_$symbol",null)
-                if(open==null && isDirectionalSignal(r.signal) && previous!=r.signal) {
-                    saveOpen(symbol,r)
-                    notifySignal(symbol,r)
-                } else if(open!=null && isDirectionalSignal(r.signal)){
-                    val old=JSONObject(open).optString("side")
-                    if(old!=r.signal){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
+
+                // Run the multi-timeframe strategy only once for each newly closed 5m slot.
+                val key="last_analysis_bucket_$symbol"
+                val previousBucket=prefs.getLong(key,-1L)
+                if(previousBucket!=fiveMinuteBucket){
+                    val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m")
+                    val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
+                    val r=TradingStrategy.evaluate(five,fifteen,thirty)
+                    val open=prefs.getString("open_setup_$symbol",null)
+                    val previous=prefs.getString("last_signal_$symbol",null)
+                    if(open==null && isDirectionalSignal(r.signal) && previous!=r.signal) {
+                        saveOpen(symbol,r)
+                        notifySignal(symbol,r)
+                    } else if(open!=null && isDirectionalSignal(r.signal)){
+                        val old=JSONObject(open).optString("side")
+                        if(old!=r.signal){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
+                    }
+                    prefs.edit().putString("last_signal_$symbol",r.signal).putLong(key,fiveMinuteBucket).apply()
+                    analyzed++
                 }
-                prefs.edit().putString("last_signal_$symbol",r.signal).apply();ok++
+                ok++
             }catch(e:Exception){
                 failed++
                 if(firstError.isBlank()) firstError="$symbol: ${e.message ?: e.javaClass.simpleName}"
@@ -85,7 +100,7 @@ class CryptoMonitorService : Service() {
             scanning=false
             handler.post{
                 val detail=if(failed>0) " • خطا $failed: $firstError" else ""
-                updateStatus("پایش $exchange • موفق $ok از ${list.size} نماد$detail • هر ۶۰ ثانیه")
+                updateStatus("توبیت • پایش $ok از ${list.size} نماد • تحلیل جدید: $analyzed • پایش قیمت هر ۶۰ ثانیه$detail")
             }
         }
     }
