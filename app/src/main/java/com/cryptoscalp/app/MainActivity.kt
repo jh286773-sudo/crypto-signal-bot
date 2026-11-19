@@ -33,7 +33,6 @@ import kotlin.math.sqrt
 class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
-    private lateinit var result: TextView
     private lateinit var coinPickerButton: Button
     private lateinit var exchangePickerButton: Button
     private val exchanges = ExchangeMarketData.supported
@@ -41,7 +40,6 @@ class MainActivity : Activity() {
     private var coinChoices: LinearLayout? = null
     private val symbols = mutableListOf<String>()
     private val selectedSymbols = linkedSetOf<String>()
-    private val checkboxes = mutableMapOf<String, CheckBox>()
     private val channelId = "scalp_signals"
     private val logoCache = mutableMapOf<String, android.graphics.Bitmap>()
 
@@ -104,8 +102,7 @@ class MainActivity : Activity() {
 
         val marketCard = card()
         marketCard.addView(text("وضعیت بازار", 13, gold, true))
-        marketCard.addView(text("TOOBIT  /  USDT PERPETUAL", 11, muted, true))
-        status = text("در حال اتصال به بازار فیوچرز Toobit…", 14, goldLight, true)
+        status = text("در حال اتصال به منبع داده صرافی انتخاب‌شده…", 14, goldLight, true)
         marketCard.addView(status)
         root.addView(marketCard, marginParams(bottom = 14))
 
@@ -350,6 +347,15 @@ class MainActivity : Activity() {
             getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit()
                 .putStringSet("selected_exchanges", selectedExchanges.toSet()).apply()
             updateExchangeButton()
+            val prefs = getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE)
+            val editor = prefs.edit().putStringSet("selected_symbols", emptySet())
+            prefs.all.keys.filter { it.startsWith("open_setup_") || it.startsWith("last_signal_") }.forEach { editor.remove(it) }
+            editor.apply()
+            selectedSymbols.clear()
+            renderSelectedChoices()
+            loadContracts()
+            val monitorIntent = Intent(this, CryptoMonitorService::class.java).apply { action = CryptoMonitorService.ACTION_START }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(monitorIntent) else startService(monitorIntent)
             dialog.dismiss()
         }
         dialog.show()
@@ -443,29 +449,13 @@ class MainActivity : Activity() {
     private fun loadContracts() {
         thread {
             try {
-                val json = getJson("/api/v1/exchangeInfo")
-                val arr = json.optJSONArray("contracts") ?: JSONArray()
-                val active = mutableListOf<String>()
-                for (i in 0 until arr.length()) {
-                    val item = arr.getJSONObject(i)
-                    if (item.optString("status") == "TRADING") {
-                        val s = item.optString("symbol")
-                        if (s.endsWith("-SWAP-USDT") && (item.optString("quoteAsset").isBlank() || item.optString("quoteAsset") == "USDT")) active.add(s)
-                    }
-                }
-                val ordered = active.distinct().sorted()
+                val exchange = selectedExchanges.firstOrNull() ?: "Toobit"
+                val ordered = ExchangeMarketData.contracts(exchange)
                 runOnUiThread {
                     symbols.clear()
                     symbols.addAll(ordered)
                     selectedSymbols.retainAll(ordered.toSet())
                     val prefs = getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE)
-                    if (!prefs.getBoolean("core_defaults_applied_v1", false)) {
-                        if (selectedSymbols.isEmpty()) {
-                            val coreBases = listOf("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC")
-                            selectedSymbols.addAll(coreBases.map { "$it-SWAP-USDT" }.filter { ordered.contains(it) })
-                        }
-                        prefs.edit().putBoolean("core_defaults_applied_v1", true).apply()
-                    }
                     prefs.edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
                     renderSelectedChoices()
                     status.text = if (selectedSymbols.isEmpty()) "$exchange متصل شد • ${ordered.size} قرارداد؛ ارزها را دستی انتخاب کن." else "$exchange متصل است • ${ordered.size} قرارداد؛ پایش خودکار ${selectedSymbols.size} ارز"
