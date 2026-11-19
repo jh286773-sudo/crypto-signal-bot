@@ -158,7 +158,7 @@ class MainActivity : Activity() {
         }
         heroTop.addView(livePill)
         hero.addView(heroTop)
-        hero.addView(AurumHeroArt(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(218)).apply { topMargin = dp(5); bottomMargin = dp(3) })
+        hero.addView(AurumHeroArt(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(240)).apply { topMargin = dp(5); bottomMargin = dp(3) })
         status = text("در حال اتصال به Toobit…", 14, Color.WHITE, true).apply {
             setPadding(0, dp(13), 0, dp(4))
             setShadowLayer(8f, 0f, 0f, Color.rgb(174, 128, 36))
@@ -356,7 +356,8 @@ class MainActivity : Activity() {
 
     // High-resolution, density-aware metallic mascot artwork drawn natively (no blurry bitmap assets).
     private inner class AurumHeroArt(context: Context) : android.view.View(context) {
-        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.DITHER_FLAG)
+        init { setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null) }
         override fun onDraw(canvas: android.graphics.Canvas) {
             super.onDraw(canvas)
             val w = width.toFloat(); val h = height.toFloat()
@@ -393,6 +394,25 @@ class MainActivity : Activity() {
             p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = dp(2).toFloat()
             p.color = Color.rgb(255,225,139); canvas.drawPath(face, p); p.style = android.graphics.Paint.Style.FILL
 
+            // Precision-machined forehead plate, engraved seams and cheek bevels.
+            val detail = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.DITHER_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = dp(1.15f).toFloat()
+                color = Color.argb(205, 255, 225, 145)
+            }
+            val engraving = android.graphics.Path().apply {
+                moveTo(cx-h*.16f, cy-h*.34f); lineTo(cx, cy-h*.39f); lineTo(cx+h*.16f, cy-h*.34f)
+                moveTo(cx-h*.25f, cy+h*.08f); lineTo(cx-h*.19f, cy+h*.22f); lineTo(cx-h*.08f, cy+h*.31f)
+                moveTo(cx+h*.25f, cy+h*.08f); lineTo(cx+h*.19f, cy+h*.22f); lineTo(cx+h*.08f, cy+h*.31f)
+                moveTo(cx-h*.10f, cy+h*.34f); lineTo(cx, cy+h*.38f); lineTo(cx+h*.10f, cy+h*.34f)
+            }
+            canvas.drawPath(engraving, detail)
+            detail.style = android.graphics.Paint.Style.FILL
+            detail.color = Color.rgb(255, 235, 180)
+            canvas.drawCircle(cx, cy-h*.405f, dp(2.1f).toFloat(), detail)
+            canvas.drawCircle(cx-h*.285f, cy+h*.19f, dp(1.7f).toFloat(), detail)
+            canvas.drawCircle(cx+h*.285f, cy+h*.19f, dp(1.7f).toFloat(), detail)
+
             // Dark inset visor and luminous eyes.
             val visor = android.graphics.Path().apply {
                 moveTo(cx-h*.24f, cy-h*.16f); lineTo(cx-h*.13f, cy-h*.29f); lineTo(cx+h*.13f, cy-h*.29f)
@@ -415,6 +435,17 @@ class MainActivity : Activity() {
             p.color = Color.rgb(255,226,151); p.strokeWidth = dp(1).toFloat()
             canvas.drawLine(cx-h*.29f, cy+h*.05f, cx-h*.29f, cy+h*.17f, p)
             canvas.drawLine(cx+h*.29f, cy+h*.05f, cx+h*.29f, cy+h*.17f, p)
+            // Layered horn inlays and illuminated side-panel micro details.
+            p.style = android.graphics.Paint.Style.STROKE
+            p.strokeWidth = dp(1.25f).toFloat()
+            p.color = Color.argb(210, 255, 238, 190)
+            canvas.drawLine(cx-h*.39f, cy-h*.25f, cx-h*.49f, cy-h*.39f, p)
+            canvas.drawLine(cx+h*.39f, cy-h*.25f, cx+h*.49f, cy-h*.39f, p)
+            p.strokeWidth = dp(.8f).toFloat()
+            p.color = Color.argb(150, 255, 204, 91)
+            canvas.drawLine(cx-h*.32f, cy+h*.02f, cx-h*.32f, cy+h*.20f, p)
+            canvas.drawLine(cx+h*.32f, cy+h*.02f, cx+h*.32f, cy+h*.20f, p)
+            p.style = android.graphics.Paint.Style.FILL
         }
     }
 
