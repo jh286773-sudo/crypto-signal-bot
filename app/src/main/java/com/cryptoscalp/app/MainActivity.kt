@@ -1099,3 +1099,7 @@ class MainActivity : Activity() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val n = if (Build.VERSION.SDK_INT >= 26) android.app.Notification.Builder(this, channelId) else android.app.Notification.Builder(this)
         n.setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("$symbol • $signal").setContentText(body.lines().take(3).joinToString(" | ")).setStyle(android.app.Notification.BigTextStyle().bigText(body))
+        n.setAutoCancel(true)
+        manager.notify(symbol.hashCode(), n.build())
+    }
+}
