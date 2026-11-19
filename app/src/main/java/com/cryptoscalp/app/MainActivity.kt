@@ -191,13 +191,41 @@ class MainActivity : Activity() {
     }
 
     private fun showCoinPicker() {
-        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 12, 28, 8); setBackgroundColor(Color.WHITE) }
-        panel.addView(text("همه قراردادهای فعال USDT", 17, Color.BLACK, true))
-        val search = EditText(this).apply { hint = "جستجوی نماد؛ مثلاً BTC یا SOL"; setSingleLine(true); setTextColor(Color.BLACK); setHintTextColor(Color.GRAY) }
-        panel.addView(search)
+        val picker = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+            background = rounded(ink, gold, 20)
+        }
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        titleBlock.addView(text("انتخاب دارایی‌ها", 19, goldLight, true))
+        titleBlock.addView(text("قراردادهای دائمی USDT در Toobit", 11, muted))
+        heading.addView(titleBlock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val countView = text("${selectedSymbols.size} انتخاب", 12, gold, true).apply { gravity = Gravity.CENTER }
+        heading.addView(countView)
+        picker.addView(heading)
+
+        val search = EditText(this).apply {
+            hint = "جستجوی ارز؛ مثل BTC یا SOL"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setHintTextColor(muted)
+            background = rounded(panel, Color.rgb(105, 86, 39), 14)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+        }
+        picker.addView(search, marginParams(top = 8, bottom = 8))
+
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply { addView(list); layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.heightPixels * 0.55).toInt()) }
-        panel.addView(scroll)
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            addView(list)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.heightPixels * 0.48).toInt())
+        }
+        picker.addView(scroll)
         coinChoices = list
         renderCoinChoices("")
         search.addTextChangedListener(object : TextWatcher {
@@ -205,11 +233,39 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderCoinChoices(s?.toString().orEmpty()) }
             override fun afterTextChanged(s: Editable?) {}
         })
-        val dialog = AlertDialog.Builder(this).setTitle("انتخاب ارزها").setView(panel).setPositiveButton("بستن", null).setNegativeButton("پاک‌کردن انتخاب‌ها", null).create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { selectedSymbols.clear(); getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", emptySet()).apply(); renderCoinChoices(search.text.toString()); renderSelectedChoices() }
+
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
+        val clear = Button(this).apply {
+            text = "پاک‌کردن"
+            textSize = 12f
+            setTextColor(goldLight)
+            background = rounded(panel, gold, 12)
+            setPadding(dp(10), 0, dp(10), 0)
+        }
+        footer.addView(clear, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(8) })
+        val done = Button(this).apply {
+            text = "تأیید انتخاب‌ها"
+            textSize = 13f
+            setTextColor(ink)
+            background = rounded(gold, goldLight, 12)
+        }
+        footer.addView(done, LinearLayout.LayoutParams(0, dp(44), 1f))
+        picker.addView(footer, marginParams(top = 10))
+        val dialog = AlertDialog.Builder(this).setView(picker).create()
+        clear.setOnClickListener {
+            selectedSymbols.clear()
+            getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", emptySet()).apply()
+            countView.text = "0 انتخاب"
+            renderCoinChoices(search.text.toString())
+            renderSelectedChoices()
+        }
+        done.setOnClickListener { dialog.dismiss() }
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
     }
     private fun text(value: String, size: Int, color: Int, bold: Boolean = false) =
         TextView(this).apply {
@@ -250,16 +306,42 @@ class MainActivity : Activity() {
         val choices = coinChoices ?: return
         val q = query.trim().uppercase()
         choices.removeAllViews()
-        val matches = symbols.filter { symbol -> val base = symbol.removeSuffix("-SWAP-USDT"); q.isEmpty() || base.contains(q) || symbol.contains(q) }
-        for (symbol in matches) {
-            val box = CheckBox(this).apply {
-                text = symbol.removeSuffix("-SWAP-USDT"); textSize = 16f; setTextColor(Color.BLACK)
-                isChecked = selectedSymbols.contains(symbol)
-                setOnCheckedChangeListener { _, checked -> if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol); getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply(); renderSelectedChoices() }
-            }
-            choices.addView(box)
+        val matches = symbols.filter { symbol ->
+            val base = symbol.removeSuffix("-SWAP-USDT")
+            q.isEmpty() || base.contains(q) || symbol.contains(q)
         }
-        if (matches.isEmpty()) choices.addView(text("ارزی با این نماد پیدا نشد.", 14, Color.DKGRAY))
+        for (symbol in matches) {
+            val base = symbol.removeSuffix("-SWAP-USDT")
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(4), dp(10), dp(4))
+                background = rounded(if (selectedSymbols.contains(symbol)) Color.rgb(38, 34, 22) else panel,
+                    if (selectedSymbols.contains(symbol)) gold else Color.rgb(58, 59, 63), 14)
+            }
+            val coinInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            coinInfo.addView(text(base, 15, if (selectedSymbols.contains(symbol)) goldLight else Color.WHITE, true))
+            coinInfo.addView(text("USDT PERPETUAL", 9, muted))
+            row.addView(coinInfo, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val check = CheckBox(this).apply {
+                buttonTintList = android.content.res.ColorStateList.valueOf(gold)
+                isChecked = selectedSymbols.contains(symbol)
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol)
+                    getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
+                    renderSelectedChoices()
+                    renderCoinChoices(query)
+                }
+            }
+            row.addView(check)
+            row.setOnClickListener { check.isChecked = !check.isChecked }
+            choices.addView(row, marginParams(bottom = 7))
+        }
+        if (matches.isEmpty()) {
+            val empty = text(if (symbols.isEmpty()) "در حال دریافت فهرست ارزها…" else "ارزی با این نماد پیدا نشد.", 13, muted)
+            empty.gravity = Gravity.CENTER
+            choices.addView(empty)
+        }
     }
 
     private fun renderSelectedChoices() {
