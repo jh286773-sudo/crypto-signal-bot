@@ -35,8 +35,8 @@ class MainActivity : Activity() {
     private lateinit var result: TextView
     private lateinit var coinPickerButton: Button
     private var coinChoices: LinearLayout? = null
-    private val symbols = mutableListOf("BTC-SWAP-USDT", "ETH-SWAP-USDT", "BNB-SWAP-USDT", "SOL-SWAP-USDT", "XRP-SWAP-USDT", "DOGE-SWAP-USDT", "ADA-SWAP-USDT", "TRX-SWAP-USDT", "LINK-SWAP-USDT", "AVAX-SWAP-USDT")
-    private val selectedSymbols = linkedSetOf<String>().apply { addAll(symbols) }
+    private val symbols = mutableListOf<String>()
+    private val selectedSymbols = linkedSetOf<String>()
     private val checkboxes = mutableMapOf<String, CheckBox>()
     private val lastSignals = mutableMapOf<String, String>()
     private var busy = false
@@ -147,17 +147,14 @@ class MainActivity : Activity() {
                         if (s.endsWith("-SWAP-USDT") && (item.optString("quoteAsset").isBlank() || item.optString("quoteAsset") == "USDT")) active.add(s)
                     }
                 }
-                val preferredBases = listOf("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK", "AVAX")
-                val preferred = preferredBases.map { "$it-SWAP-USDT" }.filter { active.contains(it) }
-                val ordered = preferred + active.filterNot { preferred.contains(it) }.sorted()
+                val ordered = active.distinct().sorted()
                 runOnUiThread {
                     symbols.clear()
                     symbols.addAll(ordered)
                     selectedSymbols.retainAll(ordered.toSet())
-                    if (selectedSymbols.isEmpty()) selectedSymbols.addAll(preferred)
                     getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
                     renderSelectedChoices()
-                    status.text = "اتصال برقرار • ${ordered.size} قرارداد فعال USDT فیوچرز؛ ۱۰ ارز اصلی انتخاب‌شده"
+                    status.text = if (selectedSymbols.isEmpty()) "فهرست قراردادها آماده است؛ برای شروع، ارزها را دستی انتخاب کن." else "اتصال برقرار • ${ordered.size} قرارداد فعال؛ ${selectedSymbols.size} ارز با انتخاب دستی"
                 }
             } catch (e: Exception) {
                 runOnUiThread { status.text = "خطای دریافت فهرست قراردادها: ${e.message}" }
