@@ -46,6 +46,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         createChannel()
         buildUi()
+        val saved = getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).getStringSet("selected_symbols", null)
+        if (saved != null) { selectedSymbols.clear(); selectedSymbols.addAll(saved) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 71)
         }
@@ -82,6 +84,7 @@ class MainActivity : Activity() {
         startMonitor.setOnClickListener {
             val i = Intent(this, CryptoMonitorService::class.java).apply { action = CryptoMonitorService.ACTION_START }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i)
+            getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
             status.text = "درخواست شروع پایش پس‌زمینه ارسال شد؛ اعلان دائمی را بررسی کن."
         }
         stopMonitor.setOnClickListener {
@@ -139,6 +142,7 @@ class MainActivity : Activity() {
                     symbols.addAll(ordered)
                     selectedSymbols.retainAll(ordered.toSet())
                     if (selectedSymbols.isEmpty()) selectedSymbols.addAll(preferred)
+                    getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
                     renderSelectedChoices()
                     status.text = "اتصال برقرار • ${ordered.size} قرارداد فعال USDT فیوچرز؛ ۱۰ ارز اصلی انتخاب‌شده"
                 }
@@ -157,7 +161,7 @@ class MainActivity : Activity() {
             val box = CheckBox(this).apply {
                 text = symbol.removeSuffix("-SWAP-USDT"); textSize = 16f; setTextColor(Color.BLACK)
                 isChecked = selectedSymbols.contains(symbol)
-                setOnCheckedChangeListener { _, checked -> if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol); renderSelectedChoices() }
+                setOnCheckedChangeListener { _, checked -> if (checked) selectedSymbols.add(symbol) else selectedSymbols.remove(symbol); getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply(); renderSelectedChoices() }
             }
             choices.addView(box)
         }
