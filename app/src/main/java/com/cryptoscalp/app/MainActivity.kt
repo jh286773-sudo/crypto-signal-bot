@@ -29,13 +29,18 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import java.util.concurrent.Executors
+import java.util.Collections
 
 class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
     private lateinit var coinPickerButton: Button
     private val selectedExchanges = linkedSetOf("Toobit")
-    private var coinChoices: LinearLayout? = null
+    private var coinChoices: ListView? = null
+    private var coinAdapter: CoinListAdapter? = null
+    private val logoExecutor = Executors.newFixedThreadPool(4)
+    private val failedLogoUrls = Collections.synchronizedSet(mutableSetOf<String>())
     private val symbols = mutableListOf<String>()
     private val selectedSymbols = linkedSetOf<String>()
     private val channelId = "scalp_signals"
@@ -311,19 +316,36 @@ class MainActivity : Activity() {
             view.setImageBitmap(it)
             return
         }
-        thread {
+        if (failedLogoUrls.contains(imageUrl)) return
+        logoExecutor.execute {
+            var connection: HttpURLConnection? = null
             try {
-                val connection = (URL(imageUrl).openConnection() as HttpURLConnection)
-                connection.connectTimeout = 8000
-                connection.readTimeout = 10000
+                connection = URL(imageUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 2500
+                connection.readTimeout = 2500
+                connection.instanceFollowRedirects = true
                 connection.setRequestProperty("User-Agent", "AURUM-X-Android")
-                val bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) }
-                connection.disconnect()
+                connection.connect()
+                if (connection.responseCode !in 200..299) {
+                    failedLogoUrls.add(imageUrl)
+                    return@execute
+                }
+                val bitmap = connection.inputStream.use {
+                    BitmapFactory.decodeStream(it)?.let { decoded ->
+                        val scaled = android.graphics.Bitmap.createScaledBitmap(decoded, dp(48), dp(48), true)
+                        if (scaled !== decoded) decoded.recycle()
+                        scaled
+                    }
+                }
                 if (bitmap != null) {
                     synchronized(logoCache) { logoCache[imageUrl] = bitmap }
                     runOnUiThread { if (view.tag == imageUrl) view.setImageBitmap(bitmap) }
-                }
-            } catch (_: Exception) { }
+                } else failedLogoUrls.add(imageUrl)
+            } catch (_: Exception) {
+                failedLogoUrls.add(imageUrl)
+            } finally {
+                connection?.disconnect()
+            }
         }
     }
 
@@ -375,15 +397,28 @@ class MainActivity : Activity() {
         }
         picker.addView(search, marginParams(top = 8, bottom = 8))
 
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply {
-            isFillViewport = false
-            addView(list)
+        val list = ListView(this).apply {
+            divider = android.graphics.drawable.ColorDrawable(Color.rgb(67, 59, 43))
+            dividerHeight = dp(1)
+            cacheColorHint = Color.TRANSPARENT
+            isVerticalScrollBarEnabled = true
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (resources.displayMetrics.heightPixels * 0.48).toInt())
         }
-        picker.addView(scroll)
+        picker.addView(list)
         coinChoices = list
+        coinAdapter = CoinListAdapter()
+        list.adapter = coinAdapter
         renderCoinChoices("")
+        list.setOnItemClickListener { _, _, position, _ ->
+            val symbol = coinAdapter?.getItem(position) ?: return@setOnItemClickListener
+            if (selectedSymbols.contains(symbol)) selectedSymbols.remove(symbol) else selectedSymbols.add(symbol)
+            getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit()
+                .putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
+            countView.text = "${selectedSymbols.size} انتخاب"
+            coinAdapter?.notifyDataSetChanged()
+            renderSelectedChoices()
+        }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderCoinChoices(s?.toString().orEmpty()) }
@@ -423,7 +458,7 @@ class MainActivity : Activity() {
             selectedSymbols.clear()
             getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", emptySet()).apply()
             countView.text = "0 انتخاب"
-            renderCoinChoices(search.text.toString())
+            coinAdapter?.notifyDataSetChanged()
             renderSelectedChoices()
         }
         done.setOnClickListener { dialog.dismiss() }
@@ -469,58 +504,77 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun renderCoinChoices(query: String) {
-        val choices = coinChoices ?: return
-        val q = query.trim().uppercase()
-        choices.removeAllViews()
-        val matches = symbols.filter { symbol ->
-            val base = symbol.removeSuffix("-SWAP-USDT")
-            q.isEmpty() || base.contains(q) || symbol.contains(q)
-        }
-        for (symbol in matches) {
-            val base = symbol.removeSuffix("-SWAP-USDT")
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(4), dp(10), dp(4))
-                background = rounded(if (selectedSymbols.contains(symbol)) Color.rgb(38, 34, 22) else panel,
-                    if (selectedSymbols.contains(symbol)) gold else Color.rgb(100, 91, 70), 14)
-                elevation = dp(if (selectedSymbols.contains(symbol)) 7 else 3).toFloat()
-            }
-            val coinLogo = logoView(38)
-            row.addView(coinLogo)
-            loadLogo(coinLogo, coinLogoUrl(base), base)
-            val coinInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            coinInfo.addView(text(base, 15, if (selectedSymbols.contains(symbol)) goldLight else Color.WHITE, true))
-            coinInfo.addView(text("USDT PERPETUAL", 9, muted))
-            row.addView(coinInfo, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            val selectedDot = TextView(this).apply {
-                text = "●"; textSize = 24f
-                gravity = Gravity.CENTER
-                setTextColor(if (selectedSymbols.contains(symbol)) gold else Color.TRANSPARENT)
-                background = android.graphics.drawable.GradientDrawable(
-                    android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                    intArrayOf(Color.WHITE, goldLight, gold)
-                ).apply {
-                    shape = android.graphics.drawable.GradientDrawable.OVAL
-                    setColor(if (selectedSymbols.contains(symbol)) gold else Color.TRANSPARENT)
-                    setStroke(dp(2), gold)
+    private inner class CoinListAdapter : android.widget.BaseAdapter() {
+        private var items: List<String> = emptyList()
+
+        override fun getCount(): Int = items.size
+        override fun getItem(position: Int): String = items[position]
+        override fun getItemId(position: Int): Long = items[position].hashCode().toLong()
+
+        override fun getView(position: Int, convertView: android.view.View?, parent: ViewGroup): android.view.View {
+            val holder: CoinRowHolder
+            val row: LinearLayout
+            if (convertView == null) {
+                row = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(5), dp(10), dp(5))
                 }
-                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+                val logo = logoView(38)
+                row.addView(logo)
+                val info = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+                val name = text("", 15, Color.WHITE, true)
+                val detail = text("USDT PERPETUAL", 9, muted)
+                info.addView(name)
+                info.addView(detail)
+                row.addView(info, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                val dot = TextView(this@MainActivity).apply {
+                    text = "●"; textSize = 24f; gravity = Gravity.CENTER
+                    layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+                }
+                row.addView(dot)
+                holder = CoinRowHolder(logo, name, dot)
+                row.tag = holder
+            } else {
+                row = convertView as LinearLayout
+                holder = row.tag as CoinRowHolder
             }
-            row.addView(selectedDot)
-            row.setOnClickListener {
-                if (selectedSymbols.contains(symbol)) selectedSymbols.remove(symbol) else selectedSymbols.add(symbol)
-                getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
-                renderSelectedChoices(); renderCoinChoices(query)
+
+            val symbol = getItem(position)
+            val base = symbol.removeSuffix("-SWAP-USDT")
+            val selected = selectedSymbols.contains(symbol)
+            holder.name.text = base
+            holder.name.setTextColor(if (selected) goldLight else Color.WHITE)
+            holder.dot.setTextColor(if (selected) gold else Color.TRANSPARENT)
+            holder.dot.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(if (selected) gold else Color.TRANSPARENT)
+                setStroke(dp(2), gold)
             }
-            choices.addView(row, marginParams(bottom = 7))
+            row.background = rounded(if (selected) Color.rgb(38, 34, 22) else panel,
+                if (selected) gold else Color.rgb(100, 91, 70), 14)
+            loadLogo(holder.logo, coinLogoUrl(base), base)
+            return row
         }
-        if (matches.isEmpty()) {
-            val empty = text(if (symbols.isEmpty()) "در حال دریافت فهرست ارزها…" else "ارزی با این نماد پیدا نشد.", 13, muted)
-            empty.gravity = Gravity.CENTER
-            choices.addView(empty)
+
+        fun filter(query: String) {
+            val q = query.trim().uppercase()
+            items = symbols.filter { symbol ->
+                val base = symbol.removeSuffix("-SWAP-USDT")
+                q.isEmpty() || base.contains(q) || symbol.contains(q)
+            }
+            notifyDataSetChanged()
         }
+    }
+
+    private data class CoinRowHolder(
+        val logo: ImageView,
+        val name: TextView,
+        val dot: TextView
+    )
+
+    private fun renderCoinChoices(query: String) {
+        coinAdapter?.filter(query)
     }
 
     private fun renderSelectedChoices() {
