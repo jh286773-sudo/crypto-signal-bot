@@ -18,112 +18,177 @@ data class StrategyResult(
     val smc: List<String>
 )
 
-/** Six technical indicators plus a separate Smart Money Concepts confirmation layer. */
+/**
+ * Ten-tool, multi-timeframe strategy.
+ * All indicators are calculated from OHLCV candles; no external indicator values are assumed.
+ * Volume Profile and SMC are transparent approximations based on available candle data.
+ */
 object TradingStrategy {
-    private fun ema(v: List<Double>, p: Int): Double {
-        if (v.size < p) return Double.NaN
-        val k = 2.0 / (p + 1)
-        var x = v.take(p).average()
-        for (n in v.drop(p)) x = n * k + x * (1-k)
-        return x
+    private fun valid(x: Double) = x.isFinite()
+    private fun emaSeries(v: List<Double>, p: Int): List<Double> {
+        if (v.size < p) return emptyList()
+        val out = MutableList(v.size) { Double.NaN }
+        val k = 2.0 / (p + 1.0)
+        var e = v.take(p).average()
+        out[p - 1] = e
+        for (i in p until v.size) { e = v[i] * k + e * (1.0 - k); out[i] = e }
+        return out
     }
+    private fun ema(v: List<Double>, p: Int) = emaSeries(v,p).lastOrNull() ?: Double.NaN
+
+    // Wilder's smoothed RSI (not a simple gain/loss sum).
     private fun rsi(v: List<Double>, p: Int = 14): Double {
         if (v.size <= p) return Double.NaN
-        val d = v.takeLast(p+1).zipWithNext { a,b -> b-a }
-        var g = 0.0; var l = 0.0
-        d.forEach { if (it > 0) g += it else l -= it }
-        if (l == 0.0) return 100.0
-        return 100.0 - 100.0/(1.0 + g/l)
+        val d = v.zipWithNext { a,b -> b-a }
+        var g = d.take(p).map { max(it,0.0) }.average()
+        var l = d.take(p).map { max(-it,0.0) }.average()
+        for (x in d.drop(p)) { g = (g*(p-1)+max(x,0.0))/p; l = (l*(p-1)+max(-x,0.0))/p }
+        if (l == 0.0) return if (g == 0.0) 50.0 else 100.0
+        return 100.0 - 100.0/(1.0+g/l)
     }
-    private fun macd(v: List<Double>): Pair<Double,Double> {
-        if (v.size < 35) return Pair(Double.NaN, Double.NaN)
-        val line = v.indices.map { i ->
-            val sub = v.take(i+1)
-            if (sub.size < 26) 0.0 else ema(sub,12)-ema(sub,26)
-        }
-        return Pair(line.last(), ema(line.drop(25),9))
+    private fun macd(v: List<Double>): Triple<Double,Double,Double> {
+        val a=emaSeries(v,12); val b=emaSeries(v,26)
+        if(a.isEmpty()||b.isEmpty()) return Triple(Double.NaN,Double.NaN,Double.NaN)
+        val line=(25 until v.size).map { a[it]-b[it] }
+        val sig=emaSeries(line,9)
+        if(sig.isEmpty()) return Triple(Double.NaN,Double.NaN,Double.NaN)
+        return Triple(line.last(),sig.last(),line.last()-sig.last())
     }
-    private fun bands(v: List<Double>): Triple<Double,Double,Double> {
-        val a=v.takeLast(20); val m=a.average()
-        val sd=sqrt(a.map{(it-m)*(it-m)}.average())
+    private fun bands(v: List<Double>, p:Int=20): Triple<Double,Double,Double> {
+        if(v.size<p)return Triple(Double.NaN,Double.NaN,Double.NaN)
+        val x=v.takeLast(p);val m=x.average();val sd=sqrt(x.map{(it-m)*(it-m)}.average())
         return Triple(m-2*sd,m,m+2*sd)
     }
-    private fun atr(c: List<MarketCandle>, p:Int=14):Double {
-        if(c.size<p+1) return Double.NaN
-        return c.takeLast(p).mapIndexed { i,x ->
-            val prev=c[c.size-p+i-1].close
-            max(x.high-x.low,max(abs(x.high-prev),abs(x.low-prev)))
-        }.average()
+    private fun trueRanges(c:List<MarketCandle>):List<Double> = c.drop(1).mapIndexed{i,x->
+        val prev=c[i].close;max(x.high-x.low,max(abs(x.high-prev),abs(x.low-prev)))
     }
-    private fun adx(c:List<MarketCandle>,p:Int=14):Pair<Double,Double> {
-        if(c.size<p+2) return Pair(Double.NaN,Double.NaN)
-        val rows=c.takeLast(p+1).zipWithNext()
-        var plus=0.0; var minus=0.0; var tr=0.0
-        rows.forEach { (a,b) ->
-            val up=b.high-a.high; val dn=a.low-b.low
-            if(up>dn && up>0) plus+=up
-            if(dn>up && dn>0) minus+=dn
-            tr+=max(b.high-b.low,max(abs(b.high-a.close),abs(b.low-a.close)))
+    private fun atr(c:List<MarketCandle>,p:Int=14):Double{
+        val tr=trueRanges(c);if(tr.size<p)return Double.NaN
+        var x=tr.take(p).average()
+        for(v in tr.drop(p))x=(x*(p-1)+v)/p
+        return x
+    }
+    // Wilder smoothed ADX and directional index spread.
+    private fun adx(c:List<MarketCandle>,p:Int=14):Pair<Double,Double>{
+        if(c.size<p+2)return Pair(Double.NaN,Double.NaN)
+        val plus=mutableListOf<Double>();val minus=mutableListOf<Double>();val tr=trueRanges(c)
+        for(i in 1 until c.size){
+            val up=c[i].high-c[i-1].high;val dn=c[i-1].low-c[i].low
+            plus.add(if(up>dn&&up>0)up else 0.0);minus.add(if(dn>up&&dn>0)dn else 0.0)
         }
-        if(tr<=0) return Pair(0.0,0.0)
-        val pdi=100*plus/tr; val mdi=100*minus/tr
-        val dx=if(pdi+mdi==0.0) 0.0 else 100*abs(pdi-mdi)/(pdi+mdi)
-        return Pair(dx,pdi-mdi)
+        fun smooth(x:List<Double>):List<Double>{var s=x.take(p).sum();val o=mutableListOf(s);for(v in x.drop(p)){s=s-s/p+v;o.add(s)};return o}
+        val ts=smooth(tr);val ps=smooth(plus);val ms=smooth(minus)
+        val dx=(0 until min(ts.size,min(ps.size,ms.size))).map{i->
+            val pi=if(ts[i]==0.0)0.0 else 100*ps[i]/ts[i]
+            val mi=if(ts[i]==0.0)0.0 else 100*ms[i]/ts[i]
+            if(pi+mi==0.0)0.0 else 100*abs(pi-mi)/(pi+mi)
+        }
+        if(dx.size<p)return Pair(Double.NaN,Double.NaN)
+        var ax=dx.take(p).average();for(v in dx.drop(p))ax=(ax*(p-1)+v)/p
+        val last=ts.last()
+        val pdi=if(last==0.0)0.0 else 100*ps.last()/last
+        val mdi=if(last==0.0)0.0 else 100*ms.last()/last
+        return Pair(ax,pdi-mdi)
     }
-    private fun smc(c:List<MarketCandle>):Pair<Int,List<String>> {
-        val x=c.takeLast(40); if(x.size<20) return Pair(0, emptyList())
-        val recent=x.takeLast(5); val prior=x.dropLast(5)
-        val swingHigh=prior.maxOf{it.high}; val swingLow=prior.minOf{it.low}
-        var score=0; val notes=mutableListOf<String>()
-        val last=recent.last()
+    private fun vwap(c:List<MarketCandle>):Double{
+        val x=c.takeLast(48);val vol=x.sumOf{max(it.volume,0.0)}
+        if(vol<=0)return Double.NaN
+        return x.sumOf{((it.high+it.low+it.close)/3.0)*max(it.volume,0.0)}/vol
+    }
+    private fun stochRsi(v:List<Double>,p:Int=14):Pair<Double,Double>{
+        if(v.size< p*3)return Pair(Double.NaN,Double.NaN)
+        val rsis=(p until v.size).map{rsi(v.take(it+1),p)}
+        if(rsis.size<3)return Pair(Double.NaN,Double.NaN)
+        val raw=rsis.mapIndexed{i,_->
+            val w=rsis.subList(max(0,i-p+1),i+1);val lo=w.minOrNull()!!;val hi=w.maxOrNull()!!
+            if(hi==lo)50.0 else 100*(w.last()-lo)/(hi-lo)
+        }
+        val k=raw.takeLast(3).average()
+        val d=raw.takeLast(3).chunked(1).flatten().takeLast(3).average()
+        return Pair(k,d)
+    }
+    // Candle-volume histogram POC and approximate 70% value area.
+    private fun volumeProfile(c:List<MarketCandle>):Triple<Double,Double,Double>{
+        val x=c.takeLast(100);val lo=x.minOf{it.low};val hi=x.maxOf{it.high}
+        if(hi<=lo)return Triple(Double.NaN,Double.NaN,Double.NaN)
+        val bins=Array(24){0.0};val step=(hi-lo)/24.0
+        x.forEach{val typical=(it.high+it.low+it.close)/3.0;val idx=((typical-lo)/step).toInt().coerceIn(0,23);bins[idx]+=max(it.volume,0.0)}
+        val total=bins.sum();if(total<=0)return Triple(Double.NaN,Double.NaN,Double.NaN)
+        val poc=bins.indices.maxByOrNull{bins[it]}?:0
+        var left=poc;var right=poc;var accumulated=bins[poc]
+        while(accumulated<total*0.70&&(left>0||right<23)){
+            val lv=if(left>0)bins[left-1] else -1.0;val rv=if(right<23)bins[right+1] else -1.0
+            if(rv>lv){right=min(23,right+1);accumulated+=max(rv,0.0)}else{left=max(0,left-1);accumulated+=max(lv,0.0)}
+        }
+        return Triple(lo+(poc+0.5)*step,lo+left*step,lo+(right+1)*step)
+    }
+    private data class Smc(val score:Int,val notes:List<String>)
+    private fun smc(c:List<MarketCandle>):Smc{
+        if(c.size<40)return Smc(0,emptyList())
+        val x=c.takeLast(100);val recent=x.takeLast(3);val prior=x.dropLast(3)
+        val swingHigh=prior.maxOf{it.high};val swingLow=prior.minOf{it.low};val last=x.last()
+        var score=0;val notes=mutableListOf<String>()
+        val prevHigh=x.dropLast(10).takeLast(30).maxOf{it.high};val prevLow=x.dropLast(10).takeLast(30).minOf{it.low}
         if(last.close>swingHigh){score+=2;notes.add("BOS صعودی")}
         if(last.close<swingLow){score-=2;notes.add("BOS نزولی")}
-        // Liquidity sweep: wick beyond prior liquidity, close back inside.
-        if(recent.any{it.high>swingHigh && it.close<swingHigh}){score-=2;notes.add("Liquidity Sweep بالای سقف")}
-        if(recent.any{it.low<swingLow && it.close>swingLow}){score+=2;notes.add("Liquidity Sweep زیر کف")}
-        // Fair Value Gap on three-candle structure.
-        for(i in 2 until x.size){
-            val a=x[i-2]; val b=x[i]
+        if(last.low<prevLow&&last.close>prevLow){score+=2;notes.add("Liquidity Sweep کف")}
+        if(last.high>prevHigh&&last.close<prevHigh){score-=2;notes.add("Liquidity Sweep سقف")}
+        // CHoCH: close breaks the opposite short-term structure after a prior directional swing.
+        val old=x.dropLast(8).takeLast(20)
+        val oldBull=old.last().close>old.first().close
+        if(oldBull&&last.close<old.takeLast(6).minOf{it.low}){score-=2;notes.add("CHoCH نزولی")}
+        if(!oldBull&&last.close>old.takeLast(6).maxOf{it.high}){score+=2;notes.add("CHoCH صعودی")}
+        for(i in max(2,x.size-12) until x.size){
+            val a=x[i-2];val b=x[i]
             if(b.low>a.high){score++;notes.add("FVG صعودی");break}
             if(b.high<a.low){score--;notes.add("FVG نزولی");break}
         }
-        // Last opposing candle before displacement as a simple OB proxy.
+        // Order block requires opposing candle followed by displacement beyond its range.
         val impulse=recent.last()
-        val opposing=prior.lastOrNull{ if(impulse.close>impulse.open) it.close<it.open else it.close>it.open }
-        if(opposing!=null){
-            if(impulse.close>impulse.open){score++;notes.add("Order Block تقاضا")}
-            else {score--;notes.add("Order Block عرضه")}
-        }
-        return Pair(score,notes.distinct())
+        val bullish=impulse.close>impulse.open&&impulse.close>swingHigh
+        val bearish=impulse.close<impulse.open&&impulse.close<swingLow
+        if(bullish){val ob=prior.lastOrNull{it.close<it.open};if(ob!=null){score++;notes.add("Order Block تقاضا تأییدشده")}}
+        if(bearish){val ob=prior.lastOrNull{it.close>it.open};if(ob!=null){score--;notes.add("Order Block عرضه تأییدشده")}}
+        return Smc(score,notes.distinct())
     }
 
-    fun evaluate(one:List<MarketCandle>, five:List<MarketCandle>, fifteen:List<MarketCandle>, hour:List<MarketCandle>):StrategyResult {
-        require(one.size>=60 && five.size>=60 && fifteen.size>=60 && hour.size>=60) { "کندل کافی نیست" }
-        val c=five.map{it.close}; val h=fifteen.map{it.close}; val d=hour.map{it.close}
+    fun evaluate(one:List<MarketCandle>,five:List<MarketCandle>,fifteen:List<MarketCandle>,hour:List<MarketCandle>):StrategyResult{
+        require(one.size>=60&&five.size>=60&&fifteen.size>=60&&hour.size>=60){"کندل کافی نیست"}
+        val c=five.map{it.close};val h=fifteen.map{it.close};val d=hour.map{it.close}
         val price=one.last().close
-        var score=0; val reasons=mutableListOf<String>()
-        // 1 RSI
-        val r=rsi(c); if(r>52){score++;reasons.add("RSI صعودی")} else if(r<48){score--;reasons.add("RSI نزولی")}
-        // 2 MACD
-        val m=macd(c); if(m.first>m.second){score++;reasons.add("MACD مثبت")} else {score--;reasons.add("MACD منفی")}
-        // 3 EMA trend alignment
-        val e1=ema(d,9)>ema(d,21)&&ema(d,21)>ema(d,50)
-        val e2=ema(h,9)>ema(h,21)&&ema(h,21)>ema(h,50)
-        if(e1&&e2){score+=2;reasons.add("EMA هم‌راستا در ۱ساعت و ۱۵دقیقه")}
-        else if(ema(d,9)<ema(d,21)&&ema(d,21)<ema(d,50)&&ema(h,9)<ema(h,21)&&ema(h,21)<ema(h,50)){score-=2;reasons.add("EMA نزولی در دو تایم‌فریم")}
-        // 4 Bollinger Bands
-        val bb=bands(c); if(price<bb.first){score++;reasons.add("قیمت زیر باند پایینی بولینگر")} else if(price>bb.third){score--;reasons.add("قیمت بالای باند بالایی بولینگر")}
-        // 5 ATR volatility filter / risk sizing
-        val a=atr(five); if(a.isFinite() && a>0){reasons.add("ATR(14) نوسان‌پذیری را تأیید کرد")}
-        // 6 ADX trend strength
-        val ad=adx(five); if(ad.first>=20){if(ad.second>0){score++;reasons.add("ADX روند صعودی قوی")}else{score--;reasons.add("ADX روند نزولی قوی")}}
-        // Separate SMC layer
-        val smart=smc(five); score+=smart.first
-        val signal=when { score>=4 && smart.first>0 -> "LONG"; score<=-4 && smart.first<0 -> "SHORT"; else -> "WAIT" }
-        val risk=max(if(a.isFinite()) a else price*0.001,price*0.0005)
-        val stop=if(signal=="LONG")price-1.5*risk else price+1.5*risk
-        val t1=if(signal=="LONG")price+1.5*risk else price-1.5*risk
-        val t2=if(signal=="LONG")price+2.5*risk else price-2.5*risk
-        return StrategyResult(signal,score,price,stop,t1,t2,reasons,smart.second)
+        var score=0;val reasons=mutableListOf<String>()
+        // 1 RSI: trend regime with overbought/oversold rejection.
+        val r=rsi(c);when{r>=55->{score+=1;reasons.add("RSI(14) مومنتوم صعودی")};r<=45->{score--;reasons.add("RSI(14) مومنتوم نزولی")};else->reasons.add("RSI خنثی")}
+        // 2 MACD line/signal/histogram agreement.
+        val m=macd(c);if(m.third>0&&m.first>0){score+=1;reasons.add("MACD و هیستوگرام صعودی")}else if(m.third<0&&m.first<0){score--;reasons.add("MACD و هیستوگرام نزولی")}
+        // 3 EMA 9/21/50/200 trend stack, multi timeframe.
+        val upH=ema(d,9)>ema(d,21)&&ema(d,21)>ema(d,50)&&ema(d,50)>ema(d, min(200,d.size))
+        val dnH=ema(d,9)<ema(d,21)&&ema(d,21)<ema(d,50)&&ema(d,50)<ema(d,min(200,d.size))
+        val up15=ema(h,9)>ema(h,21)&&ema(h,21)>ema(h,50)
+        val dn15=ema(h,9)<ema(h,21)&&ema(h,21)<ema(h,50)
+        if(upH&&up15){score+=2;reasons.add("EMA 9/21/50/200 هم‌راستای صعودی در تایم‌فریم‌ها")}else if(dnH&&dn15){score-=2;reasons.add("EMA هم‌راستای نزولی در تایم‌فریم‌ها")}
+        // 4 Bollinger: avoid blindly fading a band; score reclaim/rejection.
+        val bb=bands(c);if(price<bb.first&&c.last()>c[c.size-2]){score++;reasons.add("بازگشت از باند پایین بولینگر")}else if(price>bb.third&&c.last()<c[c.size-2]){score--;reasons.add("رد قیمت از باند بالای بولینگر")}
+        // 5 ATR is used as a volatility/risk filter and dynamic stop distance.
+        val a=atr(five);val atrPct=if(a.isFinite())a/price else Double.NaN
+        val volatilityOk=atrPct.isFinite()&&atrPct in 0.0003..0.04
+        if(volatilityOk)reasons.add("ATR(14) فیلتر نوسان معتبر")else reasons.add("هشدار: نوسان خارج از محدوده معمول")
+        // 6 ADX + DI direction.
+        val ad=adx(five);if(ad.first>=22){if(ad.second>0){score++;reasons.add("ADX بالای ۲۲ و +DI غالب")}else{score--;reasons.add("ADX بالای ۲۲ و -DI غالب")}}
+        // 7 VWAP location.
+        val vw=vwap(five);if(vw.isFinite()){if(price>vw){score++;reasons.add("قیمت بالای VWAP")}else{score--;reasons.add("قیمت زیر VWAP")}}
+        // 8 Stochastic RSI cross in extreme zone.
+        val st=stochRsi(c);if(st.first<20&&st.first>st.second){score++;reasons.add("Stoch RSI صعودی از اشباع فروش")}else if(st.first>80&&st.first<st.second){score--;reasons.add("Stoch RSI نزولی از اشباع خرید")}
+        // 9 Volume Profile: POC and value-area context.
+        val vp=volumeProfile(five);if(vp.first.isFinite()){if(price>vp.first){score++;reasons.add("قیمت بالای Volume Profile POC")}else{score--;reasons.add("قیمت زیر Volume Profile POC")}}
+        // 10 Smart Money Concepts, separate structural confirmation layer.
+        val smart=smc(five);score+=smart.score
+        if(!volatilityOk){score=0;reasons.add("سیگنال به‌علت فیلتر ریسک متوقف شد")}
+        val signal=when{score>=5&&smart.score>=1&&up15->"LONG";score<=-5&&smart.score<=-1&&dn15->"SHORT";else->"WAIT"}
+        val risk=max(if(a.isFinite()&&a>0)a else price*0.001,price*0.0005)
+        val stop=when(signal){"LONG"->price-1.5*risk;"SHORT"->price+1.5*risk;else->price}
+        val t1=when(signal){"LONG"->price+1.5*risk;"SHORT"->price-1.5*risk;else->price}
+        val t2=when(signal){"LONG"->price+2.5*risk;"SHORT"->price-2.5*risk;else->price}
+        return StrategyResult(signal,score,price,stop,t1,t2,reasons,smart.notes)
     }
 }
