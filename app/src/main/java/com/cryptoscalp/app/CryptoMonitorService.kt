@@ -57,7 +57,7 @@ class CryptoMonitorService : Service() {
         if(!online()){updateStatus("اینترنت قطع است؛ منتظر اتصال");return}
         val list=symbols()
         if(list.isEmpty()){updateStatus("هیچ ارزی انتخاب نشده؛ از داخل برنامه نمادها را دستی انتخاب کن.");return}
-        scanning=true;updateStatus("در حال تحلیل ۱۰ ابزار حرفه‌ای و اسمارت‌مانی…")
+        val exchange=prefs.getStringSet("selected_exchanges",setOf("Toobit"))?.firstOrNull() ?: "Toobit"\n        scanning=true;updateStatus("در حال پایش خودکار $exchange • ۱۰ ابزار و اسمارت‌مانی…")
         thread(name="market-monitor"){
             var ok=0;
             for(symbol in list)try{
@@ -77,36 +77,8 @@ class CryptoMonitorService : Service() {
                 prefs.edit().putString("last_signal_$symbol",r.signal).apply();ok++
             }catch(_:Exception){}
             scanning=false
-            handler.post{updateStatus("پایش فعال • تحلیل موفق $ok از ${list.size} نماد • هر ۶۰ ثانیه")}
+            handler.post{updateStatus("پایش $exchange فعال • تحلیل موفق $ok از ${list.size} نماد • هر ۶۰ ثانیه")}
         }
-    }
-    private fun candles(symbol:String,interval:String):List<MarketCandle>{
-        val duration=when(interval){"1m"->60_000L;"5m"->300_000L;"15m"->900_000L;else->3_600_000L}
-        val now=System.currentTimeMillis()
-        val url="https://api.toobit.com/quote/v1/markPrice/klines?symbol=$symbol&interval=$interval&from=${now-duration*260}&to=$now&limit=260"
-        val conn=URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout=12_000;conn.readTimeout=15_000
-        try{
-            val data=JSONObject(conn.inputStream.bufferedReader().use{it.readText()}).optJSONArray("data")?:JSONArray()
-            val out=mutableListOf<MarketCandle>()
-            for(i in 0 until data.length()){
-                val o=data.getJSONObject(i)
-                val open=o.optString("open").toDoubleOrNull()?:continue
-                val high=o.optString("high").toDoubleOrNull()?:continue
-                val low=o.optString("low").toDoubleOrNull()?:continue
-                val close=o.optString("close").toDoubleOrNull()?:continue
-                val volume=o.optString("volume").toDoubleOrNull()?:0.0
-                if(open>0&&high>0&&low>0&&close>0)out.add(MarketCandle(open,high,low,close,volume))
-            }
-            if(out.size<60)throw IllegalStateException("کندل کافی نیست")
-            return out
-        }finally{conn.disconnect()}
-    }
-    private fun markPrice(symbol:String):Double{
-        val c=URL("https://api.toobit.com/quote/v1/markPrice?symbol=$symbol").openConnection() as HttpURLConnection
-        c.connectTimeout=10_000;c.readTimeout=12_000
-        try{return JSONObject(c.inputStream.bufferedReader().use{it.readText()}).optString("price").toDoubleOrNull()?.takeIf{it>0}?:throw IllegalStateException("قیمت نامعتبر")}
-        finally{c.disconnect()}
     }
     private fun saveOpen(symbol:String,r:StrategyResult){
         val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp1Done",false)
