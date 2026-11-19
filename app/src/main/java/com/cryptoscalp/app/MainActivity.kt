@@ -397,7 +397,7 @@ class MainActivity : Activity() {
             // Precision-machined forehead plate, engraved seams and cheek bevels.
             val detail = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.DITHER_FLAG).apply {
                 style = android.graphics.Paint.Style.STROKE
-                strokeWidth = dp(1.15f).toFloat()
+                strokeWidth = dp(1).toFloat()
                 color = Color.argb(205, 255, 225, 145)
             }
             val engraving = android.graphics.Path().apply {
@@ -409,8 +409,8 @@ class MainActivity : Activity() {
             canvas.drawPath(engraving, detail)
             detail.style = android.graphics.Paint.Style.FILL
             detail.color = Color.rgb(255, 235, 180)
-            canvas.drawCircle(cx, cy-h*.405f, dp(2.1f).toFloat(), detail)
-            canvas.drawCircle(cx-h*.285f, cy+h*.19f, dp(1.7f).toFloat(), detail)
+            canvas.drawCircle(cx, cy-h*.405f, dp(2).toFloat(), detail)
+            canvas.drawCircle(cx-h*.285f, cy+h*.19f, dp(2).toFloat(), detail)
             canvas.drawCircle(cx+h*.285f, cy+h*.19f, dp(1.7f).toFloat(), detail)
 
             // Dark inset visor and luminous eyes.
@@ -437,11 +437,11 @@ class MainActivity : Activity() {
             canvas.drawLine(cx+h*.29f, cy+h*.05f, cx+h*.29f, cy+h*.17f, p)
             // Layered horn inlays and illuminated side-panel micro details.
             p.style = android.graphics.Paint.Style.STROKE
-            p.strokeWidth = dp(1.25f).toFloat()
+            p.strokeWidth = dp(1).toFloat()
             p.color = Color.argb(210, 255, 238, 190)
             canvas.drawLine(cx-h*.39f, cy-h*.25f, cx-h*.49f, cy-h*.39f, p)
             canvas.drawLine(cx+h*.39f, cy-h*.25f, cx+h*.49f, cy-h*.39f, p)
-            p.strokeWidth = dp(.8f).toFloat()
+            p.strokeWidth = dp(1).toFloat()
             p.color = Color.argb(150, 255, 204, 91)
             canvas.drawLine(cx-h*.32f, cy+h*.02f, cx-h*.32f, cy+h*.20f, p)
             canvas.drawLine(cx+h*.32f, cy+h*.02f, cx+h*.32f, cy+h*.20f, p)
