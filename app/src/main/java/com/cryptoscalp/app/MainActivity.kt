@@ -53,7 +53,7 @@ class MainActivity : Activity() {
         }
         selectedExchanges.clear()
         val savedExchanges = prefs.getStringSet("selected_exchanges", setOf("Toobit")) ?: setOf("Toobit")
-        selectedExchanges.add(savedExchanges.firstOrNull() ?: "Toobit")
+        selectedExchanges.add(savedExchanges.firstOrNull()?.takeIf { exchanges.contains(it) } ?: "Toobit")
         val saved = prefs.getStringSet("selected_symbols", null)
         if (saved != null) { selectedSymbols.clear(); selectedSymbols.addAll(saved) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
