@@ -615,7 +615,7 @@ class MainActivity : Activity() {
             coinAdapter?.notifyDataSetChanged()
             renderSelectedChoices()
         }
-        done.setOnClickListener { dialog.dismiss() }
+        done.setOnClickListener { dialog.dismiss(); refreshMarketChart() }
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
