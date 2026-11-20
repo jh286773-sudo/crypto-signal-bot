@@ -498,6 +498,24 @@ def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float
     return abs(float(price) - float(ema21)) / float(atr) <= max_distance_atr
 
 
+def _levels(side, entry, atr, structure=None):
+    """Compatibility helper for research reports; levels are descriptive, not order instructions."""
+    if side not in ("LONG", "SHORT") or atr is None or float(atr) <= 0:
+        raise ValueError("side must be LONG/SHORT and ATR must be positive")
+    entry, atr = float(entry), float(atr)
+    structure = structure or {}
+    swing = structure.get("previous_swing_low" if side == "LONG" else "previous_swing_high")
+    buffer = atr * 0.15
+    if side == "LONG":
+        stop = min(entry - atr * 1.5, float(swing) - buffer) if swing is not None else entry - atr * 1.5
+        risk = entry - stop
+        targets = [entry + risk * multiple for multiple in (1.5, 2.5, 3.5)]
+    else:
+        stop = max(entry + atr * 1.5, float(swing) + buffer) if swing is not None else entry + atr * 1.5
+        risk = stop - entry
+        targets = [entry - risk * multiple for multiple in (1.5, 2.5, 3.5)]
+    return {"stop_loss": stop, "take_profits": targets, "risk_reward": [1.5, 2.5, 3.5]}
+
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None, research_warmup: bool = False, selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
     """Analyze only selected timeframes; every selected timeframe must agree."""
     selected_tfs = tuple(dict.fromkeys(REQUIRED_TFS if selected_timeframes is None else selected_timeframes))
