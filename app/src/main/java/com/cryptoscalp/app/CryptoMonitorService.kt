@@ -249,6 +249,12 @@ class CryptoMonitorService : Service() {
             prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
             notifyExit(symbol,"مرحله اول حد سود لمس شد • حد ضرر به نقطه ورود منتقل شد",
                 "قیمت فعلی: ${fmt(price)} • حد ضرر جدید: ${fmt(s.optDouble("stop"))} • هدف دوم: ${fmt(s.optDouble("tp2"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
+            val protectedStop=s.optDouble("stop")
+            if(if(long)bar.low<=protectedStop else bar.high>=protectedStop){
+                val fill=if(long)minOf(bar.open,protectedStop) else maxOf(bar.open,protectedStop)
+                closeOpen(symbol,"حد ضرر سربه‌سر پس از حد سود اول فعال شد • قیمت ${fmt(fill)}")
+                return
+            }
         }
         val tp2=if(long)bar.high>=s.optDouble("tp2") else bar.low<=s.optDouble("tp2")
         if(tp2&&!s.optBoolean("tp2Done")){
@@ -259,6 +265,11 @@ class CryptoMonitorService : Service() {
             prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
             notifyExit(symbol,"مرحله دوم حد سود لمس شد • سود مرحله اول محافظت شد",
                 "قیمت فعلی: ${fmt(price)} • حد ضرر حفاظتی جدید: ${fmt(lockedStop)} • هدف سوم: ${fmt(s.optDouble("tp3"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
+            if(if(long)bar.low<=lockedStop else bar.high>=lockedStop){
+                val fill=if(long)minOf(bar.open,lockedStop) else maxOf(bar.open,lockedStop)
+                closeOpen(symbol,"حد ضرر سود قفل‌شده پس از حد سود دوم فعال شد • قیمت ${fmt(fill)}")
+                return
+            }
         }
         val tp3=if(long)bar.high>=s.optDouble("tp3") else bar.low<=s.optDouble("tp3")
         if(tp3){
