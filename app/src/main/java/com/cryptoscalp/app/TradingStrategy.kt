@@ -323,99 +323,88 @@ object TradingStrategy {
         return opposingCore==0&&opposingMinor<=1
     }
 
-    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null,enforceExpectancy:Boolean=true):StrategyResult {
+    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null,enforceExpectancy:Boolean=true):StrategyResult =
+        evaluate(mapOf("5m" to five, "15m" to fifteen, "30m" to thirty), asOfMs, expectancyStats, enforceExpectancy)
+
+    /** Every selected timeframe is independently analyzed; any dissent or missing data returns WAIT. */
+    fun evaluate(timeframes:Map<String,List<MarketCandle>>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null,enforceExpectancy:Boolean=true):StrategyResult {
+        val supported = listOf("1m","3m","5m","15m","30m","1h","4h")
+        val selected = supported.filter { timeframes.containsKey(it) }
+        if(selected.isEmpty()) return StrategyResult("WAIT",0,0.0,listOf("هیچ تایم‌فریمی انتخاب نشده؛ سیگنالی صادر نمی‌شود"),emptyList())
+        val durations = mapOf("1m" to 60_000L,"3m" to 180_000L,"5m" to 300_000L,
+            "15m" to 900_000L,"30m" to 1_800_000L,"1h" to 3_600_000L,"4h" to 14_400_000L)
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
             if(rows.size<MIN_CANDLES||rows.any{it.time<=0L||it.time%duration!=0L})return false
             for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
             return true
         }
-        val price=five.lastOrNull()?.close?:0.0
-        if(!validSeries(five,300_000L)||!validSeries(fifteen,900_000L)||!validSeries(thirty,1_800_000L)){
-            return StrategyResult("WAIT",0,price,
-                listOf("داده یا زمان‌بندی یکی از تایم‌فریم‌های ۵، ۱۵ یا ۳۰ دقیقه نامعتبر/ناپیوسته است؛ سیگنال متوقف شد"),emptyList())
+        val missing = selected.filter { timeframes[it].isNullOrEmpty() }
+        if(missing.isNotEmpty()) return StrategyResult("WAIT",0,0.0,
+            listOf("داده تایم‌فریم انتخاب‌شده موجود نیست: "+missing.joinToString("، ")),emptyList())
+        val raw = selected.associateWith { timeframes[it].orEmpty() }
+        if(selected.any { !validSeries(raw.getValue(it),durations.getValue(it)) }) {
+            return StrategyResult("WAIT",0,raw[selected.first()]?.lastOrNull()?.close?:0.0,
+                listOf("داده یا زمان‌بندی حداقل یکی از تایم‌فریم‌های انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود"),emptyList())
         }
-
-        // The 5m close defines one immutable decision boundary. Higher-timeframe
-        // candles are selected only if they had fully closed by that same boundary.
-        val decisionTime=five.last().time+300_000L
-        if(decisionTime>asOfMs||asOfMs-decisionTime>=300_000L){
-            return StrategyResult("WAIT",0,price,
-                listOf("کندل ۵ دقیقه‌ای بسته‌شده تازه و قابل‌همگام‌سازی نیست؛ سیگنال صادر نمی‌شود"),emptyList())
+        val latestCommonClose = selected.minOf { tf -> raw.getValue(tf).last().time + durations.getValue(tf) }
+        val fastestDuration = durations.getValue(selected.first())
+        if(latestCommonClose>asOfMs || asOfMs-latestCommonClose>=fastestDuration) {
+            return StrategyResult("WAIT",0,raw[selected.first()]!!.last().close,
+                listOf("کندل بسته‌شده مشترک تازه برای همه تایم‌فریم‌ها در دسترس نیست؛ سیگنالی صادر نمی‌شود"),emptyList())
         }
-        val expected15=(decisionTime/900_000L)*900_000L-900_000L
-        val expected30=(decisionTime/1_800_000L)*1_800_000L-1_800_000L
-        val closed15=fifteen.filter{it.time+900_000L<=decisionTime}
-        val closed30=thirty.filter{it.time+1_800_000L<=decisionTime}
-        if(closed15.size<MIN_CANDLES||closed30.size<MIN_CANDLES||
-            closed15.last().time!=expected15||closed30.last().time!=expected30){
-            return StrategyResult("WAIT",0,price,
-                listOf("آخرین کندل بسته‌شده ۱۵ یا ۳۰ دقیقه با مرز تصمیم ۵ دقیقه همگام نیست؛ هیچ سیگنالی صادر نمی‌شود"),emptyList())
+        val aligned = linkedMapOf<String,List<MarketCandle>>()
+        for(tf in selected) {
+            val duration=durations.getValue(tf)
+            val expected=(latestCommonClose/duration)*duration-duration
+            val rows=raw.getValue(tf).filter{it.time+duration<=latestCommonClose}
+            if(rows.size<MIN_CANDLES||rows.lastOrNull()?.time!=expected) {
+                return StrategyResult("WAIT",0,raw.getValue(tf).last().close,
+                    listOf("کندل بسته‌شده تایم‌فریم $tf با مرز تصمیم مشترک هماهنگ نیست؛ سیگنالی صادر نمی‌شود"),emptyList())
+            }
+            aligned[tf]=rows
         }
-
-        val reports=linkedMapOf("5m" to analyze(five,"5m"),"15m" to analyze(closed15,"15m"),"30m" to analyze(closed30,"30m"))
+        val reports=linkedMapOf<String,Report>()
+        for(tf in selected) reports[tf]=analyze(aligned.getValue(tf),tf)
         val invalid=reports.filterValues{!it.valid}.keys
+        val price=reports[selected.first()]?.price?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,
-            listOf("داده معتبر کافی نیست: "+invalid.joinToString("، ")),emptyList())
-
-        val combined=reports.entries.sumOf{it.value.score*(tfWeights[it.key]?:0.0)}
+            listOf("اطلاعات کافی/معتبر نیست: "+invalid.joinToString("، ")+"؛ سیگنالی صادر نمی‌شود"),emptyList())
+        val combined=reports.values.sumOf{it.score}/reports.size
         val volatilityBlocked=reports.filterValues{it.highVolatility}.keys
         if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,
-            listOf("فیلتر نوسان غیرعادی فعال شد؛ سیگنال متوقف شد: "+volatilityBlocked.joinToString("، ")),emptyList())
-        // ADX is contextual: block only when BOTH higher timeframes independently
-        // show a ranging market. The 5m entry trigger and transition regimes are not hard gates.
-        val higherTimeframesBothRanging =
-            reports["15m"]!!.marketRegime=="ranging" && reports["30m"]!!.marketRegime=="ranging"
-        if(higherTimeframesBothRanging)return StrategyResult("WAIT",combined.roundToInt(),price,
-            listOf("قدرت روند در هر دو تایم‌فریم بالاتر پایین است؛ فعلاً ورودی صادر نمی‌شود"),emptyList())
-
-        // Each timeframe derives its own bias independently.
-        // Two-of-three majority is sufficient; a neutral/opposing third timeframe is not a veto.
-        val bullishReports=reports.values.filter{it.bias=="bullish"}
-        val bearishReports=reports.values.filter{it.bias=="bearish"}
-        val allBullish=bullishReports.size>=2 &&
-            bullishReports.all{noMajorIndicatorConflict(it.indicatorVotes,1)}
-        val allBearish=bearishReports.size>=2 &&
-            bearishReports.all{noMajorIndicatorConflict(it.indicatorVotes,-1)}
-        val trigger5=reports["5m"]!!
-        val sm5=trigger5.structure
-        val rawSignal=when{
-            allBullish&&sm5?.retestLong==true->"LONG"
-            allBearish&&sm5?.retestShort==true->"SHORT"
-            else->"WAIT"
-        }
-        val expectancy = if(rawSignal=="LONG"||rawSignal=="SHORT") ExpectancyPolicy.evaluate(expectancyStats?.get(rawSignal).orEmpty()) else null
-        val signal = if(enforceExpectancy && rawSignal!="WAIT" && expectancy?.allowed!=true) "WAIT" else rawSignal
-        val a=reports["5m"]?.atr?:0.0
-        if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,
-            listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
-        val entryDistance=sm5?.entryDistanceAtr
-        if(signal!="WAIT"&&(entryDistance==null||entryDistance>.50)){
+            listOf("فیلتر نوسان غیرعادی در "+volatilityBlocked.joinToString("، ")+" فعال است؛ سیگنالی صادر نمی‌شود"),emptyList())
+        val entryTf=selected.first()
+        val higher=selected.drop(1)
+        if(higher.size>=2&&higher.all{reports.getValue(it).marketRegime=="ranging"}) {
             return StrategyResult("WAIT",combined.roundToInt(),price,
-                listOf("فاصله Retest نامشخص یا بیش از ۰٫۵ ATR است؛ ورود دیرهنگام رد شد"),reports.values.flatMap{it.smc}.distinct())
+                listOf("تمام تایم‌فریم‌های بالاترِ انتخاب‌شده بازار رنج را نشان می‌دهند؛ سیگنالی صادر نمی‌شود"),emptyList())
         }
-        if(signal!="WAIT"&&!entryNotExtended(price,trigger5.ema21,a)){
+        val allBullish=reports.values.all{it.bias=="bullish"&&noMajorIndicatorConflict(it.indicatorVotes,1)}
+        val allBearish=reports.values.all{it.bias=="bearish"&&noMajorIndicatorConflict(it.indicatorVotes,-1)}
+        val direction=when { allBullish->"LONG"; allBearish->"SHORT"; else->"WAIT" }
+        if(direction=="WAIT") return StrategyResult("WAIT",combined.roundToInt(),price,
+            listOf("همه تایم‌فریم‌های انتخاب‌شده باید بدون استثنا هم‌جهت باشند؛ اختلاف یا حالت خنثی، سیگنال را متوقف می‌کند"),reports.values.flatMap{it.smc}.distinct())
+        val trigger=reports.getValue(entryTf)
+        val sm=trigger.structure
+        val isLong=direction=="LONG"
+        val retest=if(isLong) sm?.retestLong==true else sm?.retestShort==true
+        if(sm==null||sm.falseBreakout||!retest) return StrategyResult("WAIT",combined.roundToInt(),price,
+            listOf(if(sm?.falseBreakout==true)"شکست جعلی در تایم‌فریم ورود شناسایی شد؛ سیگنالی صادر نمی‌شود" else "تأیید Retest در کوتاه‌ترین تایم‌فریم انتخاب‌شده کامل نیست؛ سیگنالی صادر نمی‌شود"),
+            reports.values.flatMap{it.smc}.distinct())
+        val a=trigger.atr?:0.0
+        val distance=sm.entryDistanceAtr
+        if(a<=0.0||distance==null||distance>.50||!entryNotExtended(price,trigger.ema21,a)) {
             return StrategyResult("WAIT",combined.roundToInt(),price,
-                listOf("فاصله ورود از EMA21 بیش از ۰٫۸ ATR یا داده EMA/ATR نامعتبر است؛ ورود تعقیبی رد شد"),reports.values.flatMap{it.smc}.distinct())
+                listOf("ATR/فاصله Retest/فاصله EMA21 معتبر نیست یا ورود بیش‌ازحد کشیده شده؛ سیگنالی صادر نمی‌شود"),
+                reports.values.flatMap{it.smc}.distinct())
         }
-        if(signal!="WAIT"&&sm5?.falseBreakout==true){
-            return StrategyResult("WAIT",combined.roundToInt(),price,
-                listOf("شکست جعلی شناسایی شد؛ ساختار فعلی نامعتبر است و باید منتظر ساختار تازه ماند"),reports.values.flatMap{it.smc}.distinct())
-        }
-        val reasons=mutableListOf("موتور تحلیل نسخه ۰.۳.۰: هشت خانواده شاخص",
-            "امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
-        for((tf,rep) in reports){
-            reasons.add(tf+": امتیاز تحلیل "+"%.2f".format(rep.score))
-            reasons.add("امتیاز خانواده‌ها: "+rep.families.entries.joinToString("، "){it.key+"="+"%.2f".format(it.value)})
-        }
-        if(signal=="LONG"||signal=="SHORT"){
-            reasons.add("تأیید مستقل و هم‌زمان هر سه تایم‌فریم ۵، ۱۵ و ۳۰ دقیقه")
-            reasons.add("نقطه ورود: بازگشت و تثبیت مجدد روی سطح شکست در ۵ دقیقه")
-            reasons.add(if(signal=="LONG")"تأیید کامل سه تایم‌فریم؛ لانگ" else "تأیید کامل سه تایم‌فریم؛ شورت")
-            reasons.add("امید ریاضی خالص معاملات بسته‌شده تأیید شد؛ حداقل ۳۰ معامله، حد پایین اطمینان ۹۵٪ مثبت و Profit Factor بالاتر از ۱٫۱۰")
-        } else if(rawSignal=="LONG"||rawSignal=="SHORT") {
-            reasons.add("ورود متوقف شد: امید ریاضی خالص این جهت هنوز با حداقل ۳۰ معامله بسته‌شده اثبات نشده است")
-        }
-        val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
-        return StrategyResult(signal,combined.roundToInt(),price,reasons,smc)
+        val expectancy=if(enforceExpectancy) ExpectancyPolicy.evaluate(expectancyStats?.get(direction).orEmpty()) else null
+        if(enforceExpectancy&&expectancy?.allowed!=true) return StrategyResult("WAIT",combined.roundToInt(),price,
+            listOf("امید ریاضی خالص این جهت هنوز با سابقه کافی تأیید نشده؛ سیگنالی صادر نمی‌شود"),reports.values.flatMap{it.smc}.distinct())
+        val reasons=mutableListOf("تحلیل مستقل تمام تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "))
+        reasons.add("اجماع کامل "+selected.size+" تایم‌فریم و تأیید ساختار ورود در $entryTf")
+        reasons.add(if(isLong)"همه تایم‌فریم‌ها LONG؛ سیگنال لانگ" else "همه تایم‌فریم‌ها SHORT؛ سیگنال شورت")
+        return StrategyResult(direction,combined.roundToInt(),price,reasons,
+            reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct())
     }
 }
