@@ -6,11 +6,11 @@ from toobit_api import ToobitAPI
 class ToobitHistoricalBacktestTests(unittest.TestCase):
     def test_kline_range_pages_without_duplicate_candles(self):
         api = ToobitAPI()
-        first = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-                 for i in range(1000)]
-        second = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-                  for i in range(999, 1002)]
-        with patch.object(api, "_get", side_effect=[first, second]) as get:
+        latest = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
+                  for i in range(2, 1002)]
+        earliest = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
+                    for i in range(2)]
+        with patch.object(api, "_get", side_effect=[latest, earliest]) as get:
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 1002 * 300000)
         self.assertEqual(len(rows), 1002)
         self.assertEqual(rows[0]["timestamp"], 0)
