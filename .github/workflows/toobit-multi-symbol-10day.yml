@@ -1,4 +1,4 @@
-name: Toobit Full USDT Perpetual-Universe Walk-Forward
+name: AURUM X Selected-Symbol Full-History Walk-Forward
 
 on:
   push:
@@ -6,24 +6,19 @@ on:
   workflow_dispatch:
     inputs:
       days:
-        description: Shared historical window in days
+        description: 0 = each timeframe's first available candle through today; otherwise cap lookback days
         required: true
-        default: "30"
+        default: "0"
         type: string
-      min_symbols:
-        description: Minimum number of completed symbols (at least 10)
+      symbols:
+        description: Selected Toobit USDT perpetuals (comma-separated)
         required: true
-        default: "10"
+        default: "BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT"
         type: string
       slippage_bps:
         description: Assumed adverse slippage per fill in bps (not measured)
         required: true
         default: "1.0"
-        type: string
-      candidates:
-        description: Maximum active USDT perpetual contracts to scan (10000 means all returned)
-        required: true
-        default: "10000"
         type: string
 
 permissions:
@@ -44,21 +39,19 @@ jobs:
           pip install -r requirements.txt
       - name: Run Toobit multi-symbol historical backtest
         env:
-          DAYS: ${{ github.event.inputs.days || '30' }}
-          MIN_SYMBOLS: ${{ github.event.inputs.min_symbols || '10' }}
+          DAYS: ${{ github.event.inputs.days || '0' }}
+          SYMBOLS: ${{ github.event.inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
           SLIPPAGE_BPS: ${{ github.event.inputs.slippage_bps || '1.0' }}
-          CANDIDATES: ${{ github.event.inputs.candidates || '10000' }}
         run: |
           python run_toobit_multi_backtest.py \
             --days "$DAYS" \
-            --min-symbols "$MIN_SYMBOLS" \
-            --candidates "$CANDIDATES" \
+            --symbols "$SYMBOLS" \
             --slippage-bps "$SLIPPAGE_BPS" \
-            --output toobit_multi_crypto_30day.json
+            --output toobit_selected_full_history.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: aurum-x-toobit-full-usdt-perpetual-universe
-          path: toobit_multi_crypto_30day.json
+          name: aurum-x-toobit-selected-full-history
+          path: toobit_selected_full_history.json
           if-no-files-found: warn
           retention-days: 30

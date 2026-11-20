@@ -283,10 +283,30 @@ class ToobitAPI:
             })
         return sorted(parsed, key=lambda x: x["settle_time"])
 
+    def get_first_available_candle_open(self, symbol, interval, end_ms):
+        """Find the oldest closed candle currently exposed by Toobit's kline endpoint."""
+        if interval not in self.INTERVALS:
+            raise ValueError("Invalid interval")
+        rows = self._get("/quote/v1/klines", {
+            "symbol": symbol, "interval": interval,
+            "startTime": 0, "endTime": int(end_ms), "limit": 1000
+        })
+        candles = []
+        for row in rows if isinstance(rows, list) else []:
+            if len(row) >= 6:
+                opened = int(row[0])
+                if opened + self.INTERVALS[interval] <= int(end_ms):
+                    candles.append(opened)
+        if not candles:
+            raise RuntimeError(f"Toobit exposes no closed {interval} candles for {symbol}")
+        return min(candles)
+
     def get_historical_range(self, symbol, start_ms, end_ms, include_funding=True):
         """Fetch timestamped 5m/15m/30m histories and attach actual funding events."""
+        start_by_tf = (start_ms if isinstance(start_ms, dict)
+                       else {tf: int(start_ms) for tf in ("5m", "15m", "30m")})
         data = {
-            tf: self.get_klines_range(symbol, tf, start_ms, end_ms)
+            tf: self.get_klines_range(symbol, tf, int(start_by_tf[tf]), end_ms)
             for tf in ("5m", "15m", "30m")
         }
         for tf, rows in data.items():
@@ -294,13 +314,14 @@ class ToobitAPI:
                 raise RuntimeError(f"Insufficient real {tf} candles returned by Toobit: {len(rows)}")
         if include_funding:
             events = self.get_historical_funding_rates(symbol)
-            if len(events) >= 1000 and events[0]["settle_time"] > int(start_ms):
+            funding_start = int(start_by_tf["5m"])
+            if len(events) >= 1000 and events[0]["settle_time"] > funding_start:
                 raise RuntimeError("Toobit funding history reached the 1000-event page cap; shorten the backtest window to avoid missing funding settlements")
             five = data["5m"]
             bars_by_open = {row["timestamp"]: row for row in five}
             for event in events:
                 settle = event["settle_time"]
-                if settle <= start_ms or settle > end_ms:
+                if settle <= funding_start or settle > end_ms:
                     continue
                 candle_open = ((settle - 1) // self.INTERVALS["5m"]) * self.INTERVALS["5m"]
                 bar = bars_by_open.get(candle_open)
