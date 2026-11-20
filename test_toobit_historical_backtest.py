@@ -39,5 +39,25 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         self.assertEqual([x["settle_time"] for x in rates], [800, 1600])
 
 
+    def test_historical_range_attaches_funding_to_candle_by_settlement_timestamp(self):
+        from walk_forward import DURATION_MS
+        api = ToobitAPI()
+        data = {}
+        for tf, step in DURATION_MS.items():
+            data[tf] = [
+                {"timestamp": i * step, "open_time": i * step, "open": 1.0,
+                 "high": 1.1, "low": 0.9, "close": 1.0, "volume": 10.0}
+                for i in range(60)
+            ]
+        with patch.object(api, "get_klines_range", side_effect=lambda symbol, tf, start, end: data[tf]), \
+             patch.object(api, "get_historical_funding_rates", return_value=[
+                 {"settle_time": 300000, "funding_rate": 0.001}
+             ]):
+            result = api.get_historical_range("BTC-SWAP-USDT", 0, 60 * DURATION_MS["30m"])
+        self.assertEqual(result["5m"][0]["funding_settle_time"], 300000)
+        self.assertAlmostEqual(result["5m"][0]["funding_rate"], 0.001)
+        self.assertNotIn("funding_rate", result["5m"][1])
+
+
 if __name__ == "__main__":
     unittest.main()
