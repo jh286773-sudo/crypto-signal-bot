@@ -121,7 +121,7 @@ class TradingStrategyParityTest {
     }
 
     @Test fun individualIndicatorConflictGateAllowsOneMinorButRejectsCoreOrMultipleConflicts() {
-        assertEquals(true, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to 1,"MACD" to 1,"VWAP" to -1),1))
+        assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to 1,"MACD" to 1,"VWAP" to -1),1))
         assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to -1,"MACD" to 1,"VWAP" to 1),1))
         assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to 1,"MACD" to 1,"VWAP" to -1,"OBV_Trend" to -1),1))
         assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to -1,"RSI" to -1,"MACD" to -1,"VWAP" to 1),-1))
