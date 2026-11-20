@@ -183,7 +183,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         exposure_by_index = dict(funding_exposure)
         # Funding is charged once at exchange settlement timestamps, not once
         # per 5m candle. Exposure is the remaining quantity after that bar's fills.
-        for j, row in five[entry_index:exit_index+1]:
+        for j in range(entry_index, exit_index+1):
+            row = five[j][1]
             settle_time = row.get("funding_settle_time")
             rate = row.get("funding_rate")
             if settle_time is None or rate is None or j not in exposure_by_index:
