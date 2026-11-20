@@ -83,7 +83,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     peak = equity
     max_dd = 0.0
     trades = []
-    loss_streak = 0
+    full_stop_indices = []
     cooldown_until_index = -1
     cooldown_events = 0
     cooldown_skipped_bars = 0
@@ -259,13 +259,17 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         funding_cash = funding_cash if funding_events_applied else None
         net_pnl = realized - fees - (funding_cash or 0.0)
         if exit_reason == "stop" and net_pnl < 0:
-            loss_streak += 1
-            if loss_streak >= loss_streak_limit:
+            full_stop_indices = [
+                index for index in full_stop_indices
+                if exit_index - index <= loss_cooldown_bars
+            ]
+            full_stop_indices.append(exit_index)
+            if len(full_stop_indices) >= loss_streak_limit:
                 cooldown_until_index = max(cooldown_until_index, exit_index + loss_cooldown_bars)
                 cooldown_events += 1
-                loss_streak = 0
+                full_stop_indices = []
         else:
-            loss_streak = 0
+            full_stop_indices = []
         start_equity = equity
         equity += net_pnl
         peak = max(peak, equity)
