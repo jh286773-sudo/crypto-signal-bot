@@ -44,7 +44,5 @@ jobs:
             aurum-shadow-ledger-
       - name: Scan liquid USDT perpetual contracts
         env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          NTFY_SERVER: https://ntfy.sh
           MAX_SYMBOLS: "40"
         run: python monitor.py
