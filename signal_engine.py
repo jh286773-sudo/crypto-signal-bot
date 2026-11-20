@@ -424,67 +424,33 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         vw=_vwap(c); obv=_obv_trend(c); structure=_market_structure(c)
         volatility=_volatility_status(c,timeframe,a)
         regime=_adx_regime(ad)
-        groups={}; details={}
-
-        def vote(group,name,value,weight=1.0):
+        details={}
+        def vote(name,value):
             if value not in (-1,0,1): return
-            groups.setdefault(group,[]).append((value,weight,name))
             details[name]=value
 
-        vote("trend","EMA",1 if e20>e50>e200 else -1 if e20<e50<e200 else 0,1.2)
-        vote("momentum","RSI",1 if r is not None and r>52 and r<70 else -1 if r is not None and r>30 and r<48 else 0)
-        vote("momentum","MACD",1 if m["histogram"] is not None and m["histogram"]>0 else -1 if m["histogram"] is not None and m["histogram"]<0 else 0,1.2)
-        # ADX measures strength; DI+/DI- supply direction. ADX magnitude is not a direction gate.
-        vote("strength","ADX_DMI",1 if ad and ad.get("plus_di",0)>ad.get("minus_di",0) else -1 if ad and ad.get("minus_di",0)>ad.get("plus_di",0) else 0,1.2)
-        vote("volume","VWAP",1 if vw and price>vw else -1 if vw and price<vw else 0)
-        vote("volume","OBV_Trend",obv)
-        vote("volatility","Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
-        ob_tolerance = (a or price*0.001) * 0.25
-        smc_bull = structure.get("structure_event") in ("BOS_up","CHoCH_up") or structure.get("liquidity_sweep")=="sell_side" or any(x.get("type")=="bullish" and x["low"]-ob_tolerance <= price <= x["high"]+ob_tolerance for x in structure.get("order_blocks",[]))
-        smc_bear = structure.get("structure_event") in ("BOS_down","CHoCH_down") or structure.get("liquidity_sweep")=="buy_side" or any(x.get("type")=="bearish" and x["low"]-ob_tolerance <= price <= x["high"]+ob_tolerance for x in structure.get("order_blocks",[]))
-         # SMC remains an independent entry-structure safeguard, not an extra indicator vote.
-
-        # Each indicator family contributes once; correlated indicators do not
-        # overwhelm the decision simply because a family contains more indicators.
-        family_scores={}
-        for family,items in groups.items():
-            denom=sum(w for _,w,_ in items)
-            family_scores[family]=sum(v*w for v,w,_ in items)/denom if denom else 0
-        family_weights={"trend":1.5,"momentum":1.3,"strength":1.1,"volume":1.0,"volatility":0.8}
-        total_w=sum(family_weights[k] for k in family_scores)
-        score=100*sum(family_scores[k]*family_weights[k] for k in family_scores)/total_w
-        bias=_family_bias(family_scores)
-        return {"valid":True,"close":price,"score":round(score,2),"bias":bias,
-                "family_scores":{k:round(v,3) for k,v in family_scores.items()},
+        vote("EMA",1 if e20>e50>e200 else -1 if e20<e50<e200 else 0)
+        vote("RSI",1 if r is not None and 52<r<70 else -1 if r is not None and 30<r<48 else 0)
+        vote("MACD",1 if m["histogram"] is not None and m["histogram"]>0 else -1 if m["histogram"] is not None and m["histogram"]<0 else 0)
+        # DI+/DI- directly identify directional pressure.
+        vote("ADX_DMI",1 if ad and ad.get("plus_di",0)>ad.get("minus_di",0) else -1 if ad and ad.get("minus_di",0)>ad.get("plus_di",0) else 0)
+        vote("VWAP",1 if vw is not None and price>vw else -1 if vw is not None and price<vw else 0)
+        vote("OBV_Trend",obv)
+        vote("Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
+        core_long=all(details.get(name)==1 for name in ("EMA","RSI","MACD","ADX_DMI"))
+        core_short=all(details.get(name)==-1 for name in ("EMA","RSI","MACD","ADX_DMI"))
+        support_long=all(details.get(name,0)>=0 for name in ("VWAP","OBV_Trend","Bollinger"))
+        support_short=all(details.get(name,0)<=0 for name in ("VWAP","OBV_Trend","Bollinger"))
+        bias="bullish" if core_long and support_long else "bearish" if core_short and support_short else "neutral"
+        return {"valid":True,"close":price,"bias":bias,
                 "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
-                "market_regime":regime,
-                "ema21":e20,
+                "market_regime":regime,"ema21":e20,
                 "indicators":{
                     "ema":{"20":e20,"50":e50,"200":e200},
                     "rsi":r,"macd":m,"bollinger":bb,"adx_dmi":ad,
                     "atr":a,"vwap":vw,"obv":obv,"smc":structure}}
     except (KeyError,TypeError,ValueError,ZeroDivisionError) as exc:
         return {"valid":False,"reason":f"Invalid candle data: {exc}"}
-
-
-def _family_bias(family_scores: Dict[str, float]) -> str:
-    """Choose direction from family votes; score magnitude never gates the bias."""
-    bullish = sum(1 for value in family_scores.values() if float(value) > 0.0)
-    bearish = sum(1 for value in family_scores.values() if float(value) < 0.0)
-    return "bullish" if bullish > bearish else "bearish" if bearish > bullish else "neutral"
-
-
-def _no_major_indicator_conflict(report: Dict[str, Any], side: str) -> bool:
-    """Allow one minor counter-vote, but never a core trend/momentum/strength conflict."""
-    votes = report.get("indicator_votes")
-    if not isinstance(votes, dict) or not votes:
-        return True  # Compatibility for synthetic/legacy reports; live analysis always supplies votes.
-    direction = 1 if side == "LONG" else -1
-    core = {"EMA", "RSI", "MACD", "ADX_DMI", "VWAP", "OBV_Trend", "Bollinger"}
-    opposing_core = sum(1 for name in core if int(votes.get(name, 0)) * direction < 0)
-    opposing_minor = sum(1 for name, value in votes.items()
-                         if name not in core and int(value) * direction < 0)
-    return opposing_core == 0 and opposing_minor <= 1
 
 
 def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float],
@@ -514,14 +480,17 @@ def _levels(side, entry, atr, structure=None):
     return {"stop_loss": stop, "take_profits": targets, "risk_reward": [1.5, 2.5, 3.5]}
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
-    """Analyze only selected timeframes; every selected timeframe must agree."""
-    selected_tfs = tuple(dict.fromkeys(REQUIRED_TFS if selected_timeframes is None else selected_timeframes))
+    """Analyze only selected timeframes; one timeframe is independent, several require unanimity."""
+    if selected_timeframes is None:
+        selected_tfs = tuple(tf for tf in SUPPORTED_TFS if tf in timeframes)
+    else:
+        selected_tfs = tuple(dict.fromkeys(selected_timeframes))
     if not selected_tfs or any(tf not in SUPPORTED_TFS for tf in selected_tfs):
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Invalid or empty selected timeframe list","trade_enabled":False}
     missing = [tf for tf in selected_tfs if tf not in timeframes]
     if missing:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Missing selected timeframe data: "+", ".join(missing),"trade_enabled":False}
-    # Timestamped live data is frozen to one common close boundary to prevent look-ahead.
+    # Freeze every selected series to a shared closed-candle boundary when timestamps exist.
     timestamped = [bool(timeframes.get(tf, [])) and all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in selected_tfs]
     if any(timestamped) and not all(timestamped):
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Mixed timestamped/untimestamped selected timeframe data","trade_enabled":False}
@@ -537,7 +506,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
             except (TypeError, ValueError, StopIteration):
                 return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Invalid {tf} timestamps","trade_enabled":False}
             d = durations[tf]
-            if len(stamps) < 200 or any(t < 0 or t % d for t in stamps) or any(b-a != d for a,b in zip(stamps,stamps[1:])):
+            if len(stamps) < MIN_INDICATOR_CANDLES or any(t < 0 or t % d for t in stamps) or any(b-a != d for a,b in zip(stamps,stamps[1:])):
                 return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Non-contiguous or insufficient {tf} candles","trade_enabled":False}
             opens[tf] = stamps
             latest_closes.append(stamps[-1] + d)
@@ -554,104 +523,23 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
     if invalid:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Insufficient/invalid candles: "+", ".join(invalid),
                 "timeframes":reports,"trade_enabled":False}
-    base_weights={"1m":0.15,"3m":0.20,"5m":0.25,"15m":0.35,"30m":0.40,"1h":0.45,"4h":0.50}
-    weight_total=sum(base_weights[tf] for tf in selected_tfs)
-    weights={tf:base_weights[tf]/weight_total for tf in selected_tfs}
-    combined=sum(reports[tf]["score"]*weights[tf] for tf in selected_tfs)
-    long_tfs=[tf for tf in selected_tfs if reports[tf]["bias"]=="bullish"]
-    short_tfs=[tf for tf in selected_tfs if reports[tf]["bias"]=="bearish"]
-    # Strict unanimity: one opposing or neutral timeframe vetoes the signal.
-    side = "LONG" if len(long_tfs)==len(selected_tfs) else "SHORT" if len(short_tfs)==len(selected_tfs) else None
-    aligned_tfs = list(selected_tfs) if side else []
-    major_conflicts_clear = bool(side) and all(_no_major_indicator_conflict(reports[tf], side) for tf in selected_tfs)
-    signal = side if major_conflicts_clear else "NO_SIGNAL"
-    confidence=min(99,round(abs(combined)*0.75+max(len(long_tfs),len(short_tfs))*8,1))
-    result={"signal":signal,"status":signal,"confidence_score":confidence,
-            "combined_score":round(combined,2),"timeframes":reports,
-            "timeframe_weights":weights,"trade_enabled":False,
-            "note":"Read-only analysis; confidence is a model score, not a probability or guarantee."}
-    rejection_reasons = []
-    if signal == "NO_SIGNAL":
-        if side is None:
-            rejection_reasons.append("selected_timeframe_unanimity_required")
-        if not major_conflicts_clear and side is not None:
-            rejection_reasons.append("major_indicator_conflict")
-        if not rejection_reasons:
-            rejection_reasons.append("directional_candidate_not_formed")
-    result["rejection_reasons"] = rejection_reasons
-    blocked=[tf for tf in selected_tfs if reports[tf].get("high_volatility")]
-    if blocked:
-        result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                       "reason":"Abnormal volatility filter blocked: "+", ".join(blocked),
-                       "rejection_reasons":["high_volatility:"+tf for tf in blocked],
-                       "high_volatility_block":blocked})
-        return result
-    # Range suppression considers only selected higher timeframes; unselected TFs never gate.
-    entry_tf = min(selected_tfs, key=lambda tf: SUPPORTED_TFS.index(tf))
-    higher_selected = [tf for tf in selected_tfs if SUPPORTED_TFS.index(tf) > SUPPORTED_TFS.index(entry_tf)]
-    higher_timeframe_range = [tf for tf in higher_selected
-        if (reports[tf].get("market_regime") or {}).get("state") == "ranging"]
-    if len(higher_selected) >= 2 and len(higher_timeframe_range) == len(higher_selected):
-        result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                       "reason":"All selected higher timeframes indicate a low-trend-strength market",
-                       "rejection_reasons":["adx_selected_higher_timeframes_all_ranging"],
-                       "blocked_market_regime":higher_timeframe_range})
-        return result
-    if signal in ("LONG","SHORT"):
-        a=reports[entry_tf]["indicators"]["atr"]; p=reports[entry_tf]["close"]
-        if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}
-        smc = reports[entry_tf]["indicators"].get("smc", {})
-        # Real candle reports must complete the breakout -> retest -> directional close sequence.
-        # Real directional signals always require explicit, positive retest evidence.
-        retest_key = "retest_long" if signal=="LONG" else "retest_short"
-        confirmation = (smc.get("structure_event") in (("BOS_up","CHoCH_up") if signal=="LONG" else ("BOS_down","CHoCH_down"))
-                        or smc.get("liquidity_sweep") == ("sell_side" if signal=="LONG" else "buy_side"))
-        result["entry_stage"] = "ENTRY" if smc and smc.get(retest_key) else "CONFIRMATION" if confirmation else "PREPARATION"
-        result["entry_context"] = {
-            "preparation": all(reports[tf]["bias"] == side for tf in selected_tfs),
-            "confirmation": confirmation,
-            "retest_confirmed": bool(smc.get(retest_key)),
-            "false_breakout": bool(smc.get("false_breakout"))
-        }
-        if smc.get("false_breakout"):
-            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                    "entry_stage":"WAIT",
-                    "reason":"Failed breakout detected; invalidate the setup and wait for a fresh structure.",
-                    "rejection_reasons":["smc_false_breakout"],"trade_enabled":False}
-        if not smc.get(retest_key):
-            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                    "reason":"Setup is not entry-ready: wait for confirmed retest; do not chase the breakout.",
-                    "rejection_reasons":["smc_retest_not_confirmed"],"trade_enabled":False}
-        distance = smc.get("entry_distance_atr")
-        if distance is None or distance > 0.50:
-            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                    "entry_stage":"WAIT",
-                    "reason":"Retest is missing or overextended (>0.50 ATR); skip late entry.",
-                    "rejection_reasons":["smc_retest_distance_over_0_50_atr"],"trade_enabled":False}
-        ema21 = reports[entry_tf].get("ema21")
-        if not _entry_not_chasing(p, ema21, a):
-            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                    "entry_stage":"WAIT",
-                    "reason":"Entry is overextended from EMA21 (>0.80 ATR); skip chasing the move.",
-                    "rejection_reasons":["ema21_entry_distance_over_0_80_atr"],"trade_enabled":False}
-        result["entry"] = p
-        result["entry_stage"] = "ENTRY"
-    else:
-        smc = reports[entry_tf]["indicators"].get("smc", {})
-        direction = side if major_conflicts_clear else None
-        confirmation = bool(direction and (
-            smc.get("structure_event") in (("BOS_up","CHoCH_up") if direction=="LONG" else ("BOS_down","CHoCH_down"))
-            or smc.get("liquidity_sweep") == ("sell_side" if direction=="LONG" else "buy_side")
-        ))
-        retest_key = "retest_long" if direction=="LONG" else "retest_short"
-        retest_ready = bool(direction and smc.get(retest_key))
-        result["entry_stage"] = "ENTRY" if retest_ready else "CONFIRMATION" if confirmation else "PREPARATION" if direction else "WAIT"
-        result["reason"]="Retest confirmed; waiting for entry safeguards" if retest_ready else "All selected timeframes must agree and entry retest must be confirmed"
-    return result
-
+    all_bullish=all(reports[tf]["bias"]=="bullish" for tf in selected_tfs)
+    all_bearish=all(reports[tf]["bias"]=="bearish" for tf in selected_tfs)
+    side="LONG" if all_bullish else "SHORT" if all_bearish else None
+    if side is None:
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                "reason":"Indicator analysis must agree across every selected timeframe; disagreement or neutral analysis means no signal.",
+                "timeframes":reports,"trade_enabled":False,
+                "rejection_reasons":["selected_timeframe_unanimity_required"]}
+    entry_tf=min(selected_tfs,key=lambda tf:SUPPORTED_TFS.index(tf))
+    return {"signal":side,"status":side,"timeframes":reports,"entry":reports[entry_tf]["close"],
+            "entry_timeframe":entry_tf,"entry_stage":"ENTRY",
+            "reason":("Independent indicator analysis confirms "+side+" on "+entry_tf) if len(selected_tfs)==1
+                     else ("All selected timeframes independently confirm "+side),
+            "trade_enabled":False,"note":"Read-only technical analysis; no exchange orders are placed."}
 
 def generate_signal(timeframes, mode="auto", selected_timeframes=None):
-    """Compatibility alias; defaults to the legacy 5m/15m/30m selection."""
+    """Compatibility alias; defaults to the timeframes present in the input mapping."""
     if mode not in ("auto","trend","scalp"):
         raise ValueError("mode must be auto, scalp or trend")
     return analyze_market(timeframes, selected_timeframes=selected_timeframes)
