@@ -371,9 +371,12 @@ object TradingStrategy {
         val volatilityBlocked=reports.filterValues{it.highVolatility}.keys
         if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
             listOf("فیلتر نوسان غیرعادی فعال شد؛ سیگنال متوقف شد: "+volatilityBlocked.joinToString("، ")),emptyList())
-        val uncertainRegime=reports.filterValues{it.marketRegime!="trending"}.keys
-        if(uncertainRegime.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
-            listOf("بازار رنج، انتقالی یا فاقد روند تأییدشده است؛ سیگنال صادر نمی‌شود: "+uncertainRegime.joinToString("، ")),emptyList())
+        // ADX is contextual: block only when BOTH higher timeframes independently
+        // show a ranging market. The 5m entry trigger and transition regimes are not hard gates.
+        val higherTimeframesBothRanging =
+            reports["15m"]!!.marketRegime=="ranging" && reports["30m"]!!.marketRegime=="ranging"
+        if(higherTimeframesBothRanging)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+            listOf("قدرت روند در هر دو تایم‌فریم بالاتر پایین است؛ فعلاً ورودی صادر نمی‌شود"),emptyList())
 
         // Each timeframe derives its own bias from its indicator families.
         // Require unanimous direction and retain major-indicator conflict protection.
