@@ -81,52 +81,35 @@ class CryptoMonitorService : Service() {
                     val historyLimit=(slowestDuration/duration+220L).coerceAtLeast(260L).coerceAtMost(1000L).toInt()
                     ExchangeMarketData.candles(exchange,symbol,tf,marketAsOfMs,historyLimit)
                 }
-                val latestClosedCandleTime=selectedTimeframes.minOf { tf ->
+                // Analyze the latest closed candle of EACH timeframe independently.
+                // A new scan is driven by indicator agreement, not by a shared candle close.
+                val latestAnalyzedDataTime=selectedTimeframes.maxOf { tf ->
                     candleMap.getValue(tf).last().time + ExchangeMarketData.durationMs(tf)
                 }
-                // Keep a separate candle baseline for each selected timeframe set.
-                // This prevents a previous faster selection from delaying a slower one.
-                val selectionKey=selectedTimeframes.joinToString("_")
-                val key="last_analysis_candle_${symbol}_$selectionKey"
-                val previousCandleTime=prefs.getLong(key,-1L)
-                if(previousCandleTime<0L){
-                    // Establish a baseline without sending a delayed historical alert,
-                    // but still analyze once so the user immediately sees per-timeframe diagnostics.
-                    val baseline=TradingStrategy.evaluate(candleMap,marketAsOfMs)
-                    recordSuccessfulAnalysis()
-                    analyzed++
-                    val candleCounts=selectedTimeframes.joinToString("، ") { tf -> "$tf=${candleMap.getValue(tf).size}" }
-                    lastDiagnostic=symbol+" • تحلیل اولیه انجام شد (بدون اعلان تاریخی) • کندل‌ها: "+candleCounts+" • "+baseline.reasons.joinToString(" ؛ ")
-                    prefs.edit().putLong(key,latestClosedCandleTime).apply()
-                } else if(latestClosedCandleTime>previousCandleTime){
-                    val r=TradingStrategy.evaluate(candleMap,marketAsOfMs)
-                    recordSuccessfulAnalysis()
-                    lastDiagnostic=symbol+" • تحلیل کندل جدید • تایم‌فریم‌ها: "+selectedTimeframes.joinToString("، ")+" • "+r.reasons.joinToString(" ؛ ")
-                    closeShadowOnReversal(symbol,r.signal,r.entry)
-                    if(r.signal=="LONG" && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,r,latestClosedCandleTime)
-                    val open=prefs.getString("open_setup_$symbol",null)
-                    val openSide=open?.let { JSONObject(it).optString("side") }
-                    val previous=prefs.getString("last_signal_$symbol",null)
-                    when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous)) {
-                        SignalDecision.OPEN -> {
-                            saveOpen(symbol,r,latestClosedCandleTime)
-                            notifySignal(symbol,r)
-                        }
-                        SignalDecision.CLOSE_ONLY -> {
-                            recordVirtualClose(symbol,r.entry)
-                            clearOpen(symbol)
-                            // SHORT is an exit signal only. Keep the agreed compact alert format.
-                            notifySignal(symbol,r)
-                        }
-                        SignalDecision.NONE -> Unit
+                val r=TradingStrategy.evaluate(candleMap,marketAsOfMs)
+                recordSuccessfulAnalysis()
+                analyzed++
+                lastDiagnostic=symbol+" • تحلیل مستقل اندیکاتورها • تایم‌فریم‌ها: "+selectedTimeframes.joinToString("، ")+" • "+r.reasons.joinToString(" ؛ ")
+                closeShadowOnReversal(symbol,r.signal,r.entry)
+                if(r.signal=="LONG" && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,r,latestAnalyzedDataTime)
+                val open=prefs.getString("open_setup_$symbol",null)
+                val openSide=open?.let { JSONObject(it).optString("side") }
+                val previous=prefs.getString("last_signal_$symbol",null)
+                when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous)) {
+                    SignalDecision.OPEN -> {
+                        saveOpen(symbol,r,latestAnalyzedDataTime)
+                        notifySignal(symbol,r)
                     }
-                    // WAIT remains internal; a later LONG can open whenever the position is flat.
-                    prefs.edit().putString("last_signal_$symbol",r.signal)
-                        .putLong(key,latestClosedCandleTime).apply()
-                    analyzed++
-                } else {
-                    lastDiagnostic=symbol+" • داده‌های تایم‌فریم‌های "+selectedTimeframes.joinToString("، ")+" دریافت شد؛ منتظر بسته‌شدن کندل مشترک جدید هستیم. آخرین مرز مشترک: "+latestClosedCandleTime
+                    SignalDecision.CLOSE_ONLY -> {
+                        recordVirtualClose(symbol,r.entry)
+                        clearOpen(symbol)
+                        // SHORT is an exit signal only. Keep the agreed compact alert format.
+                        notifySignal(symbol,r)
+                    }
+                    SignalDecision.NONE -> Unit
                 }
+                // WAIT remains internal; signal deduplication prevents repeated position alerts.
+                prefs.edit().putString("last_signal_$symbol",r.signal).apply()
             }catch(e:Exception){
                 failed++
                 val errorText="$symbol: ${e.message ?: e.javaClass.simpleName}"
@@ -138,9 +121,8 @@ class CryptoMonitorService : Service() {
                 val totalAnalyses=prefs.getInt("analysis_count_total",0)
                 val lastAnalysisAt=prefs.getLong("last_successful_analysis_at",0L)
                 val detail=if(failed>0) " • خطا $failed: $firstError" else ""
-                val waiting=if(analyzed==0 && failed==0) " • هنوز کندل بسته‌شده مشترک جدید نرسیده" else ""
                 val lastAt=if(lastAnalysisAt>0L) " • آخرین تحلیل موفق: "+android.text.format.DateFormat.format("HH:mm:ss",lastAnalysisAt) else " • هنوز تحلیل موفقی ثبت نشده"
-                val statusLine="توبیت • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه$detail$waiting$lastAt"
+                val statusLine="توبیت • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه$detail$lastAt"
                 if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
                 updateStatus(statusLine+(if(lastDiagnostic.isNotBlank()) "\n"+lastDiagnostic else ""))
             }
