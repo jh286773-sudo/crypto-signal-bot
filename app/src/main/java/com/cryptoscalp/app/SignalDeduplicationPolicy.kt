@@ -4,15 +4,14 @@ enum class SignalDecision { NONE, OPEN, CLOSE_ONLY }
 
 /**
  * LONG-only position policy:
- * - LONG opens a position only while flat and outside the loss cooldown.
+ * - LONG opens a position whenever flat.
  * - SHORT only closes an existing LONG; it never opens a SHORT.
  */
 object SignalDeduplicationPolicy {
     fun decide(
         openSide: String?,
         signal: String,
-        lastSignal: String?,
-        cooldownActive: Boolean
+        lastSignal: String?
     ): SignalDecision {
         if (signal != "LONG" && signal != "SHORT") return SignalDecision.NONE
 
@@ -27,7 +26,7 @@ object SignalDeduplicationPolicy {
         }
 
         if (openSide != null) return SignalDecision.NONE
-        if (signal != "LONG" || cooldownActive) return SignalDecision.NONE
+        if (signal != "LONG") return SignalDecision.NONE
         return SignalDecision.OPEN
     }
 }
