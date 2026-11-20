@@ -277,11 +277,7 @@ object TradingStrategy {
         vote("VWAP",if(vw!=null&&price>vw)1 else if(vw!=null&&price<vw)-1 else 0)
         vote("OBV_Trend",ov)
         vote("Bollinger",if(bands!=null&&price>bands.second)1 else if(bands!=null&&price<bands.second)-1 else 0)
-        val coreLong=listOf("EMA","RSI","MACD","ADX_DMI").all{indicatorVotes[it]==1}
-        val coreShort=listOf("EMA","RSI","MACD","ADX_DMI").all{indicatorVotes[it]==-1}
-        val supportLong=listOf("VWAP","OBV_Trend","Bollinger").all{(indicatorVotes[it]?:0)>=0}
-        val supportShort=listOf("VWAP","OBV_Trend","Bollinger").all{(indicatorVotes[it]?:0)<=0}
-        val bias=when{coreLong&&supportLong->"bullish";coreShort&&supportShort->"bearish";else->"neutral"}
+        val bias=indicatorBias(indicatorVotes)
         val obTolerance=(a?:price*.001)*.25
         val inBullOb=sm.orderBlockType=="bullish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
         val inBearOb=sm.orderBlockType=="bearish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
@@ -304,20 +300,18 @@ object TradingStrategy {
         return Report(true,price=price,bias=bias,atr=a,ema21=e20,indicatorVotes=indicatorVotes,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
     }
 
+    internal fun indicatorBias(votes:Map<String,Int>):String {
+        val coreLong=listOf("EMA","RSI","MACD","ADX_DMI").all{votes[it]==1}
+        val coreShort=listOf("EMA","RSI","MACD","ADX_DMI").all{votes[it]==-1}
+        val supportLong=listOf("VWAP","OBV_Trend","Bollinger").all{(votes[it]?:0)>=0}
+        val supportShort=listOf("VWAP","OBV_Trend","Bollinger").all{(votes[it]?:0)<=0}
+        return when{coreLong&&supportLong->"bullish";coreShort&&supportShort->"bearish";else->"neutral"}
+    }
+
     internal fun entryNotExtended(price:Double,ema21:Double?,atr:Double?,maxDistanceAtr:Double=.80):Boolean {
         if(ema21==null||atr==null||!price.isFinite()||!ema21.isFinite()||!atr.isFinite()||atr<=0.0)return false
         return abs(price-ema21)/atr<=maxDistanceAtr
     }
-
-    internal fun noMajorIndicatorConflict(votes:Map<String,Int>,direction:Int):Boolean {
-        val core=setOf("EMA","RSI","MACD","ADX_DMI","VWAP","OBV_Trend","Bollinger")
-        val opposingCore=core.count{(votes[it]?:0)*direction<0}
-        val opposingMinor=votes.count{(it.key !in core)&&it.value*direction<0}
-        return opposingCore==0&&opposingMinor<=1
-    }
-
-    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult =
-        evaluate(mapOf("5m" to five, "15m" to fifteen, "30m" to thirty), asOfMs)
 
     /** Each selected timeframe is analyzed independently; multi-timeframe signals require unanimity. */
     fun evaluate(timeframes:Map<String,List<MarketCandle>>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
