@@ -22,3 +22,11 @@ Walk-forward output now includes LONG/SHORT trade counts, win rates and net PnL,
 
 ## Limitations
 No strategy guarantees loss-free trades. This is a signal/alert system, not an order-execution system. OHLCV backtests cannot model liquidation, queue priority, market impact, or exact intrabar event ordering.
+
+## Additional loss-reduction controls
+
+- Default walk-forward risk per signal is reduced from 1.0% to 0.5% of current equity. This changes simulated position sizing; it does not guarantee positive expectancy.
+- The walk-forward engine pauses new entries for 288 five-minute bars (24 hours) after two consecutive losing trades, then resets the streak counter. The report includes cooldown count and skipped bars.
+- The Android monitor applies the matching per-symbol protection: after two full stop-loss exits within a rolling 24-hour window, new alerts for that symbol are paused for 24 hours. Stops reached after TP1 are not counted as full-stop losses; a completed TP3 resets the streak.
+- The Toobit range loader retries missing candle timestamps using the exchange endpoint only. It never fabricates candles; unrecoverable gaps still fail the backtest.
+- The live Android app remains a signal/alert monitor. The cooldown can suppress alerts, but it cannot close exchange positions or guarantee a stop order was filled.
