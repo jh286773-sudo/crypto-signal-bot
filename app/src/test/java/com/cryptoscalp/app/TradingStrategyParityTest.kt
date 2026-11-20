@@ -2,6 +2,8 @@ package com.cryptoscalp.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.json.JSONObject
+import kotlin.math.sin
 
 class TradingStrategyParityTest {
     private fun series(count: Int, duration: Long, start: Long): List<MarketCandle> =
@@ -16,6 +18,29 @@ class TradingStrategyParityTest {
         val fifteen = series(80, 900_000L, now - 80 * 900_000L)
         val thirty = series(80, 1_800_000L, now - 80 * 1_800_000L)
         assertEquals("WAIT", TradingStrategy.evaluate(five, fifteen, thirty).signal)
+    }
+
+
+    @Test fun sharedGoldenFixtureProducesSameNoSignalDecisionAsPython() {
+        val raw = javaClass.getResourceAsStream("/strategy_parity_fixture.json")!!
+            .bufferedReader().use { it.readText() }
+        val fixture = JSONObject(raw)
+        val start = fixture.getLong("start_ms")
+        val base = fixture.getDouble("base_price")
+        val bars = fixture.getJSONObject("bars")
+        fun candles(tf: String, duration: Long): List<MarketCandle> {
+            val count = bars.getInt(tf)
+            return (0 until count).map { i ->
+                val close = base + i * 0.02 + sin(i * 0.3) * 0.03
+                MarketCandle(close - 0.02, close + 0.15, close - 0.15,
+                    close, 100.0 + i, start + i * duration)
+            }
+        }
+        val result = TradingStrategy.evaluate(
+            candles("5m", 300_000L), candles("15m", 900_000L), candles("30m", 1_800_000L)
+        )
+        val normalized = if (result.signal == "WAIT") "NO_SIGNAL" else result.signal
+        assertEquals(fixture.getString("expected_signal"), normalized)
     }
 
     @Test fun returnsWaitWhenHigherTimeframeHistoryIsInsufficientAfterAsOfTrim() {
