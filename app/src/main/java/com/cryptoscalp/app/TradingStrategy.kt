@@ -363,9 +363,14 @@ object TradingStrategy {
         val allBearish=reports.values.all{it.bias=="bearish"}
         val trigger5=reports["5m"]!!
         val sm5=trigger5.structure
+        // Quality gate v1 mirrors the Python research engine: stronger 15m/30m
+        // conviction, a stronger 5m trigger and a higher combined score.
+        // These candidate thresholds require out-of-sample validation.
+        val higherBullish=reports["15m"]!!.score>=26&&reports["30m"]!!.score>=26
+        val higherBearish=reports["15m"]!!.score<=-26&&reports["30m"]!!.score<=-26
         val signal=when{
-            allBullish&&combined>=28&&trigger5.score>=18&&sm5?.retestLong==true->"LONG"
-            allBearish&&combined<=-28&&trigger5.score<=-18&&sm5?.retestShort==true->"SHORT"
+            allBullish&&higherBullish&&combined>=34&&trigger5.score>=24&&sm5?.retestLong==true->"LONG"
+            allBearish&&higherBearish&&combined<=-34&&trigger5.score<=-24&&sm5?.retestShort==true->"SHORT"
             else->"WAIT"
         }
         val a=reports["5m"]?.atr?:0.0
