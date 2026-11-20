@@ -40,7 +40,7 @@ class ToobitFullUniverseTests(unittest.TestCase):
     def test_exchange_info_contracts_missing_from_ticker_are_not_dropped(self):
         from unittest.mock import patch
         api = ToobitAPI()
-        exchange_info = {"contracts": [
+        exchange_info = {"coins": [{"coinId": "BTC"}, {"coinId": "ETH"}], "contracts": [
             {"symbol": "BTC-SWAP-USDT", "status": "TRADING",
              "quoteAsset": "USDT", "inverse": False},
             {"symbol": "ETH-SWAP-USDT", "status": "TRADING",
