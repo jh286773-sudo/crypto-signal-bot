@@ -503,8 +503,10 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
             smc.get("structure_event") in (("BOS_up","CHoCH_up") if direction=="LONG" else ("BOS_down","CHoCH_down"))
             or smc.get("liquidity_sweep") == ("sell_side" if direction=="LONG" else "buy_side")
         ))
-        result["entry_stage"] = "CONFIRMATION" if confirmation else "PREPARATION" if higher_long or higher_short else "WAIT"
-        result["reason"]="Multi-timeframe indicator consensus or confirmed retest not complete"
+        retest_key = "retest_long" if direction=="LONG" else "retest_short"
+        retest_ready = bool(direction and smc.get(retest_key))
+        result["entry_stage"] = "ENTRY" if retest_ready else "CONFIRMATION" if confirmation else "PREPARATION" if higher_long or higher_short else "WAIT"
+        result["reason"]="Retest confirmed; waiting for full indicator consensus" if retest_ready else "Multi-timeframe indicator consensus or confirmed retest not complete"
     return result
 
 
