@@ -516,12 +516,18 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
     longs=sum(reports[tf]["bias"]=="bullish" for tf in REQUIRED_TFS)
     shorts=sum(reports[tf]["bias"]=="bearish" for tf in REQUIRED_TFS)
     # 15m/30m establish directional context; 5m must independently confirm the trigger.
-    higher_long = reports["15m"]["bias"]=="bullish" and reports["30m"]["bias"]=="bullish"
-    higher_short = reports["15m"]["bias"]=="bearish" and reports["30m"]["bias"]=="bearish"
-    trigger_long = reports["5m"]["bias"]=="bullish" and reports["5m"]["score"]>=18
-    trigger_short = reports["5m"]["bias"]=="bearish" and reports["5m"]["score"]<=-18
-    if combined>=28 and higher_long and trigger_long and longs==3: signal="LONG"
-    elif combined<=-28 and higher_short and trigger_short and shorts==3: signal="SHORT"
+    # Quality gate v1: all three biases must agree, both higher timeframes
+    # must show stronger directional conviction, and the 5m trigger must be
+    # independently strong. These are conservative candidate thresholds;
+    # only out-of-sample backtests can establish whether they improve expectancy.
+    higher_long = (reports["15m"]["bias"]=="bullish" and reports["30m"]["bias"]=="bullish"
+                   and reports["15m"]["score"]>=26 and reports["30m"]["score"]>=26)
+    higher_short = (reports["15m"]["bias"]=="bearish" and reports["30m"]["bias"]=="bearish"
+                    and reports["15m"]["score"]<=-26 and reports["30m"]["score"]<=-26)
+    trigger_long = reports["5m"]["bias"]=="bullish" and reports["5m"]["score"]>=24
+    trigger_short = reports["5m"]["bias"]=="bearish" and reports["5m"]["score"]<=-24
+    if combined>=34 and higher_long and trigger_long and longs==3: signal="LONG"
+    elif combined<=-34 and higher_short and trigger_short and shorts==3: signal="SHORT"
     else: signal="NO_SIGNAL"
     confidence=min(99,round(abs(combined)*0.75+max(longs,shorts)*8,1))
     result={"signal":signal,"status":signal,"confidence_score":confidence,

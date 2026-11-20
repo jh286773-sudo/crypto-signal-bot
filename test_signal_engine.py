@@ -103,6 +103,15 @@ class EngineTests(unittest.TestCase):
             result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
 
+    def test_higher_timeframes_need_stronger_conviction_than_basic_bias(self):
+        strong = {"valid": True, "score": 60.0, "bias": "bullish",
+                  "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0}
+        moderate = {"valid": True, "score": 24.0, "bias": "bullish",
+                    "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0}
+        with patch("signal_engine.analyze_timeframe", side_effect=[strong, moderate, strong]):
+            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+
     def test_obv_uses_recent_direction_not_cumulative_sign(self):
         from signal_engine import _obv_trend
         rows = candles(20)
