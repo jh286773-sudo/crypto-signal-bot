@@ -443,7 +443,6 @@ object TradingStrategy {
         } else if(rawSignal=="LONG"||rawSignal=="SHORT") {
             reasons.add("ورود متوقف شد: امید ریاضی خالص این جهت هنوز با حداقل ۳۰ معامله بسته‌شده اثبات نشده است")
         }
-        }
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
         return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc,tp3,listOf(1.5,2.5,3.5))
     }
