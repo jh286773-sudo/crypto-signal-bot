@@ -43,7 +43,7 @@ class ToobitHistoryPaginationTests(unittest.TestCase):
 
         def fake_get(_endpoint, params):
             calls.append(params.copy())
-            first = params["startTime"] // step + 1
+            first = max(0, (params["startTime"] + 1) // step)
             last = params["endTime"] // step
             return [[i * step, "1", "2", "0.5", "1.5", "10"]
                     for i in range(first, min(last, first + 1000))]
