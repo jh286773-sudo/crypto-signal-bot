@@ -156,7 +156,7 @@ class ToobitAPI:
         }
 
     def get_klines_range(self, symbol, interval, start_ms, end_ms, limit=1000):
-        """Download a complete contiguous kline range, paging at Toobit's 1000-bar cap."""
+        """Download a complete contiguous kline range by paging backward from the end."""
         if interval not in self.INTERVALS:
             raise ValueError("Invalid interval")
         step = self.INTERVALS[interval]
@@ -164,23 +164,25 @@ class ToobitAPI:
         if start_ms < 0 or end_ms <= start_ms:
             raise ValueError("Invalid historical time range")
         page_size = max(1, min(int(limit), 1000))
-        cursor = (start_ms // step) * step
+        expected_first = (start_ms // step) * step
+        expected_last = ((end_ms - 1) // step) * step
+        cursor_end = end_ms
         rows_by_time = {}
-        while cursor < end_ms:
+        while cursor_end > start_ms:
             page = self._get("/quote/v1/klines", {
-                "symbol": symbol, "interval": interval, "startTime": cursor,
-                "endTime": end_ms, "limit": page_size
+                "symbol": symbol, "interval": interval, "startTime": start_ms,
+                "endTime": cursor_end, "limit": page_size
             })
-            if not page:
+            if not isinstance(page, list) or not page:
                 break
-            last_open = None
+            page_opens = []
             for row in page:
                 if len(row) < 6:
                     continue
                 opened = int(row[0])
-                if opened < start_ms or opened >= end_ms:
+                if opened < start_ms or opened >= cursor_end:
                     continue
-                last_open = opened if last_open is None else max(last_open, opened)
+                page_opens.append(opened)
                 item = {
                     "timestamp": opened, "open_time": opened,
                     "open": float(row[1]), "high": float(row[2]),
@@ -190,68 +192,68 @@ class ToobitAPI:
                 if len(row) > 9:
                     item["taker_buy_volume"] = float(row[9])
                 rows_by_time[opened] = item
-            if last_open is None or last_open < cursor:
+            if not page_opens:
+                raise RuntimeError(
+                    f"Toobit kline pagination returned no candles before cursor {cursor_end}"
+                )
+            oldest_open = min(page_opens)
+            if oldest_open <= expected_first:
                 break
-            next_cursor = last_open + step
-            if next_cursor <= cursor:
-                raise RuntimeError("Toobit kline pagination did not advance")
-            cursor = next_cursor
-            # Do not stop merely because an exchange page is shorter than the
-            # requested limit: some Toobit responses are partial while more
-            # historical candles remain. Continue from the last real timestamp.
+            next_cursor_end = oldest_open - 1
+            if next_cursor_end >= cursor_end:
+                raise RuntimeError("Toobit kline pagination did not move backward")
+            cursor_end = next_cursor_end
+            # Continue even when a page is shorter than the requested limit.
             time.sleep(0.05)
+
+        # Retry internal gaps with exact, narrow exchange queries. Never synthesize bars.
         ordered_times = sorted(rows_by_time)
-        expected_first = (start_ms // step) * step
-        expected_last = ((end_ms - 1) // step) * step
-        # A partial first page can begin later than the requested start. Retry
-        # the missing prefix as a narrower exchange query before accepting it.
-        if ordered_times and ordered_times[0] > expected_first:
-            prefix = self._get("/quote/v1/klines", {
-                "symbol": symbol, "interval": interval, "startTime": expected_first,
-                "endTime": ordered_times[0], "limit": page_size
-            })
-            for row in prefix if isinstance(prefix, list) else []:
-                if len(row) < 6:
-                    continue
-                opened = int(row[0])
-                if expected_first <= opened < ordered_times[0]:
-                    item = {
-                        "timestamp": opened, "open_time": opened,
-                        "open": float(row[1]), "high": float(row[2]),
-                        "low": float(row[3]), "close": float(row[4]),
-                        "volume": float(row[5])
-                    }
-                    if len(row) > 9:
-                        item["taker_buy_volume"] = float(row[9])
-                    rows_by_time[opened] = item
-            ordered_times = sorted(rows_by_time)
         missing_opens = []
         for left, right in zip(ordered_times, ordered_times[1:]):
             missing_opens.extend(range(left + step, right, step))
         if len(missing_opens) > 50:
-            raise RuntimeError(f"Toobit returned too many missing {interval} candles ({len(missing_opens)}); refusing to synthesize history")
-        # Retry each real exchange interval that was omitted by a paged response.
-        # Only exchange-returned candles are inserted; gaps are never fabricated.
+            raise RuntimeError(
+                f"Toobit returned too many missing {interval} candles ({len(missing_opens)}); "
+                "refusing to synthesize history"
+            )
         for missing_open in missing_opens:
             for _ in range(3):
-                retry_rows = self.get_klines_range(
-                    symbol, interval, missing_open, missing_open + step, limit=10
-                )
-                match = next((row for row in retry_rows
-                              if int(row["timestamp"]) == missing_open), None)
+                page = self._get("/quote/v1/klines", {
+                    "symbol": symbol, "interval": interval,
+                    "startTime": missing_open, "endTime": missing_open + step, "limit": 10
+                })
+                match = next((row for row in page if len(row) >= 6
+                              and int(row[0]) == missing_open), None) if isinstance(page, list) else None
                 if match is not None:
-                    rows_by_time[missing_open] = match
+                    item = {
+                        "timestamp": missing_open, "open_time": missing_open,
+                        "open": float(match[1]), "high": float(match[2]),
+                        "low": float(match[3]), "close": float(match[4]),
+                        "volume": float(match[5])
+                    }
+                    if len(match) > 9:
+                        item["taker_buy_volume"] = float(match[9])
+                    rows_by_time[missing_open] = item
                     break
                 time.sleep(0.15)
+
         rows = [rows_by_time[key] for key in sorted(rows_by_time)]
-        if rows and int(rows[0]["timestamp"]) != expected_first:
-            raise RuntimeError(f"Toobit omitted leading real {interval} candles starting at {expected_first}; refusing to synthesize history")
-        if rows and int(rows[-1]["timestamp"]) != expected_last:
-            raise RuntimeError(f"Toobit omitted trailing real {interval} candles ending at {expected_last}; refusing to synthesize history")
+        if not rows or int(rows[0]["timestamp"]) != expected_first:
+            raise RuntimeError(
+                f"Toobit returned incomplete {interval} history: expected from "
+                f"{expected_first}, earliest received {rows[0]['timestamp'] if rows else 'none'}"
+            )
+        if int(rows[-1]["timestamp"]) != expected_last:
+            raise RuntimeError(
+                f"Toobit returned incomplete {interval} history: expected through "
+                f"{expected_last}, latest received {rows[-1]['timestamp']}"
+            )
         for left, right in zip(rows, rows[1:]):
             if int(right["timestamp"]) - int(left["timestamp"]) != step:
                 missing = int(left["timestamp"]) + step
-                raise RuntimeError(f"Toobit omitted real {interval} candle at {missing}; refusing to synthesize history")
+                raise RuntimeError(
+                    f"Toobit omitted real {interval} candle at {missing}; refusing to synthesize history"
+                )
         return self.closed_candles(rows, interval, end_ms)
 
     def get_historical_funding_rates(self, symbol, limit=1000):
