@@ -36,7 +36,7 @@ class TradingStrategyParityTest {
         val rows=series(220,duration,start)
         val result=TradingStrategy.evaluate(mapOf("1m" to rows),rows.last().time+duration+1_000L)
         assertEquals("LONG",result.signal) // RSI above 50 confirms the rising trend even when overbought
-        assertTrue(result.reasons.any{it.contains("تحلیل اندیکاتورها")})
+        assertTrue(result.reasons.any{it.startsWith("1m:")})
         assertFalse(result.reasons.any{it.contains("5m")||it.contains("15m")||it.contains("30m")})
     }
 
