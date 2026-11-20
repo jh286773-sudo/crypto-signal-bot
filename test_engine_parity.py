@@ -18,6 +18,12 @@ class CrossEngineContractTests(unittest.TestCase):
                       "falseBreakout", "equalHighs", "equalLows"):
             self.assertIn(token,kt)
         self.assertIn("entry_distance_atr",py)
+        self.assertIn("expectancy_allows",py)
+        self.assertIn("MIN_TRADES = 30", (root/"expectancy.py").read_text())
+        policy=(root/"app/src/main/java/com/cryptoscalp/app/ExpectancyPolicy.kt").read_text()
+        for token in ("MIN_TRADES=30","MIN_PROFIT_FACTOR=1.10","ONE_SIDED_Z=1.645"):
+            self.assertIn(token,policy)
+        self.assertIn("expectancyStats?.get(rawSignal)",kt)
         self.assertIn("entryDistanceAtr",kt)
         self.assertIn(">.50",kt)
         self.assertIn("0.50",py)
