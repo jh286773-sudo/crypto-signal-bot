@@ -90,10 +90,10 @@ class CryptoMonitorService : Service() {
                     // First launch establishes a baseline instead of issuing a delayed historical signal.
                     prefs.edit().putLong(key,latestClosedCandleTime).apply()
                 } else if(latestClosedCandleTime>previousCandleTime){
-                    val candidate=TradingStrategy.evaluate(candleMap,marketAsOfMs,emptyMap(),false)
+                    val candidate=TradingStrategy.evaluate(candleMap,marketAsOfMs)
                     closeShadowOnReversal(symbol,candidate.signal,candidate.entry)
                     if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
-                    val r=TradingStrategy.evaluate(candleMap,marketAsOfMs,loadExpectancyStats(symbol),true)
+                    val r=TradingStrategy.evaluate(candleMap,marketAsOfMs)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
@@ -141,10 +141,6 @@ class CryptoMonitorService : Service() {
             .put("openedAt",System.currentTimeMillis()).put("openedBar",barTime)
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
     }
-    private fun expectancyKey(symbol:String,side:String)="shadow_closed_net_r_"+symbol+"_"+side
-    private fun loadExpectancyStats(symbol:String):Map<String,List<Double>> = listOf("LONG","SHORT").associateWith { side ->
-        prefs.getString(expectancyKey(symbol,side),"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(200)
-    }
     private fun saveShadow(symbol:String,r:StrategyResult,barTime:Long){
         val o=JSONObject().put("side",r.signal).put("entry",r.entry)
             .put("openedBar",barTime).put("lastBar",barTime)
@@ -158,10 +154,8 @@ class CryptoMonitorService : Service() {
         val entry=o.optDouble("entry",0.0)
         if(entry>0.0&&exit>0.0){
             val direction=if(oldSide=="LONG")1.0 else -1.0
-            val net=direction*(exit-entry)/entry-0.001
-            val key=expectancyKey(symbol,oldSide)
-            val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
-            prefs.edit().putString(key,(prior+net).joinToString(",")).remove("shadow_setup_$symbol").apply()
+            // Shadow history is not used to gate signals; simply close the virtual setup.
+            prefs.edit().remove("shadow_setup_$symbol").apply()
         }else prefs.edit().remove("shadow_setup_$symbol").apply()
     }
     private fun recordVirtualClose(symbol:String,exit:Double){
