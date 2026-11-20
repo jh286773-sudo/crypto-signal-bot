@@ -71,7 +71,9 @@ class CryptoMonitorService : Service() {
                 // No price-based SL/TP exit is used in signal-reversal hold mode.
 
                 // Strategy runs only when a newer fully closed 5m candle is available.
-                val five=ExchangeMarketData.candles(exchange,symbol,"5m")
+                // Capture one exchange-clock boundary and use it for all three HTTP candle requests.
+                val marketAsOfMs=ExchangeMarketData.exchangeTimeMs()
+                val five=ExchangeMarketData.candles(exchange,symbol,"5m",marketAsOfMs)
                 val latestClosedCandleTime=five.last().time
                 val key="last_analysis_candle_$symbol"
                 val previousCandleTime=prefs.getLong(key,-1L)
@@ -79,32 +81,31 @@ class CryptoMonitorService : Service() {
                     // First launch establishes a baseline instead of issuing a delayed historical signal.
                     prefs.edit().putLong(key,latestClosedCandleTime).apply()
                 } else if(latestClosedCandleTime>previousCandleTime){
-                    // All three datasets contain closed candles only; 15m/30m may be unchanged between scans.
-                    val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m")
-                    val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
-                    val r=TradingStrategy.evaluate(five,fifteen,thirty,ExchangeMarketData.exchangeTimeMs())
+                    val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m",marketAsOfMs)
+                    val thirty=ExchangeMarketData.candles(exchange,symbol,"30m",marketAsOfMs)
+                    val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs)
                     val open=prefs.getString("open_setup_$symbol",null)
+                    val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
                     val lossCooldownActive = isLossCooldownActive(symbol,System.currentTimeMillis())
-                    if(open==null && isDirectionalSignal(r.signal) && previous!=r.signal && !lossCooldownActive) {
-                        saveOpen(symbol,r)
-                        notifySignal(symbol,r)
-                    } else if(open!=null && isDirectionalSignal(r.signal)){
-                        val old=JSONObject(open).optString("side")
-                        if(old!=r.signal){
-                            // A confirmed opposite signal always closes the old virtual position.
-                            clearOpen(symbol)
-                            if(!lossCooldownActive){
-                                saveOpen(symbol,r)
-                                notifyReversal(symbol,old,r)
-                            } else {
-                                notifyExit(symbol,"بستن موقعیت قبلی • $symbol",
-                                    "سیگنال مخالف $r.signal تأیید شد؛ موقعیت $old بسته شد. به‌دلیل دوره توقف ریسک، موقعیت جدید باز نشد.")
-                            }
+                    when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,lossCooldownActive)) {
+                        SignalDecision.OPEN -> {
+                            saveOpen(symbol,r)
+                            notifySignal(symbol,r)
                         }
+                        SignalDecision.REVERSE -> {
+                            clearOpen(symbol)
+                            saveOpen(symbol,r)
+                            notifyReversal(symbol,openSide.orEmpty(),r)
+                        }
+                        SignalDecision.CLOSE_ONLY -> {
+                            clearOpen(symbol)
+                            notifyExit(symbol,"بستن موقعیت قبلی • $symbol",
+                                "سیگنال مخالف $r.signal تأیید شد؛ موقعیت $openSide بسته شد. به‌دلیل دوره توقف ریسک، موقعیت جدید باز نشد.")
+                        }
+                        SignalDecision.NONE -> Unit
                     }
-                    // Keep the internal state non-directional while cooling down so a
-                    // still-valid signal can be reconsidered after the pause expires.
+                    // WAIT remains internal; a cooldown reversal is reconsidered after its expiry.
                     prefs.edit().putString("last_signal_$symbol",if(lossCooldownActive)"WAIT" else r.signal)
                         .putLong(key,latestClosedCandleTime).apply()
                     analyzed++

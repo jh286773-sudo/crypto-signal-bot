@@ -92,7 +92,7 @@ object ExchangeMarketData {
             val row = rows.optJSONObject(i) ?: continue
             try {
                 val candleTime = row.optLong("time", row.optLong("curId", 0L))
-                if (candleTime <= 0L || candleTime + duration > now) continue
+                if (!CandleClosePolicy.isClosed(candleTime, duration, now)) continue
                 val open = row.optString("open").toDouble()
                 val high = row.optString("high").toDouble()
                 val low = row.optString("low").toDouble()
@@ -115,13 +115,18 @@ object ExchangeMarketData {
      * Contract-price OHLCV used by the strategy and Python walk-forward engine.
      * This endpoint includes real volume and taker-buy volume for order-flow analysis.
      */
-    fun candles(exchange: String, symbol: String, interval: String): List<MarketCandle> {
+    fun candles(exchange: String, symbol: String, interval: String): List<MarketCandle> =
+        candles(exchange, symbol, interval, exchangeTimeMs())
+
+    /** Fetch a timeframe against one caller-supplied exchange-clock snapshot. */
+    fun candles(exchange: String, symbol: String, interval: String, asOfMs: Long): List<MarketCandle> {
+        require(asOfMs > 0L) { "زمان مرجع صرافی نامعتبر است." }
         require(exchange == "Toobit") { "فقط صرافی توبیت پشتیبانی می‌شود." }
         require(interval == "5m" || interval == "15m" || interval == "30m") {
             "تایم‌فریم نامعتبر است: $interval"
         }
         require(symbol.endsWith("-SWAP-USDT")) { "نماد قرارداد توبیت نامعتبر است: $symbol" }
-        val now = exchangeTimeMs()
+        val now = asOfMs
         val duration = when (interval) {
             "5m" -> 300_000L
             "15m" -> 900_000L
@@ -136,7 +141,7 @@ object ExchangeMarketData {
             try {
                 if (row.length() < 6) continue
                 val candleTime = row.optString(0).toLongOrNull() ?: continue
-                if (candleTime <= 0L || candleTime + duration > now) continue
+                if (!CandleClosePolicy.isClosed(candleTime, duration, now)) continue
                 val open = row.optString(1).toDouble()
                 val high = row.optString(2).toDouble()
                 val low = row.optString(3).toDouble()
