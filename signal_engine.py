@@ -327,6 +327,9 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
             family_scores[family]=sum(v*w for v,w,_ in items)/denom if denom else 0
         family_weights={"trend":1.5,"momentum":1.3,"strength":1.1,"volume":1.0,
                         "volatility":0.6,"structure":1.4,"divergence":0.8,"orderflow":0.7}
+        # In ranges, reduce trend-following dominance and favor structure/reversal evidence.
+        if regime["state"] == "ranging":
+            family_weights.update({"trend":0.8,"structure":1.6,"divergence":1.2})
         total_w=sum(family_weights[k] for k in family_scores)
         score=100*sum(family_scores[k]*family_weights[k] for k in family_scores)/total_w
         bullish=sum(1 for x in family_scores.values() if x>0.20)
