@@ -190,7 +190,7 @@ class CryptoMonitorService : Service() {
         // Conservative modeled round-trip fee + slippage: 10 bps each side.
         val costsR=(entry+exit)*0.001/risk
         val netR=grossR-costsR
-        val key=expectancyKey(symbol,side)
+        val key="closed_net_r_"+symbol+"_"+side
         val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
         prefs.edit().putString(key,(prior+netR).joinToString(",")).apply()
     }
