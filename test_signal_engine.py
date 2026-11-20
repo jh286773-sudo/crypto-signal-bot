@@ -2,7 +2,7 @@ import unittest, math
 from unittest.mock import patch
 from signal_engine import analyze_timeframe, analyze_market, _adx_regime, _confirmed_pivots, _market_structure
 
-def candles(n=100, trend=1.0):
+def candles(n=220, trend=1.0):
     rows=[]; p=100.0
     for i in range(n):
         p += trend*0.12 + math.sin(i/3)*0.03
@@ -30,14 +30,18 @@ class EngineTests(unittest.TestCase):
     def test_indicator_report(self):
         r=analyze_timeframe(candles())
         self.assertTrue(r["valid"])
-        for key in ("ema","sma","rsi","macd","bollinger","stoch_rsi","adx_dmi","ichimoku","atr","vwap","obv","mfi","divergence","smc","taker_flow"):
-            if key=="ema" or key=="sma": self.assertIn(key,r["indicators"])
-            else: self.assertIn(key,r["indicators"])
+        for key in ("ema","rsi","macd","bollinger","stoch_rsi","adx_dmi","ichimoku","atr","vwap","obv","smc"):
+            self.assertIn(key,r["indicators"])
+        self.assertEqual(set(r["indicators"]["ema"]), {"20","50","200"})
+        self.assertNotIn("sma", r["indicators"])
+        self.assertNotIn("mfi", r["indicators"])
+        self.assertNotIn("taker_flow", r["indicators"])
+        self.assertEqual(set(r["indicator_votes"]), {"EMA","Ichimoku","RSI","MACD","StochRSI","ADX_DMI","VWAP","OBV_Trend","Bollinger"})
     def test_requires_all_timeframes(self):
         r=analyze_market({"5m":candles(),"15m":candles()})
         self.assertEqual(r["signal"],"NO_SIGNAL")
     def test_signal_shape(self):
-        data={tf:candles(120,1.0) for tf in ("5m","15m","30m")}
+        data={tf:candles(220,1.0) for tf in ("5m","15m","30m")}
         r=analyze_market(data)
         self.assertIn(r["signal"],("LONG","SHORT","NO_SIGNAL"))
         self.assertIn("combined_score",r)
@@ -90,7 +94,7 @@ class EngineTests(unittest.TestCase):
         start5 = 1800000000000
         decision = start5 + 100 * durations["5m"]
         for tf, duration in durations.items():
-            count = 100
+            count = 220
             start = start5 if tf == "5m" else (decision // duration) * duration - duration - (count-1)*duration
             rows = candles(count)
             for i, row in enumerate(rows):
@@ -123,7 +127,7 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])
 
     def test_invalid_old_candle_is_rejected_before_recursive_indicators(self):
-        rows = candles(100)
+        rows = candles(220)
         rows[0]["open"] = float("nan")
         result = analyze_timeframe(rows)
         self.assertFalse(result["valid"])
@@ -152,7 +156,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(lows, [2])
 
     def test_smc_report_exposes_structure_and_liquidity_fields(self):
-        data = candles(120)
+        data = candles(220)
         structure = _market_structure(data)
         self.assertIn("structure_event", structure)
         self.assertIn("liquidity_sweep", structure)
@@ -160,7 +164,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("equal_high_liquidity", structure)
 
     def test_report_exposes_adx_market_regime(self):
-        result = analyze_timeframe(candles(120), "15m")
+        result = analyze_timeframe(candles(220), "15m")
         self.assertIn(result["market_regime"]["state"], ("trending", "ranging", "transition", "unknown"))
 
     def test_five_minute_bias_can_be_lower_score_when_all_timeframes_agree(self):
@@ -205,7 +209,7 @@ class EngineTests(unittest.TestCase):
 
     def test_taker_flow_uses_exchange_buy_volume_when_available(self):
         from signal_engine import _taker_strength
-        rows = candles(70)
+        rows = candles(220)
         for row in rows:
             row["volume"] = 100.0
             row["taker_buy_volume"] = 60.0
@@ -215,7 +219,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(flow["sell_percent"], 40.0)
 
     def test_invalid_taker_buy_volume_rejects_entire_candle_history(self):
-        rows = candles(80)
+        rows = candles(220)
         rows[0]["taker_buy_volume"] = rows[0]["volume"] + 10.0
         result = analyze_timeframe(rows)
         self.assertFalse(result["valid"])
@@ -264,7 +268,7 @@ class EngineTests(unittest.TestCase):
         self.assertGreater(levels["take_profits"][1], levels["take_profits"][0])
 
     def test_market_structure_exposes_retest_and_false_breakout_state(self):
-        rows = candles(120)
+        rows = candles(220)
         structure = _market_structure(rows)
         for key in ("retest_long", "retest_short", "false_breakout", "breakout_quality"):
             self.assertIn(key, structure)
