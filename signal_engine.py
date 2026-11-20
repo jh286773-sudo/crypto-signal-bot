@@ -219,18 +219,17 @@ def _market_structure(c, lookback=60):
     equal_highs = [v for _, v in swing_highs[-5:] if abs(v-last_high) <= tolerance]
     equal_lows = [v for _, v in swing_lows[-5:] if abs(v-last_low) <= tolerance]
     order_blocks = []
-    if event in ("BOS_up", "CHoCH_up"):
-        for j in range(len(w)-2, max(-1, len(w)-13), -1):
-            x = w[j]
-            if float(x["close"]) < float(x["open"]):
-                order_blocks.append({"type":"bullish","low":float(x["low"]),"high":float(x["high"])})
-                break
-    elif event in ("BOS_down", "CHoCH_down"):
-        for j in range(len(w)-2, max(-1, len(w)-13), -1):
-            x = w[j]
-            if float(x["close"]) > float(x["open"]):
-                order_blocks.append({"type":"bearish","low":float(x["low"]),"high":float(x["high"])})
-                break
+    # Keep the latest confirmed displacement-origin candle so later retests remain visible.
+    for j in range(len(w)-2, max(-1, len(w)-21), -1):
+        x, nxt = w[j], w[j+1]
+        xo, xc = float(x["open"]), float(x["close"])
+        nh, nl, nc = float(nxt["high"]), float(nxt["low"]), float(nxt["close"])
+        if xc < xo and nc > float(x["high"]) and nc > nh - (nh-nl)*0.25:
+            order_blocks.append({"type":"bullish","low":float(x["low"]),"high":float(x["high"])})
+            break
+        if xc > xo and nc < float(x["low"]) and nc < nl + (nh-nl)*0.25:
+            order_blocks.append({"type":"bearish","low":float(x["low"]),"high":float(x["high"])})
+            break
     return {
         "previous_swing_high": last_high, "previous_swing_low": last_low,
         "structure_event": event, "market_structure": "bullish" if up_trend else "bearish" if down_trend else "range",
@@ -327,8 +326,9 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         vote("volume","OBV",1 if obv is not None and obv>0 else -1 if obv is not None and obv<0 else 0)
         vote("volume","MFI",1 if mfi is not None and 50<mfi<80 else -1 if mfi is not None and 20<mfi<50 else 0)
         vote("volatility","Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
-        smc_bull = structure.get("structure_event") in ("BOS_up","CHoCH_up") or structure.get("liquidity_sweep")=="sell_side" or any(x.get("type")=="bullish" and x["low"] <= price <= x["high"] for x in structure.get("order_blocks",[]))
-        smc_bear = structure.get("structure_event") in ("BOS_down","CHoCH_down") or structure.get("liquidity_sweep")=="buy_side" or any(x.get("type")=="bearish" and x["low"] <= price <= x["high"] for x in structure.get("order_blocks",[]))
+        ob_tolerance = (a or price*0.001) * 0.25
+        smc_bull = structure.get("structure_event") in ("BOS_up","CHoCH_up") or structure.get("liquidity_sweep")=="sell_side" or any(x.get("type")=="bullish" and x["low"]-ob_tolerance <= price <= x["high"]+ob_tolerance for x in structure.get("order_blocks",[]))
+        smc_bear = structure.get("structure_event") in ("BOS_down","CHoCH_down") or structure.get("liquidity_sweep")=="buy_side" or any(x.get("type")=="bearish" and x["low"]-ob_tolerance <= price <= x["high"]+ob_tolerance for x in structure.get("order_blocks",[]))
         vote("structure","SMC",1 if smc_bull and not smc_bear else -1 if smc_bear and not smc_bull else 0,1.3)
         vote("divergence","Divergence",1 if div=="bullish" else -1 if div=="bearish" else 0,1.1)
         vote("orderflow","TakerFlow",1 if strength.get("available") and strength["buy_percent"]>=55 else -1 if strength.get("available") and strength["sell_percent"]>=55 else 0)
