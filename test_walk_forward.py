@@ -59,7 +59,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_position_sizing_and_partial_targets_are_reported(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][60:]:
-            row["low"]=101.5; row["high"]=105.0
+            row["low"]=102.1; row["high"]=105.0
         signal=make_signal(100.0,[102.0,103.0,104.0])
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
@@ -198,7 +198,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_distinct_entry_exit_fees_and_funding_settlement_once(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][360:364]:
-            row["low"]=100.5; row["high"]=100.5
+            row["low"]=100.5; row["high"]=101.0
         data["5m"][361]["funding_rate"]=0.001
         data["5m"][361]["funding_settle_time"]=362*DURATION_MS["5m"]
         with patch("walk_forward.analyze_market",return_value=make_signal(
