@@ -70,6 +70,8 @@ class BacktestTests(unittest.TestCase):
 
     def test_uses_historical_funding_rate_for_long(self):
         data={tf:flat_candles(64) for tf in ("5m","15m","30m")}
+        data["5m"][60].update({"open":100.0,"high":101.0,"low":99.0,"close":100.0})
+        data["5m"][61].update({"open":100.0,"high":101.0,"low":99.0,"close":100.0})
         data["5m"][60]["funding_rate"]=0.001
         data["5m"][61]["funding_rate"]=0.002
         with patch("backtest.analyze_market",return_value={"signal":"LONG"}):
