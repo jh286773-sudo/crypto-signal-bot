@@ -276,6 +276,9 @@ object TradingStrategy {
         if(sm.sweep=="buy_side")smc.add("جمع‌آوری نقدینگی سقف")
         if(sm.equalHighs)smc.add("استخر نقدینگی سقف‌های برابر")
         if(sm.equalLows)smc.add("استخر نقدینگی کف‌های برابر")
+        if(sm.falseBreakout)smc.add("شکست جعلی/جمع‌آوری نقدینگی؛ ورود ممنوع")
+        if(sm.retestLong)smc.add("بازگشت و تثبیت صعودی روی سطح شکست")
+        if(sm.retestShort)smc.add("بازگشت و تثبیت نزولی زیر سطح شکست")
         if(sm.orderBlockType!="none")smc.add("Order Block "+sm.orderBlockType)
         return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
     }
