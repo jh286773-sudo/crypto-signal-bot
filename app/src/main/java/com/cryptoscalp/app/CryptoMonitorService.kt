@@ -67,9 +67,8 @@ class CryptoMonitorService : Service() {
             var firstError=""
             val now=System.currentTimeMillis()
             for(symbol in list)try{
-                // Every 60 seconds: use Toobit's live futures ticker for real-time stop/target checks.
-                val price=ExchangeMarketData.lastPrice(exchange,symbol)
-                manageOpen(symbol,price)
+                // Keep a tracked position open until an opposite confirmed signal arrives.
+                // No price-based SL/TP exit is used in signal-reversal hold mode.
 
                 // Strategy runs only when a newer fully closed 5m candle is available.
                 val five=ExchangeMarketData.candles(exchange,symbol,"5m")
@@ -92,7 +91,17 @@ class CryptoMonitorService : Service() {
                         notifySignal(symbol,r)
                     } else if(open!=null && isDirectionalSignal(r.signal)){
                         val old=JSONObject(open).optString("side")
-                        if(old!=r.signal && !lossCooldownActive){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
+                        if(old!=r.signal){
+                            // A confirmed opposite signal always closes the old virtual position.
+                            clearOpen(symbol)
+                            if(!lossCooldownActive){
+                                saveOpen(symbol,r)
+                                notifyReversal(symbol,old,r)
+                            } else {
+                                notifyExit(symbol,"بستن موقعیت قبلی • $symbol",
+                                    "سیگنال مخالف $r.signal تأیید شد؛ موقعیت $old بسته شد. به‌دلیل دوره توقف ریسک، موقعیت جدید باز نشد.")
+                            }
+                        }
                     }
                     // Keep the internal state non-directional while cooling down so a
                     // still-valid signal can be reconsidered after the pause expires.
@@ -116,9 +125,8 @@ class CryptoMonitorService : Service() {
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
 
     private fun saveOpen(symbol:String,r:StrategyResult){
-        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop)
-            .put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3)
-            .put("tp1Done",false).put("tp2Done",false)
+        // Track direction only. SL/TP are not part of this hold-until-reversal mode.
+        val o=JSONObject().put("side",r.signal).put("openedAt",System.currentTimeMillis())
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
     }
     private fun manageOpen(symbol:String,price:Double){
@@ -197,11 +205,26 @@ class CryptoMonitorService : Service() {
     private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
     private fun notifySignal(symbol:String,r:StrategyResult){
         val body=buildString{
-            append("جهت: ${if(r.signal=="LONG")"لانگ" else "شورت"}\nورود: ${fmt(r.entry)}\nحد ضرر: ${fmt(r.stop)}\nحد سود ۱: ${fmt(r.target1)}\nحد سود ۲: ${fmt(r.target2)}\nحد سود ۳: ${fmt(r.target3)}\nامتیاز تأیید: ${r.score}\n")
-            append("مدیریت خروج در این نسخه هشدار مرحله‌ای است و سفارش صرافی را خودکار اجرا نمی‌کند.\n")
+            append("اقدام: بازکردن موقعیت ${r.signal} • ${if(r.signal=="LONG")"لانگ" else "شورت"}\\n")
+            append("تا زمان دریافت سیگنال مخالف معتبر، موقعیت باز نگه داشته می‌شود.\\n")
+            append("امتیاز تأیید: ${r.score}\\n")
+            append("این اعلان راهنمای دستی است؛ برنامه سفارش صرافی را ثبت یا اجرا نمی‌کند.\\n")
             append("دلایل: ${(r.reasons+r.smc).joinToString("، ")}")
         }
-        val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("سیگنال ${r.signal} • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
+        val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("بازکردن ${r.signal} • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
+    }
+    private fun notifyReversal(symbol:String,oldSide:String,r:StrategyResult){
+        val body=buildString{
+            append("۱) بستن موقعیت قبلی: $oldSide\\n")
+            append("۲) بازکردن موقعیت جدید: ${r.signal}\\n")
+            append("سیگنال مخالف پس از بسته‌شدن کندل و تأیید تایم‌فریم‌ها صادر شد.\\n")
+            append("این اعلان راهنمای دستی است؛ برنامه سفارش صرافی را ثبت یا اجرا نمی‌کند.\\n")
+            append("دلایل: ${(r.reasons+r.smc).joinToString("، ")}")
+        }
+        val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("تغییر جهت • $symbol").setContentText("بستن $oldSide ← بازکردن ${r.signal}")
+            .setStyle(Notification.BigTextStyle().bigText(body))
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
     }
     private fun notifyExit(symbol:String,title:String,body:String){
