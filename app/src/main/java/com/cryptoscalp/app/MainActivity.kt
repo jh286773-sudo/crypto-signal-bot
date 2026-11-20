@@ -527,77 +527,99 @@ class MainActivity : Activity() {
         }
 
         val timeframe = selectedChartTimeframe
-        chosen.forEach { symbol ->
-            val base = symbol.removeSuffix("-SWAP-USDT")
-            val chartCard = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(13), dp(11), dp(13), dp(12))
-                background = android.graphics.drawable.GradientDrawable(
-                    android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                    intArrayOf(Color.rgb(43, 37, 26), Color.rgb(20, 21, 25), Color.rgb(11, 13, 17))
-                ).apply {
-                    cornerRadius = dp(16).toFloat()
-                    setStroke(dp(1), Color.rgb(137, 104, 48))
-                }
-                elevation = dp(5).toFloat()
-            }
-
-            val heading = LinearLayout(this).apply {
+        // One selected asset uses the available width; multiple assets use a compact two-column grid.
+        val columns = if (chosen.size == 1) 1 else 2
+        chosen.chunked(columns).forEach { symbolsInRow ->
+            val chartRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                gravity = Gravity.TOP
             }
-            val coinName = text("$base  •  TOOBIT", 13, goldLight, true)
-            heading.addView(coinName, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            val priceLabel = text("—", 15, Color.WHITE, true).apply { gravity = Gravity.END }
-            heading.addView(priceLabel)
-            chartCard.addView(heading)
+            marketChartsContainer.addView(chartRow, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(7) })
 
-            val detailRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            detailRow.addView(text("FUTURES / $timeframe", 9, muted, true),
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            val changeLabel = text("در حال دریافت…", 10, goldLight, true).apply {
-                gravity = Gravity.END
-            }
-            detailRow.addView(changeLabel)
-            chartCard.addView(detailRow)
-
-            val chartView = MarketVisualView(this)
-            chartCard.addView(chartView, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(185)
-            ).apply { topMargin = dp(5) })
-            marketChartsContainer.addView(chartCard, marginParams(bottom = 10))
-
-            thread(name = "toobit-chart-$base") {
-                try {
-                    val candles = ExchangeMarketData.markPriceCandles("Toobit", symbol, timeframe)
-                    val last = candles.last()
-                    val livePrice = ExchangeMarketData.markPrice("Toobit", symbol)
-                    val first = candles[max(0, candles.size - 13)]
-                    val change = if (first.close == 0.0) 0.0
-                        else (last.close - first.close) / first.close * 100.0
-                    runOnUiThread {
-                        // Ignore responses from cards removed by a later watchlist/timeframe change.
-                        if (marketChartsContainer.indexOfChild(chartCard) < 0) return@runOnUiThread
-                        priceLabel.text = fmt(livePrice)
-                        changeLabel.text = String.format(java.util.Locale.US, "%+.2f%%", change)
-                        changeLabel.setTextColor(
-                            if (change >= 0) Color.rgb(112, 231, 157)
-                            else Color.rgb(255, 119, 108)
-                        )
-                        chartView.setCandles(candles.takeLast(36))
+            symbolsInRow.forEachIndexed { columnIndex, symbol ->
+                val base = symbol.removeSuffix("-SWAP-USDT")
+                val chartCard = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(8), dp(7), dp(8), dp(8))
+                    background = android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                        intArrayOf(Color.rgb(43, 37, 26), Color.rgb(20, 21, 25), Color.rgb(11, 13, 17))
+                    ).apply {
+                        cornerRadius = dp(13).toFloat()
+                        setStroke(dp(1), Color.rgb(137, 104, 48))
                     }
-                } catch (e: Exception) {
-                    runOnUiThread {
-                        if (marketChartsContainer.indexOfChild(chartCard) < 0) return@runOnUiThread
-                        priceLabel.text = "—"
-                        changeLabel.text = "دریافت ناموفق"
-                        changeLabel.setTextColor(Color.rgb(255, 119, 108))
-                        chartView.setCandles(emptyList())
+                    elevation = dp(3).toFloat()
+                }
+                val cardParams = if (columns == 1) {
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                } else {
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        if (columnIndex == 0) marginEnd = dp(4) else marginStart = dp(4)
                     }
                 }
+                chartRow.addView(chartCard, cardParams)
+
+                val heading = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val coinName = text(base, 11, goldLight, true)
+                heading.addView(coinName, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                val priceLabel = text("—", 11, Color.WHITE, true).apply { gravity = Gravity.END }
+                heading.addView(priceLabel)
+                chartCard.addView(heading)
+
+                val detailRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                detailRow.addView(text(timeframe.uppercase(), 8, muted, true),
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                val changeLabel = text("در حال دریافت…", 8, goldLight, true).apply {
+                    gravity = Gravity.END
+                }
+                detailRow.addView(changeLabel)
+                chartCard.addView(detailRow)
+
+                val chartView = MarketVisualView(this)
+                chartCard.addView(chartView, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(if (columns == 1) 145 else 108)
+                ).apply { topMargin = dp(3) })
+
+                thread(name = "toobit-chart-$base") {
+                    try {
+                        val candles = ExchangeMarketData.markPriceCandles("Toobit", symbol, timeframe)
+                        val last = candles.last()
+                        val livePrice = ExchangeMarketData.markPrice("Toobit", symbol)
+                        val first = candles[max(0, candles.size - 13)]
+                        val change = if (first.close == 0.0) 0.0
+                            else (last.close - first.close) / first.close * 100.0
+                        runOnUiThread {
+                            // Ignore stale responses after the selected watchlist or timeframe changes.
+                            if (marketChartsContainer.indexOfChild(chartRow) < 0) return@runOnUiThread
+                            priceLabel.text = fmt(livePrice)
+                            changeLabel.text = String.format(java.util.Locale.US, "%+.2f%%", change)
+                            changeLabel.setTextColor(
+                                if (change >= 0) Color.rgb(112, 231, 157)
+                                else Color.rgb(255, 119, 108)
+                            )
+                            chartView.setCandles(candles.takeLast(36))
+                        }
+                    } catch (_: Exception) {
+                        runOnUiThread {
+                            if (marketChartsContainer.indexOfChild(chartRow) < 0) return@runOnUiThread
+                            priceLabel.text = "—"
+                            changeLabel.text = "خطا"
+                            changeLabel.setTextColor(Color.rgb(255, 119, 108))
+                            chartView.setCandles(emptyList())
+                        }
+                    }
+                }
+            }
+            if (columns == 2 && symbolsInRow.size == 1) {
+                chartRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(4) })
             }
         }
     }
