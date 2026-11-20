@@ -27,7 +27,7 @@ object SignalDeduplicationPolicy {
         }
 
         if (openSide != null) return SignalDecision.NONE
-        if (signal != "LONG" || cooldownActive || lastSignal == "LONG") return SignalDecision.NONE
+        if (signal != "LONG" || cooldownActive) return SignalDecision.NONE
         return SignalDecision.OPEN
     }
 }
