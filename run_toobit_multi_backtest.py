@@ -29,6 +29,7 @@ def main():
                         help="Assumed adverse slippage per fill; not measured")
     parser.add_argument("--equity-per-symbol", type=float, default=10000.0)
     parser.add_argument("--risk", type=float, default=0.005)
+    parser.add_argument("--adx-policy", choices=("strict", "balanced", "confirm_only"), default="strict")
     parser.add_argument("--output", default="toobit_multi_crypto_30day.json")
     args = parser.parse_args()
     if not 0 <= args.days <= 3650:
@@ -97,9 +98,11 @@ def main():
                 slippage_bps=args.slippage_bps,
                 initial_equity=args.equity_per_symbol,
                 risk_fraction=args.risk,
+                adx_policy=args.adx_policy,
             )
             result.update({
                 "symbol": symbol,
+                "adx_policy": args.adx_policy,
                 "commission_source": commission["source"],
                 "commission_rates": commission,
                 "candle_counts": {tf: len(rows) for tf, rows in market.items()},
@@ -154,6 +157,7 @@ def main():
             },
         },
         "methodology": {
+            "adx_policy": args.adx_policy,
             "strategy": "same 5m/15m/30m closed-candle strategy on every eligible contract",
             "symbol_selection": "only user-selected active Toobit USDT-margined linear perpetual contracts",
             "earliest_available_candle_by_symbol_and_timeframe_utc": {
