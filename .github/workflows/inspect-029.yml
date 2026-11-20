@@ -19,8 +19,8 @@ jobs:
           mkdir -p /tmp/aurum029
           unzip -oq "$ZIP" -d /tmp/aurum029
           echo "=== CANDIDATE STRATEGY FILES ==="
-          find /tmp/aurum029 -type f | grep -E '/(TradingStrategy.kt|signal_engine.py|indicators.py|smart_money.py|smc.py)$' || true
+          find /tmp/aurum029 -type f | grep -E '/(TradingStrategy.kt|signal_engine.py|indicators.py|smart_money.py|smc.py|test_signal_engine.py)$' || true
           while IFS= read -r f; do
             echo "=== FILE: $f ==="
             cat "$f"
-          done < <(find /tmp/aurum029 -type f | grep -E '/(TradingStrategy.kt|signal_engine.py|indicators.py|smart_money.py|smc.py)$' || true)
+          done < <(find /tmp/aurum029 -type f | grep -E '/(TradingStrategy.kt|signal_engine.py|indicators.py|smart_money.py|smc.py|test_signal_engine.py)$' || true)
