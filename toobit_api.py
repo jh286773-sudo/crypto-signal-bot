@@ -97,13 +97,29 @@ class ToobitAPI:
                     "volume": float(row[5]),
                 }
             )
-        return candles
+        # Exchange kline endpoints may include the currently-forming candle.
+        # Never pass that candle into indicator or signal calculations.
+        candles.sort(key=lambda item: item["open_time"])
+        return self.closed_candles(candles, interval, end_time)
+
+    @classmethod
+    def closed_candles(cls, candles, interval, as_of_ms):
+        duration = cls.INTERVALS[interval]
+        return [row for row in candles if int(row["open_time"]) + duration <= int(as_of_ms)]
 
     def get_multi_timeframe(self, symbol):
+        five = self.get_klines(symbol, "5m", 200)
+        fifteen = self.get_klines(symbol, "15m", 200)
+        thirty = self.get_klines(symbol, "30m", 200)
+        if not five:
+            return {"5m": [], "15m": [], "30m": []}
+        # Freeze all series to the same 5m decision close. A higher-timeframe
+        # bar closing during subsequent HTTP requests is still future data.
+        decision_time = int(five[-1]["open_time"]) + self.INTERVALS["5m"]
         return {
-            "5m": self.get_klines(symbol, "5m", 200),
-            "15m": self.get_klines(symbol, "15m", 200),
-            "30m": self.get_klines(symbol, "30m", 200),
+            "5m": five,
+            "15m": self.closed_candles(fifteen, "15m", decision_time),
+            "30m": self.closed_candles(thirty, "30m", decision_time),
         }
 
 
