@@ -48,10 +48,17 @@ class EngineTests(unittest.TestCase):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"NO_SIGNAL")
     def test_all_three_aligned_can_signal_after_confirmed_retest(self):
-        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "indicators":{"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up","entry_distance_atr":0.2,"previous_swing_low":98.0}},"close":100.0}
+        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "indicators":{"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up","entry_distance_atr":0.2,"previous_swing_low":98.0}},"ema21":99.5,"close":100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"LONG")
+    def test_anti_chase_filter_rejects_extended_entry_and_accepts_pullback(self):
+        from signal_engine import _entry_not_chasing
+        self.assertFalse(_entry_not_chasing(102.0, 100.0, 2.0))
+        self.assertTrue(_entry_not_chasing(101.5, 100.0, 2.0))
+        self.assertFalse(_entry_not_chasing(101.0, None, 2.0))
+        self.assertFalse(_entry_not_chasing(101.0, 100.0, 0.0))
+
     def test_bad_input_safe(self):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])
 
@@ -214,6 +221,13 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["entry_stage"], "WAIT")
         self.assertIn("overextended", result["reason"])
 
+
+    def test_individual_indicator_conflicts_allow_one_minor_but_block_core_or_two(self):
+        from signal_engine import _no_major_indicator_conflict
+        self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"VWAP":-1}}, "LONG"))
+        self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":-1,"MACD":1,"VWAP":1}}, "LONG"))
+        self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"VWAP":-1,"OBV_Trend":-1}}, "LONG"))
+        self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":-1,"RSI":-1,"MACD":-1,"VWAP":1}}, "SHORT"))
 
     def test_indicator_family_conflict_blocks_directional_signal(self):
         conflicted = {"valid": True, "score": 60.0, "bias": "bullish",

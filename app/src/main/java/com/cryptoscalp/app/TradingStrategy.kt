@@ -17,7 +17,7 @@ object TradingStrategy {
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
     private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null, val previousSwingHigh: Double? = null, val previousSwingLow: Double? = null, val retestLong: Boolean = false, val retestShort: Boolean = false, val falseBreakout: Boolean = false, val retestLevel: Double? = null, val entryDistanceAtr: Double? = null, val equalHighLevel: Double? = null, val equalLowLevel: Double? = null)
-    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val families: Map<String,Double> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null, val structure: Structure? = null)
+    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val ema21: Double? = null, val families: Map<String,Double> = emptyMap(), val indicatorVotes: Map<String,Int> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null, val structure: Structure? = null)
 
     private fun ema(v: List<Double>, n: Int): Double? {
         if (v.size < n) return null
@@ -212,7 +212,7 @@ object TradingStrategy {
         // A liquidity sweep alone is not an entry trigger. Require a prior
         // close-confirmed structural break followed by a directional retest.
         val retestLong=priorUp&&last.low<=sh+tolerance&&last.close>sh&&bullCandle
-        val retestShort=priorDown&&last.high>=sl-tolerance&&last.close<sl&&bearCandle||(sweep=="buy_side"&&bearCandle)
+        val retestShort=priorDown&&last.high>=sl-tolerance&&last.close<sl&&bearCandle
         val falseBreakout=(priorUp&&last.close<sh-tolerance)||(priorDown&&last.close>sl+tolerance)
         var obType="none";var obLow:Double?=null;var obHigh:Double?=null
         for(j in w.size-2 downTo max(0,w.size-20)){
@@ -267,9 +267,10 @@ object TradingStrategy {
         val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obvTrend(c);val mf=mfi(c)
         val sm=structure(c);val div=divergence(c)
         val regime=when{dx==null->"unknown";dx.value>=25->"trending";dx.value<18->"ranging";else->"transition"}
-        val groups=linkedMapOf<String,MutableList<Pair<Double,Double>>>();val notes=mutableListOf<String>()
+        val groups=linkedMapOf<String,MutableList<Pair<Double,Double>>>();val notes=mutableListOf<String>();val indicatorVotes=linkedMapOf<String,Int>()
         fun vote(group:String,name:String,value:Int,weight:Double=1.0){
             groups.getOrPut(group){mutableListOf()}.add(value.toDouble() to weight)
+            indicatorVotes[name]=value
             if(value!=0)notes.add(name+":"+(if(value>0)"+" else "")+value)
         }
         vote("trend","EMA",if(e9>e21&&e21>e50)1 else if(e9<e21&&e21<e50)-1 else 0,1.2)
@@ -317,7 +318,19 @@ object TradingStrategy {
         if(sm.retestLong)smc.add("بازگشت و تثبیت صعودی روی سطح شکست")
         if(sm.retestShort)smc.add("بازگشت و تثبیت نزولی زیر سطح شکست")
         if(sm.orderBlockType!="none")smc.add("Order Block "+sm.orderBlockType)
-        return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
+        return Report(true,price=price,score=score,bias=bias,atr=a,ema21=e21,families=families,indicatorVotes=indicatorVotes,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
+    }
+
+    internal fun entryNotExtended(price:Double,ema21:Double?,atr:Double?,maxDistanceAtr:Double=.80):Boolean {
+        if(ema21==null||atr==null||!price.isFinite()||!ema21.isFinite()||!atr.isFinite()||atr<=0.0)return false
+        return abs(price-ema21)/atr<=maxDistanceAtr
+    }
+
+    internal fun noMajorIndicatorConflict(votes:Map<String,Int>,direction:Int):Boolean {
+        val core=setOf("EMA","SMA","Ichimoku","RSI","MACD","StochRSI","ADX_DMI")
+        val opposingCore=core.count{(votes[it]?:0)*direction<0}
+        val opposingMinor=votes.count{(it.key !in core)&&it.value*direction<0}
+        return opposingCore==0&&opposingMinor<=1
     }
 
     private fun directionalQuality(report:Report,direction:Double):Boolean {
@@ -326,7 +339,8 @@ object TradingStrategy {
         val opposing=families.values.count{it*direction<=-.20}
         val core=listOf("trend","momentum","strength")
         val coreClear=core.all{(families[it]?:0.0)*direction>=0.0}
-        return aligned>=5&&opposing<=1&&coreClear
+        val side=if(direction>0)1 else -1
+        return aligned>=5&&opposing<=1&&coreClear&&noMajorIndicatorConflict(report.indicatorVotes,side)
     }
 
     fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
@@ -395,6 +409,10 @@ object TradingStrategy {
         if(signal!="WAIT"&&(entryDistance==null||entryDistance>.50)){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
                 listOf("فاصله Retest نامشخص یا بیش از ۰٫۵ ATR است؛ ورود دیرهنگام رد شد"),reports.values.flatMap{it.smc}.distinct())
+        }
+        if(signal!="WAIT"&&!entryNotExtended(price,trigger5.ema21,a)){
+            return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+                listOf("فاصله ورود از EMA21 بیش از ۰٫۸ ATR یا داده EMA/ATR نامعتبر است؛ ورود تعقیبی رد شد"),reports.values.flatMap{it.smc}.distinct())
         }
         if(signal!="WAIT"&&sm5?.falseBreakout==true){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
