@@ -56,6 +56,23 @@ class WalkForwardTests(unittest.TestCase):
         self.assertIn("TP3",trade["targets_hit"])
 
 
+    def test_position_size_accounts_for_round_trip_fees_and_slippage(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        signal={"signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]}
+        with patch("walk_forward.analyze_market",return_value=signal):
+            free=run_walk_forward(data,fee_bps_open=0,fee_bps_close=0,
+                                  slippage_bps_per_side=0,initial_equity=10000,
+                                  risk_fraction=.01,max_holding_bars=1)
+            costly=run_walk_forward(data,fee_bps_open=10,fee_bps_close=10,
+                                    slippage_bps_per_side=5,initial_equity=10000,
+                                    risk_fraction=.01,max_holding_bars=1)
+        free_trade=free["trades"][0]
+        costly_trade=costly["trades"][0]
+        self.assertLess(costly_trade["position_quantity"],free_trade["position_quantity"])
+        self.assertAlmostEqual(costly_trade["estimated_risk_cash_including_costs"],100.0,places=6)
+        self.assertEqual(costly["position_sizing"],
+                         "risk_budget_includes_estimated_round_trip_fees_and_slippage")
+
     def test_distinct_entry_exit_fees_and_funding_settlement_once(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][360:364]:
