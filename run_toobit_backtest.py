@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument("--public-vip0-fees", action="store_true",
                          help="Use published VIP-0 futures taker fee (6 bps) instead of account-specific rates")
     parser.add_argument("--equity", type=float, default=10000.0)
-    parser.add_argument("--risk", type=float, default=0.01)
+    parser.add_argument("--risk", type=float, default=0.005)
     parser.add_argument("--output", default="toobit_walk_forward_result.json")
     return parser.parse_args()
 
