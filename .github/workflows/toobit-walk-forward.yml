@@ -1,6 +1,9 @@
 name: Toobit Real Historical Walk-Forward
 
 on:
+  push:
+    branches:
+      - backtest-runner
   workflow_dispatch:
     inputs:
       symbol:
@@ -46,20 +49,20 @@ jobs:
         env:
           TOOBIT_API_KEY: ${{ secrets.TOOBIT_API_KEY }}
           TOOBIT_API_SECRET: ${{ secrets.TOOBIT_API_SECRET }}
-          SYMBOL: ${{ inputs.symbol }}
-          DAYS: ${{ inputs.days }}
-          SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
+          SYMBOL: ${{ inputs.symbol || 'BTC-SWAP-USDT' }}
+          DAYS: ${{ inputs.days || '30' }}
+          SLIPPAGE_BPS: ${{ inputs.slippage_bps || '1.0' }}
         run: |
           test -n "$TOOBIT_API_KEY" && test -n "$TOOBIT_API_SECRET"
           python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --output toobit_walk_forward_result.json
       - name: Run with published VIP-0 commission schedule
-        if: inputs.fee_source == 'public-vip0'
+        if: inputs.fee_source != 'account'
         env:
           SYMBOL: ${{ inputs.symbol }}
           DAYS: ${{ inputs.days }}
           SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
         run: |
-          python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --public-vip0-fees --output toobit_walk_forward_result.json
+          python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --slippage-source "assumed 1.0 bps adverse slippage per fill; not measured" --public-vip0-fees --output toobit_walk_forward_result.json
       - uses: actions/upload-artifact@v4
         with:
           name: aurum-x-toobit-walk-forward-result
