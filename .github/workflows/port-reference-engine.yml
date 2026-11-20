@@ -1,0 +1,31 @@
+name: Port reference 0.2.9 Python engine
+on:
+  push:
+    branches: [port-029-brain]
+    paths:
+      - '.github/workflows/port-reference-engine.yml'
+permissions:
+  contents: write
+jobs:
+  extract-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: port-029-brain
+      - name: Extract the 0.2.9 reference engine and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/aurum029
+          unzip -oq AURUM-X-0.2.9-GitHub-ready.zip -d /tmp/aurum029
+          cp /tmp/aurum029/aurum_work_edit_rw/reference_engine/signal_engine.py signal_engine.py
+          cp /tmp/aurum029/aurum_work_edit_rw/reference_engine/test_signal_engine.py test_signal_engine.py
+          python -m unittest -v test_signal_engine.py
+      - name: Commit the extracted engine and tests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add signal_engine.py test_signal_engine.py
+          git commit -m "Port exact 0.2.9 reference signal engine and tests"
+          git push origin port-029-brain
