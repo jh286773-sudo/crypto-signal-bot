@@ -391,7 +391,8 @@ object TradingStrategy {
         val a=reports["5m"]?.atr?:0.0
         if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
             listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
-        if(signal!="WAIT"&&(sm5?.entryDistanceAtr==null||sm5.entryDistanceAtr!!>.50)){
+        val entryDistance=sm5?.entryDistanceAtr
+        if(signal!="WAIT"&&(entryDistance==null||entryDistance>.50)){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
                 listOf("فاصله Retest نامشخص یا بیش از ۰٫۵ ATR است؛ ورود دیرهنگام رد شد"),reports.values.flatMap{it.smc}.distinct())
         }
