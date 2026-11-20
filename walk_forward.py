@@ -33,8 +33,13 @@ def _validate(timeframes: Dict[str, list]) -> Dict[str, List[Tuple[int, dict]]]:
         stamps = [x[0] for x in pairs]
         if any(b <= a for a, b in zip(stamps, stamps[1:])):
             raise ValueError(f"{tf} timestamps must be strictly increasing")
-        if any(b - a != DURATION_MS[tf] for a, b in zip(stamps, stamps[1:])):
-            raise ValueError(f"{tf} candles must be contiguous {tf} bars; gaps are not silently filled")
+        gap = next(((a, b) for a, b in zip(stamps, stamps[1:])
+                    if b - a != DURATION_MS[tf]), None)
+        if gap is not None:
+            raise ValueError(
+                f"{tf} candles must be contiguous {tf} bars; first gap is {gap[0]} -> {gap[1]} "
+                f"(delta {gap[1]-gap[0]} ms); gaps are not silently filled"
+            )
         indexed[tf] = pairs
     return indexed
 
