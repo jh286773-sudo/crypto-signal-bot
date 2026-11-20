@@ -103,4 +103,18 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(_divergence(candles(60)), "none")
 
 
+    def test_adaptive_levels_use_structure_and_reward_risk_multiples(self):
+        from signal_engine import _levels
+        levels = _levels("LONG", 100.0, 1.0, {"previous_swing_low": 98.0})
+        self.assertAlmostEqual(levels["stop_loss"], 97.85)
+        self.assertEqual(levels["risk_reward"], [1.5, 2.5, 3.5])
+        self.assertGreater(levels["take_profits"][1], levels["take_profits"][0])
+
+    def test_market_structure_exposes_retest_and_false_breakout_state(self):
+        rows = candles(120)
+        structure = _market_structure(rows)
+        for key in ("retest_long", "retest_short", "false_breakout", "breakout_quality"):
+            self.assertIn(key, structure)
+
+
 if __name__=="__main__": unittest.main()
