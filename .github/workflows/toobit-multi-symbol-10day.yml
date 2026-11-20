@@ -59,6 +59,6 @@ jobs:
         if: always()
         with:
           name: aurum-x-toobit-full-usdt-perpetual-universe
-          path: toobit_multi_symbol_10day.json
+          path: toobit_multi_crypto_30day.json
           if-no-files-found: warn
           retention-days: 30
