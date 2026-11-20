@@ -41,6 +41,8 @@ class WalkForwardTests(unittest.TestCase):
 
     def test_position_sizing_and_partial_targets_are_reported(self):
         data={tf:bars(tf,120) for tf in DURATION_MS}
+        for row in data["5m"][60:]:
+            row["low"]=100.0; row["high"]=105.0
         signal={"signal":"LONG","stop_loss":99.0,"take_profits":[102.0,103.0,104.0]}
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
