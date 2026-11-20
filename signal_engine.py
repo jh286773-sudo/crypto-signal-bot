@@ -472,6 +472,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
                 "family_scores":{k:round(v,3) for k,v in family_scores.items()},
                 "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
                 "market_regime":regime,
+                "ema21":e21,
                 "indicators":{
                     "ema":{"9":e9,"21":e21,"50":e50},"sma":{"20":s20,"50":s50},
                     "rsi":r,"macd":m,"bollinger":bb,"stoch_rsi":st,"adx_dmi":ad,
@@ -516,6 +517,14 @@ def _directional_quality(report: Dict[str, Any], side: str) -> bool:
     core = ("trend", "momentum", "strength")
     core_clear = all(float(families.get(name, 0.0)) * direction >= 0.0 for name in core)
     return aligned >= 5 and opposing <= 1 and core_clear
+
+
+def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float],
+                       max_distance_atr: float = 0.80) -> bool:
+    """Reject entries stretched too far from EMA21, using only the closed decision candle."""
+    if ema21 is None or atr is None or atr <= 0:
+        return False
+    return abs(float(price) - float(ema21)) / float(atr) <= max_distance_atr
 
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
@@ -590,6 +599,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT",
                     "reason":"Retest is missing or overextended (>0.50 ATR); skip late entry.",
+                    "trade_enabled":False}
+        ema21 = reports["5m"].get("ema21")
+        if ema21 is not None and not _entry_not_chasing(p, ema21, a):
+            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                    "entry_stage":"WAIT",
+                    "reason":"Entry is overextended from EMA21 (>0.80 ATR); skip chasing the move.",
                     "trade_enabled":False}
         result.update(_levels(signal,p,a,smc))
         result["entry_stage"] = "ENTRY"

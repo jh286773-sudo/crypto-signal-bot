@@ -17,7 +17,7 @@ object TradingStrategy {
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
     private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null, val previousSwingHigh: Double? = null, val previousSwingLow: Double? = null, val retestLong: Boolean = false, val retestShort: Boolean = false, val falseBreakout: Boolean = false, val retestLevel: Double? = null, val entryDistanceAtr: Double? = null, val equalHighLevel: Double? = null, val equalLowLevel: Double? = null)
-    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val families: Map<String,Double> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null, val structure: Structure? = null)
+    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val ema21: Double? = null, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val families: Map<String,Double> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null, val structure: Structure? = null)
 
     private fun ema(v: List<Double>, n: Int): Double? {
         if (v.size < n) return null
@@ -317,7 +317,7 @@ object TradingStrategy {
         if(sm.retestLong)smc.add("بازگشت و تثبیت صعودی روی سطح شکست")
         if(sm.retestShort)smc.add("بازگشت و تثبیت نزولی زیر سطح شکست")
         if(sm.orderBlockType!="none")smc.add("Order Block "+sm.orderBlockType)
-        return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
+        return Report(true,price=price,ema21=e21,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
     }
 
     private fun directionalQuality(report:Report,direction:Double):Boolean {
@@ -327,6 +327,12 @@ object TradingStrategy {
         val core=listOf("trend","momentum","strength")
         val coreClear=core.all{(families[it]?:0.0)*direction>=0.0}
         return aligned>=5&&opposing<=1&&coreClear
+    }
+
+    internal fun entryNotExtended(price: Double, ema21: Double?, atr: Double?, maxDistanceAtr: Double = .80): Boolean {
+        if (ema21 == null || atr == null || !price.isFinite() || !ema21.isFinite() ||
+            !atr.isFinite() || atr <= 0.0 || maxDistanceAtr <= 0.0) return false
+        return abs(price - ema21) / atr <= maxDistanceAtr
     }
 
     fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
@@ -395,6 +401,10 @@ object TradingStrategy {
         if(signal!="WAIT"&&(entryDistance==null||entryDistance>.50)){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
                 listOf("فاصله Retest نامشخص یا بیش از ۰٫۵ ATR است؛ ورود دیرهنگام رد شد"),reports.values.flatMap{it.smc}.distinct())
+        }
+        if(signal!="WAIT"&&!entryNotExtended(price,trigger5.ema21,a)){
+            return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+                listOf("فاصله قیمت از EMA21 بیش از ۰٫۸ ATR است؛ ورود تعقیبی رد شد"),reports.values.flatMap{it.smc}.distinct())
         }
         if(signal!="WAIT"&&sm5?.falseBreakout==true){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,

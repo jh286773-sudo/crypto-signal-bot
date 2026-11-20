@@ -52,6 +52,13 @@ class EngineTests(unittest.TestCase):
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"LONG")
+    def test_anti_chase_filter_rejects_extended_entry_and_accepts_pullback(self):
+        from signal_engine import _entry_not_chasing
+        self.assertFalse(_entry_not_chasing(102.0, 100.0, 2.0))
+        self.assertTrue(_entry_not_chasing(101.5, 100.0, 2.0))
+        self.assertFalse(_entry_not_chasing(101.0, None, 2.0))
+        self.assertFalse(_entry_not_chasing(101.0, 100.0, 0.0))
+
     def test_bad_input_safe(self):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])
 

@@ -11,6 +11,13 @@ class TradingStrategyParityTest {
             MarketCandle(p, p + 0.2, p - 0.2, p, 100.0, start + i * duration)
         }
 
+    @Test fun antiChaseFilterRejectsExtendedEntries() {
+        assertEquals(false, TradingStrategy.entryNotExtended(102.0, 100.0, 2.0))
+        assertEquals(true, TradingStrategy.entryNotExtended(101.5, 100.0, 2.0))
+        assertEquals(false, TradingStrategy.entryNotExtended(101.0, null, 2.0))
+        assertEquals(false, TradingStrategy.entryNotExtended(101.0, 100.0, 0.0))
+    }
+
     @Test fun rejectsCandlesWithoutExchangeTimestamps() {
         val now = System.currentTimeMillis()
         val five = series(80, 300_000L, now - 80 * 300_000L).map { it.copy(time = 0L) }
