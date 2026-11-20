@@ -122,6 +122,24 @@ class ToobitAPI:
             "30m": self.closed_candles(thirty, "30m", decision_time),
         }
 
+    def get_historical_multi_timeframe(self, symbol, bars_5m=1000, bars_15m=400, bars_30m=200):
+        """Fetch longer real exchange histories for walk-forward backtests."""
+        five = self.get_klines(symbol, "5m", bars_5m)
+        fifteen = self.get_klines(symbol, "15m", bars_15m)
+        thirty = self.get_klines(symbol, "30m", bars_30m)
+        if not five:
+            raise RuntimeError("Toobit returned no closed 5m history")
+        decision_time = int(five[-1]["open_time"]) + self.INTERVALS["5m"]
+        aligned = {
+            "5m": five,
+            "15m": self.closed_candles(fifteen, "15m", decision_time),
+            "30m": self.closed_candles(thirty, "30m", decision_time),
+        }
+        insufficient = [tf for tf, rows in aligned.items() if len(rows) < 60]
+        if insufficient:
+            raise RuntimeError("Insufficient closed historical bars for: " + ", ".join(insufficient))
+        return aligned
+
 
 if __name__ == "__main__":
     api = ToobitAPI()
