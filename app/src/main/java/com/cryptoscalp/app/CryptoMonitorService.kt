@@ -182,7 +182,7 @@ class CryptoMonitorService : Service() {
             append("اقدام: بازکردن موقعیت ${r.signal} • ${if(r.signal=="LONG")"لانگ" else "شورت"}\\n")
             append("تا زمان دریافت سیگنال مخالف معتبر، موقعیت باز نگه داشته می‌شود.\\n")
             append("این اعلان راهنمای دستی است؛ برنامه سفارش صرافی را ثبت یا اجرا نمی‌کند.\\n")
-            append("دلایل: ${(r.reasons+r.smc).joinToString("، ")}")
+            append("دلایل: ${r.reasons.joinToString("، ")}")
         }
         val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("بازکردن ${r.signal} • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
