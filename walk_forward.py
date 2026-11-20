@@ -45,7 +45,8 @@ def _closed_history(pairs, tf: str, decision_ms: int) -> List[dict]:
     return [row for opened, row in pairs if opened + duration <= decision_ms]
 
 
-def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float,
+def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = None,
+                     fee_bps_open: float = None, fee_bps_close: float = None,
                      slippage_bps_per_side: float, initial_equity: float = 10_000.0,
                      risk_fraction: float = 0.01, max_holding_bars: int = 72,
                      allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3)) -> Dict[str, Any]:
@@ -55,7 +56,12 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float,
     initial_equity * risk_fraction. Each target closes its configured fraction.
     After TP1 the stop moves to entry. Intrabar stop wins any ambiguous bar.
     """
-    if fee_bps_per_side < 0 or slippage_bps_per_side < 0:
+    if fee_bps_per_side is not None:
+        fee_bps_open = fee_bps_open if fee_bps_open is not None else fee_bps_per_side
+        fee_bps_close = fee_bps_close if fee_bps_close is not None else fee_bps_per_side
+    if fee_bps_open is None or fee_bps_close is None:
+        raise ValueError("explicit opening and closing exchange fee rates are required")
+    if min(fee_bps_open, fee_bps_close, slippage_bps_per_side) < 0:
         raise ValueError("exchange fee and slippage assumptions cannot be negative")
     if initial_equity <= 0 or not 0 < risk_fraction <= 0.05 or max_holding_bars < 1:
         raise ValueError("invalid equity, risk fraction, or holding horizon")
@@ -115,9 +121,10 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float,
         exit_reason = "time"
         exit_price = float(five[exit_index][1]["close"])
         first_fill_index = entry_index
+        funding_exposure = []
         # Entry costs are charged once. Slippage is modeled adversely on each fill.
         entry_fill = entry * (1 + slippage_bps_per_side/10000 * (1 if side == "LONG" else -1))
-        fees += abs(entry_fill * quantity) * fee_bps_per_side / 10000
+        fees += abs(entry_fill * quantity) * fee_bps_open / 10000
         slippage += abs(entry_fill-entry) * quantity
         for j in range(entry_index, exit_index+1):
             bar = five[j][1]
@@ -130,7 +137,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float,
                 else:
                     fill *= 1 + slippage_bps_per_side/10000
                 realized += (fill-entry_fill) * remaining * (1 if side == "LONG" else -1)
-                fees += abs(fill*remaining)*fee_bps_per_side/10000
+                fees += abs(fill*remaining)*fee_bps_close/10000
                 slippage += abs(fill-(min(o,stop) if side=="LONG" else max(o,stop)))*remaining
                 remaining = 0.0
                 exit_index, exit_price, exit_reason = j, fill, "stop_after_tp1" if hit_targets else "stop"
@@ -149,7 +156,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float,
                 raw_fill = max(o,target) if side=="LONG" else min(o,target)
                 fill = raw_fill * (1-slippage_bps_per_side/10000 if side=="LONG" else 1+slippage_bps_per_side/10000)
                 realized += (fill-entry_fill)*close_qty*(1 if side=="LONG" else -1)
-                fees += abs(fill*close_qty)*fee_bps_per_side/10000
+                fees += abs(fill*close_qty)*fee_bps_close/10000
                 slippage += abs(fill-raw_fill)*close_qty
                 remaining -= close_qty
                 hit_targets.append(k)
@@ -159,6 +166,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float,
                     remaining = 0.0
                     exit_index, exit_price, exit_reason = j, fill, "all_targets"
                     break
+            if remaining > quantity*1e-10:
+                funding_exposure.append((j, remaining))
             if remaining <= quantity*1e-10:
                 break
         if remaining > quantity*1e-10:
@@ -168,14 +177,27 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float,
             fees += abs(fill*remaining)*fee_bps_per_side/10000
             slippage += abs(fill-raw_fill)*remaining
             exit_price = fill
-        held_rows = [row for opened, row in five[entry_index:exit_index+1]]
-        if any(row.get("funding_rate") is not None for row in held_rows):
-            funding = sum(float(row.get("funding_rate") or 0.0)*10000*(1 if side=="LONG" else -1)*
-                          (initial_notional/max(initial_notional,1e-12)) for row in held_rows)
-            funding_mode = "historical_per_candle"
-            funding_cash = initial_notional * funding / 10000
-        else:
-            funding, funding_cash, funding_mode = None, None, "not_supplied"
+        funding_cash = 0.0
+        funding_bps_total = 0.0
+        funding_events_applied = 0
+        exposure_by_index = dict(funding_exposure)
+        # Funding is charged once at exchange settlement timestamps, not once
+        # per 5m candle. Exposure is the remaining quantity after that bar's fills.
+        for j, row in five[entry_index:exit_index+1]:
+            settle_time = row.get("funding_settle_time")
+            rate = row.get("funding_rate")
+            if settle_time is None or rate is None or j not in exposure_by_index:
+                continue
+            if int(settle_time) > j + DURATION_MS["5m"]:
+                continue
+            exposure = exposure_by_index[j]
+            event_cash = entry * exposure * float(rate) * (1 if side == "LONG" else -1)
+            funding_cash += event_cash
+            funding_bps_total += float(rate) * 10000 * (1 if side == "LONG" else -1) * (exposure / quantity)
+            funding_events_applied += 1
+        funding_mode = "historical_settlement_events" if funding_events_applied else "not_supplied"
+        funding = funding_bps_total if funding_events_applied else None
+        funding_cash = funding_cash if funding_events_applied else None
         net_pnl = realized - fees - (funding_cash or 0.0)
         start_equity = equity
         equity += net_pnl
@@ -205,6 +227,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float,
         "fee_bps_per_side": fee_bps_per_side,
         "slippage_bps_per_side": slippage_bps_per_side,
         "timestamp_alignment": "asof_closed_only",
-        "funding_mode": "historical_per_candle" if any(t["funding_mode"]=="historical_per_candle" for t in trades) else "not_supplied",
+        "funding_mode": "historical_settlement_events" if any(t["funding_mode"]=="historical_settlement_events" for t in trades) else "not_supplied",
         "note": "Requires real exchange OHLCV timestamps and explicit fee/slippage inputs. Funding is included only when historical funding_rate values are present; no missing exchange data is synthesized. Liquidation, queue priority and partial fill uncertainty remain outside this OHLCV model."
     }
