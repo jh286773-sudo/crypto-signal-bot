@@ -297,7 +297,7 @@ object TradingStrategy {
         return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
     }
 
-    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>):StrategyResult {
+    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
             if(rows.size<MIN_CANDLES||rows.any{it.time<=0L})return false
             for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
@@ -308,7 +308,7 @@ object TradingStrategy {
             return StrategyResult("WAIT",0,p,p,p,p,listOf("زمان کندل‌ها نامعتبر، ناقص یا غیرپیوسته است؛ تحلیل متوقف شد"),emptyList())
         }
         val decisionTime=five.last().time+300_000L
-        if(decisionTime>System.currentTimeMillis()){
+        if(decisionTime>asOfMs){
             val p=five.last().close
             return StrategyResult("WAIT",0,p,p,p,p,listOf("کندل ۵ دقیقه‌ای هنوز به‌طور قطعی بسته نشده است؛ سیگنال صادر نمی‌شود"),emptyList())
         }
