@@ -49,6 +49,21 @@ class CrossEngineContractTests(unittest.TestCase):
         self.assertEqual(round(result["combined_score"]),fixture["expected_score"])
         self.assertEqual(result["signal"],fixture["expected_signal"])
 
+    def test_python_android_use_simple_three_timeframe_bias_consensus(self):
+        root=pathlib.Path(__file__).parent
+        py=(root/"signal_engine.py").read_text()
+        kt=(root/"app/src/main/java/com/cryptoscalp/app/TradingStrategy.kt").read_text()
+        self.assertIn('if longs == 3 and major_conflicts_clear: signal="LONG"',py)
+        self.assertIn('elif shorts == 3 and major_conflicts_clear: signal="SHORT"',py)
+        self.assertIn('allBullish&&sm5?.retestLong==true->"LONG"',kt)
+        self.assertIn('allBearish&&sm5?.retestShort==true->"SHORT"',kt)
+        for obsolete in ("combined>=34", "combined<=-34", 'score"]>=26', 'score"]<=-26',
+                         'score"]>=24', 'score"]<=-24'):
+            self.assertNotIn(obsolete,py)
+        for obsolete in ("combined>=34", "combined<=-34", "score>=26", "score<=-26",
+                         "score>=24", "score<=-24", "directionalQuality"):
+            self.assertNotIn(obsolete,kt)
+
 
 if __name__ == "__main__":
     unittest.main()

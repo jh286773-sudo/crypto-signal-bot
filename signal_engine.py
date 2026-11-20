@@ -581,25 +581,14 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
     combined=sum(reports[tf]["score"]*weights[tf] for tf in REQUIRED_TFS)
     longs=sum(reports[tf]["bias"]=="bullish" for tf in REQUIRED_TFS)
     shorts=sum(reports[tf]["bias"]=="bearish" for tf in REQUIRED_TFS)
-    # 15m/30m establish directional context; 5m must independently confirm the trigger.
-    # Quality gate v1: all three biases must agree, both higher timeframes
-    # must show stronger directional conviction, and the 5m trigger must be
-    # independently strong. These are conservative candidate thresholds;
-    # only out-of-sample backtests can establish whether they improve expectancy.
-    higher_long = (reports["15m"]["bias"]=="bullish" and reports["30m"]["bias"]=="bullish"
-                   and reports["15m"]["score"]>=26 and reports["30m"]["score"]>=26
-                   and _directional_quality(reports["15m"], "LONG")
-                   and _directional_quality(reports["30m"], "LONG"))
-    higher_short = (reports["15m"]["bias"]=="bearish" and reports["30m"]["bias"]=="bearish"
-                    and reports["15m"]["score"]<=-26 and reports["30m"]["score"]<=-26
-                    and _directional_quality(reports["15m"], "SHORT")
-                    and _directional_quality(reports["30m"], "SHORT"))
-    trigger_long = (reports["5m"]["bias"]=="bullish" and reports["5m"]["score"]>=24
-                    and _directional_quality(reports["5m"], "LONG"))
-    trigger_short = (reports["5m"]["bias"]=="bearish" and reports["5m"]["score"]<=-24
-                     and _directional_quality(reports["5m"], "SHORT"))
-    if combined>=34 and higher_long and trigger_long and longs==3: signal="LONG"
-    elif combined<=-34 and higher_short and trigger_short and shorts==3: signal="SHORT"
+    # Each timeframe derives its own bias from its indicator families.
+    # Require unanimous direction; retain protection against major indicator conflicts.
+    side = "LONG" if longs == 3 else "SHORT" if shorts == 3 else None
+    major_conflicts_clear = bool(side) and all(
+        _no_major_indicator_conflict(reports[tf], side) for tf in REQUIRED_TFS
+    )
+    if longs == 3 and major_conflicts_clear: signal="LONG"
+    elif shorts == 3 and major_conflicts_clear: signal="SHORT"
     else: signal="NO_SIGNAL"
     confidence=min(99,round(abs(combined)*0.75+max(longs,shorts)*8,1))
     result={"signal":signal,"status":signal,"confidence_score":confidence,
@@ -610,12 +599,8 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
     if signal == "NO_SIGNAL":
         if longs != 3 and shorts != 3:
             rejection_reasons.append("three_timeframe_directional_alignment")
-        if -34 < combined < 34:
-            rejection_reasons.append("combined_score_below_34")
-        if not higher_long and not higher_short:
-            rejection_reasons.append("15m_30m_score_or_directional_quality")
-        if not trigger_long and not trigger_short:
-            rejection_reasons.append("5m_trigger_score_or_directional_quality")
+        if not major_conflicts_clear and (longs == 3 or shorts == 3):
+            rejection_reasons.append("major_indicator_conflict")
         if not rejection_reasons:
             rejection_reasons.append("directional_candidate_not_formed")
     result["rejection_reasons"] = rejection_reasons
@@ -683,14 +668,14 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
         result["entry_stage"] = "ENTRY"
     else:
         smc = reports["5m"]["indicators"].get("smc", {})
-        direction = "LONG" if higher_long else "SHORT" if higher_short else None
+        direction = "LONG" if longs == 3 and major_conflicts_clear else "SHORT" if shorts == 3 and major_conflicts_clear else None
         confirmation = bool(direction and (
             smc.get("structure_event") in (("BOS_up","CHoCH_up") if direction=="LONG" else ("BOS_down","CHoCH_down"))
             or smc.get("liquidity_sweep") == ("sell_side" if direction=="LONG" else "buy_side")
         ))
         retest_key = "retest_long" if direction=="LONG" else "retest_short"
         retest_ready = bool(direction and smc.get(retest_key))
-        result["entry_stage"] = "ENTRY" if retest_ready else "CONFIRMATION" if confirmation else "PREPARATION" if higher_long or higher_short else "WAIT"
+        result["entry_stage"] = "ENTRY" if retest_ready else "CONFIRMATION" if confirmation else "PREPARATION" if direction else "WAIT"
         result["reason"]="Retest confirmed; waiting for full indicator consensus" if retest_ready else "Multi-timeframe indicator consensus or confirmed retest not complete"
     return result
 
