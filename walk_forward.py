@@ -52,9 +52,10 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                      allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3)) -> Dict[str, Any]:
     """Causal portfolio backtest with timestamp as-of alignment and three TP exits.
 
-    Position quantity is sized so the initial stop distance risks
-    initial_equity * risk_fraction. Each target closes its configured fraction.
-    After TP1 the stop moves to entry. Intrabar stop wins any ambiguous bar.
+    Position quantity is sized so the estimated stop loss INCLUDING opening/
+    closing fees and adverse slippage stays within equity * risk_fraction.
+    Each target closes its configured fraction. After TP1 the stop moves to
+    entry. Intrabar stop wins any ambiguous bar.
     """
     if fee_bps_per_side is not None:
         fee_bps_open = fee_bps_open if fee_bps_open is not None else fee_bps_per_side
@@ -110,7 +111,21 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         targets = [entry + abs(float(t)-signal_close) * (1 if side == "LONG" else -1)
                    for t in targets_signal[:3]]
         risk_cash = equity * risk_fraction
-        quantity = risk_cash / risk_distance
+        # Include both-side fees and adverse slippage in the sizing denominator.
+        # This is an estimate at the modeled stop price; gaps/market impact can
+        # still produce a larger realized loss than the configured risk budget.
+        estimated_stop_fill = stop * (1 - slippage_bps_per_side/10000
+                                      if side == "LONG" else
+                                      1 + slippage_bps_per_side/10000)
+        estimated_loss_per_unit = (
+            risk_distance
+            + entry * (fee_bps_open + slippage_bps_per_side) / 10000
+            + abs(estimated_stop_fill) * (fee_bps_close + slippage_bps_per_side) / 10000
+        )
+        if estimated_loss_per_unit <= 0:
+            i += 1
+            continue
+        quantity = risk_cash / estimated_loss_per_unit
         initial_notional = quantity * entry
         remaining = quantity
         realized = 0.0
@@ -211,6 +226,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             "exit_reason": exit_reason, "targets_hit": [f"TP{x+1}" for x in sorted(hit_targets)],
             "position_quantity": quantity, "initial_notional": initial_notional,
             "risk_cash": risk_cash, "risk_fraction": risk_fraction,
+            "estimated_stop_loss_per_unit": estimated_loss_per_unit,
+            "estimated_risk_cash_including_costs": quantity * estimated_loss_per_unit,
             "fees_cash": fees, "slippage_cash": slippage,
             "funding_bps": funding, "funding_cash": funding_cash,
             "funding_mode": funding_mode, "net_pnl": net_pnl,
@@ -228,6 +245,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         "max_drawdown_pct": max_dd*100, "risk_fraction": risk_fraction,
         "fee_bps_open": fee_bps_open, "fee_bps_close": fee_bps_close,
         "slippage_bps_per_side": slippage_bps_per_side,
+        "position_sizing": "risk_budget_includes_estimated_round_trip_fees_and_slippage",
         "timestamp_alignment": "asof_closed_only",
         "funding_mode": "historical_settlement_events" if any(t["funding_mode"]=="historical_settlement_events" for t in trades) else "not_supplied",
         "note": "Requires real exchange OHLCV timestamps and explicit fee/slippage inputs. Funding is charged only on supplied historical settlement events; no missing exchange data is synthesized. Liquidation, queue priority and partial fill uncertainty remain outside this OHLCV model."
