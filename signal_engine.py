@@ -7,6 +7,7 @@ when the exchange explicitly supplies it.
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 from math import isfinite, sqrt
+from expectancy import expectancy_allows
 
 REQUIRED_TFS = ("5m", "15m", "30m")
 
@@ -540,8 +541,32 @@ def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float
     return abs(float(price) - float(ema21)) / float(atr) <= max_distance_atr
 
 
-def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
+def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None) -> Dict[str,Any]:
     """Final decision is based on all indicator families and 5m/15m/30m alignment."""
+    # If exchange timestamps are present, all three series must be complete, contiguous,
+    # and selected at one identical 5m-close decision boundary. Untimestamped unit fixtures
+    # remain supported; live Toobit candles always carry open_time.
+    timestamped = [all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in REQUIRED_TFS]
+    if any(timestamped) and not all(timestamped):
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Mixed timestamped/untimestamped timeframe data", "trade_enabled":False}
+    if all(timestamped):
+        durations = {"5m":300000,"15m":900000,"30m":1800000}
+        opens = {}
+        for tf in REQUIRED_TFS:
+            rows = timeframes.get(tf, [])
+            try:
+                stamps = [int(next(row[k] for k in ("timestamp","open_time","time") if k in row)) for row in rows]
+            except (TypeError, ValueError, StopIteration):
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Invalid {tf} timestamps", "trade_enabled":False}
+            d = durations[tf]
+            if len(stamps) < 60 or any(t < 0 or t % d for t in stamps) or any(b-a != d for a,b in zip(stamps,stamps[1:])):
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Non-contiguous or misaligned {tf} candles", "trade_enabled":False}
+            opens[tf] = stamps
+        decision_time = opens["5m"][-1] + durations["5m"]
+        expected = {tf: (decision_time // durations[tf]) * durations[tf] - durations[tf] for tf in ("15m","30m")}
+        for tf in ("15m","30m"):
+            if opens[tf][-1] != expected[tf]:
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"{tf} last closed candle is not aligned to the 5m decision boundary", "trade_enabled":False}
     reports={tf:analyze_timeframe(timeframes.get(tf,[]),tf) for tf in REQUIRED_TFS}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
@@ -583,6 +608,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
                        "high_volatility_block":blocked})
         return result
     if signal in ("LONG","SHORT"):
+        allowed, expectancy = expectancy_allows(expectancy_stats, signal)
+        result["expectancy"] = expectancy
+        if not allowed:
+            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                    "entry_stage":"WAIT","reason":"Closed-trade net expectancy is not statistically established for this symbol and direction.",
+                    "trade_enabled":False}
         a=reports["5m"]["indicators"]["atr"]; p=reports["5m"]["close"]
         if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}
         smc = reports["5m"]["indicators"].get("smc", {})
