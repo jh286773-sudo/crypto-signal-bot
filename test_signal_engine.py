@@ -103,6 +103,16 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(_divergence(candles(60)), "none")
 
 
+    def test_directional_consensus_without_retest_is_blocked(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "indicators": {"atr": 1.0, "smc": {"structure_event": "BOS_up",
+                       "retest_long": False}}, "close": 100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertEqual(result["entry_stage"], "CONFIRMATION")
+        self.assertFalse(result["entry_context"]["retest_confirmed"])
+
     def test_adaptive_levels_use_structure_and_reward_risk_multiples(self):
         from signal_engine import _levels
         levels = _levels("LONG", 100.0, 1.0, {"previous_swing_low": 98.0})
