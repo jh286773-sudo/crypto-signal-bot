@@ -86,12 +86,13 @@ class CryptoMonitorService : Service() {
                     val r=TradingStrategy.evaluate(five,fifteen,thirty,ExchangeMarketData.exchangeTimeMs())
                     val open=prefs.getString("open_setup_$symbol",null)
                     val previous=prefs.getString("last_signal_$symbol",null)
-                    if(open==null && isDirectionalSignal(r.signal) && previous!=r.signal) {
+                    val lossCooldownActive = isLossCooldownActive(symbol,System.currentTimeMillis())
+                    if(open==null && isDirectionalSignal(r.signal) && previous!=r.signal && !lossCooldownActive) {
                         saveOpen(symbol,r)
                         notifySignal(symbol,r)
                     } else if(open!=null && isDirectionalSignal(r.signal)){
                         val old=JSONObject(open).optString("side")
-                        if(old!=r.signal){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
+                        if(old!=r.signal && !lossCooldownActive){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
                     }
                     prefs.edit().putString("last_signal_$symbol",r.signal)
                         .putLong(key,latestClosedCandleTime).apply()
@@ -126,7 +127,22 @@ class CryptoMonitorService : Service() {
         if(!s.has("tp3"))s.put("tp3",s.optDouble("tp2"))
         if(!s.has("tp2Done"))s.put("tp2Done",false)
         val stop=if(long)price<=s.optDouble("stop") else price>=s.optDouble("stop")
-        if(stop){closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(price)}");return}
+        if(stop){
+            val protectedByTarget = s.optBoolean("tp1Done")
+            val cooldownStarted = if(protectedByTarget) {
+                clearLossHistory(symbol)
+                false
+            } else {
+                registerFullStop(symbol,System.currentTimeMillis())
+            }
+            val detail = if(cooldownStarted)
+                " • پس از دو حدضرر کامل در ۲۴ ساعت، سیگنال‌های جدید این نماد تا ۲۴ ساعت متوقف شدند"
+            else if(protectedByTarget)
+                " • خروج پس از فعال‌شدن حد سود اول؛ در شمارش ضرر کامل لحاظ نشد"
+            else ""
+            closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(price)}$detail")
+            return
+        }
         val tp1=if(long)price>=s.optDouble("tp1") else price<=s.optDouble("tp1")
         if(tp1&&!s.optBoolean("tp1Done")){
             // After TP1, protect the remaining setup at breakeven. This is an
@@ -149,7 +165,30 @@ class CryptoMonitorService : Service() {
                 "قیمت فعلی: ${fmt(price)} • حد ضرر حفاظتی جدید: ${fmt(lockedStop)} • هدف سوم: ${fmt(s.optDouble("tp3"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
         }
         val tp3=if(long)price>=s.optDouble("tp3") else price<=s.optDouble("tp3")
-        if(tp3)closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(price)}")
+        if(tp3){
+            clearLossHistory(symbol)
+            closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(price)}")
+        }
+    }
+    private fun lossTimesKey(symbol:String)="full_stop_times_$symbol"
+    private fun lossCooldownKey(symbol:String)="loss_cooldown_until_$symbol"
+    private fun readLossTimes(symbol:String):List<Long> =
+        prefs.getString(lossTimesKey(symbol),"").orEmpty().split(",").mapNotNull{it.toLongOrNull()}
+
+    private fun registerFullStop(symbol:String,nowMs:Long):Boolean{
+        val update=LossCooldownPolicy.recordFullStop(readLossTimes(symbol),nowMs)
+        prefs.edit().putString(lossTimesKey(symbol),update.recentLosses.joinToString(","))
+            .putLong(lossCooldownKey(symbol),update.cooldownUntilMs).apply()
+        return LossCooldownPolicy.isActive(update.cooldownUntilMs,nowMs)
+    }
+    private fun isLossCooldownActive(symbol:String,nowMs:Long):Boolean{
+        val until=prefs.getLong(lossCooldownKey(symbol),0L)
+        if(LossCooldownPolicy.isActive(until,nowMs))return true
+        if(until>0L)prefs.edit().remove(lossCooldownKey(symbol)).remove(lossTimesKey(symbol)).apply()
+        return false
+    }
+    private fun clearLossHistory(symbol:String){
+        prefs.edit().remove(lossTimesKey(symbol)).remove(lossCooldownKey(symbol)).apply()
     }
     private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}
     private fun closeOpen(symbol:String,reason:String){clearOpen(symbol);notifyExit(symbol,"خروج از موقعیت • $symbol",reason)}
