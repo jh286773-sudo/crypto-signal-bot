@@ -343,7 +343,7 @@ object TradingStrategy {
         return aligned>=5&&opposing<=1&&coreClear&&noMajorIndicatorConflict(report.indicatorVotes,side)
     }
 
-    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null):StrategyResult {
+    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null,enforceExpectancy:Boolean=true):StrategyResult {
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
             if(rows.size<MIN_CANDLES||rows.any{it.time<=0L||it.time%duration!=0L})return false
             for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
@@ -403,7 +403,7 @@ object TradingStrategy {
             else->"WAIT"
         }
         val expectancy = if(rawSignal=="LONG"||rawSignal=="SHORT") ExpectancyPolicy.evaluate(expectancyStats?.get(rawSignal).orEmpty()) else null
-        val signal = if(rawSignal!="WAIT" && expectancy?.allowed!=true) "WAIT" else rawSignal
+        val signal = if(enforceExpectancy && rawSignal!="WAIT" && expectancy?.allowed!=true) "WAIT" else rawSignal
         val a=reports["5m"]?.atr?:0.0
         if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
             listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
