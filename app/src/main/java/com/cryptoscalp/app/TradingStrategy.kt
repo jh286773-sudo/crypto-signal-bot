@@ -337,8 +337,8 @@ object TradingStrategy {
             return StrategyResult("WAIT",0,price,price,price,price,
                 listOf("کندل ۵ دقیقه‌ای بسته‌شده تازه و قابل‌همگام‌سازی نیست؛ سیگنال صادر نمی‌شود"),emptyList())
         }
-        val expected15=((decisionTime-1L)/900_000L)*900_000L
-        val expected30=((decisionTime-1L)/1_800_000L)*1_800_000L
+        val expected15=(decisionTime/900_000L)*900_000L-900_000L
+        val expected30=(decisionTime/1_800_000L)*1_800_000L-1_800_000L
         val closed15=fifteen.filter{it.time+900_000L<=decisionTime}
         val closed30=thirty.filter{it.time+1_800_000L<=decisionTime}
         if(closed15.size<MIN_CANDLES||closed30.size<MIN_CANDLES||
