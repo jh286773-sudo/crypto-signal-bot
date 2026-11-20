@@ -368,12 +368,14 @@ object TradingStrategy {
         if(higherTimeframesBothRanging)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
             listOf("قدرت روند در هر دو تایم‌فریم بالاتر پایین است؛ فعلاً ورودی صادر نمی‌شود"),emptyList())
 
-        // Each timeframe derives its own bias from its indicator families.
-        // Require unanimous direction and retain major-indicator conflict protection.
-        val allBullish=reports.values.all{it.bias=="bullish"} &&
-            reports.values.all{noMajorIndicatorConflict(it.indicatorVotes,1)}
-        val allBearish=reports.values.all{it.bias=="bearish"} &&
-            reports.values.all{noMajorIndicatorConflict(it.indicatorVotes,-1)}
+        // Each timeframe derives its own bias independently.
+        // Two-of-three majority is sufficient; a neutral/opposing third timeframe is not a veto.
+        val bullishReports=reports.values.filter{it.bias=="bullish"}
+        val bearishReports=reports.values.filter{it.bias=="bearish"}
+        val allBullish=bullishReports.size>=2 &&
+            bullishReports.all{noMajorIndicatorConflict(it.indicatorVotes,1)}
+        val allBearish=bearishReports.size>=2 &&
+            bearishReports.all{noMajorIndicatorConflict(it.indicatorVotes,-1)}
         val trigger5=reports["5m"]!!
         val sm5=trigger5.structure
         val rawSignal=when{
