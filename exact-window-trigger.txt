@@ -1,0 +1,1 @@
+Run upgraded engine against the exact previous 10-day UTC window.
