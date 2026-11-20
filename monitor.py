@@ -14,7 +14,7 @@ NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh").rstrip(" /")
 def notify(title, message, priority="default"):
     if not NTFY_TOPIC:
         logging.warning("NTFY_TOPIC is not configured; phone notification skipped.")
-        return
+        return False
     if "/" in NTFY_TOPIC or not NTFY_TOPIC.replace("-", "").replace("_", "").isalnum():
         raise ValueError("NTFY_TOPIC must be a simple topic name.")
     response = requests.post(
@@ -25,6 +25,7 @@ def notify(title, message, priority="default"):
     )
     response.raise_for_status()
     logging.info("Phone notification sent: %s", title)
+    return True
 
 
 def _analysis_reasons(result):
@@ -88,8 +89,8 @@ def main():
                 f"دلایل: {reasons}\n"
                 "فقط سیگنال است؛ هیچ سفارشی ثبت نشده است."
             )
-            notify(f"سیگنال {signal_fa} | {symbol}", message, "high")
-            alerts += 1
+            if notify(f"سیگنال {signal_fa} | {symbol}", message, "high"):
+                alerts += 1
         except Exception:
             logging.exception("Analysis failed for %s; continuing with next contract", symbol)
 

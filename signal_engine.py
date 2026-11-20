@@ -525,8 +525,25 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
     missing = [tf for tf in selected_tfs if tf not in timeframes]
     if missing:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Missing selected timeframe data: "+", ".join(missing),"trade_enabled":False}
-    # Freeze every selected series to a shared closed-candle boundary when timestamps exist.
-    timestamped = [bool(timeframes.get(tf, [])) and all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in selected_tfs]
+    # Timestamp metadata is all-or-nothing. A partially timestamped series must
+    # never fall back to legacy untimestamped mode, because that bypasses the
+    # closed-candle and continuity checks below.
+    timestamped = []
+    for tf in selected_tfs:
+        rows = timeframes.get(tf, [])
+        row_has_timestamp = [
+            any(key in row for key in ("timestamp", "open_time", "time"))
+            for row in rows
+        ]
+        has_any_timestamp = any(row_has_timestamp)
+        has_all_timestamps = bool(row_has_timestamp) and all(row_has_timestamp)
+        if has_any_timestamp and not has_all_timestamps:
+            return {
+                "signal": "NO_SIGNAL", "status": "NO_SIGNAL",
+                "reason": f"Incomplete timestamps in selected {tf} candle data",
+                "trade_enabled": False,
+            }
+        timestamped.append(has_all_timestamps)
     if any(timestamped) and not all(timestamped):
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Mixed timestamped/untimestamped selected timeframe data","trade_enabled":False}
     analysis_timeframes = {tf:list(timeframes.get(tf,[])) for tf in selected_tfs}
