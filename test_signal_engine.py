@@ -42,13 +42,13 @@ class EngineTests(unittest.TestCase):
         self.assertIn(r["signal"],("LONG","SHORT","NO_SIGNAL"))
         self.assertIn("combined_score",r)
     def test_two_of_three_alignment_never_signals(self):
-        bullish={"valid":True,"score":60.0,"bias":"bullish","indicators":{"atr":1.0},"close":100.0}
+        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "indicators":{"atr":1.0},"close":100.0}
         bearish={"valid":True,"score":-60.0,"bias":"bearish","indicators":{"atr":1.0},"close":100.0}
         with patch("signal_engine.analyze_timeframe", side_effect=[bullish,bullish,bearish]):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"NO_SIGNAL")
     def test_all_three_aligned_can_signal_after_confirmed_retest(self):
-        bullish={"valid":True,"score":60.0,"bias":"bullish","indicators":{"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up","previous_swing_low":98.0}},"close":100.0}
+        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "indicators":{"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up","entry_distance_atr":0.2,"previous_swing_low":98.0}},"close":100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"LONG")
@@ -63,7 +63,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("invalid OHLCV", result["reason"])
 
     def test_high_volatility_filter_blocks_signal(self):
-        bullish={"valid":True,"score":60.0,"bias":"bullish","high_volatility":True,"indicators":{"atr":1.0},"close":100.0}
+        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "high_volatility":True,"indicators":{"atr":1.0},"close":100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result=analyze_market({tf:candles() for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"NO_SIGNAL")
@@ -97,16 +97,16 @@ class EngineTests(unittest.TestCase):
         self.assertIn(result["market_regime"]["state"], ("trending", "ranging", "transition", "unknown"))
 
     def test_five_minute_trigger_must_confirm_higher_timeframe_bias(self):
-        strong = {"valid": True, "score": 60.0, "bias": "bullish", "indicators": {"atr": 1.0}, "close": 100.0}
-        weak_trigger = {"valid": True, "score": 15.0, "bias": "bullish", "indicators": {"atr": 1.0}, "close": 100.0}
+        strong = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},  "indicators": {"atr": 1.0}, "close": 100.0}
+        weak_trigger = {"valid": True, "score": 15.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},  "indicators": {"atr": 1.0}, "close": 100.0}
         with patch("signal_engine.analyze_timeframe", side_effect=[weak_trigger, strong, strong]):
             result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
 
     def test_higher_timeframes_need_stronger_conviction_than_basic_bias(self):
-        strong = {"valid": True, "score": 60.0, "bias": "bullish",
+        strong = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
                   "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0}
-        moderate = {"valid": True, "score": 24.0, "bias": "bullish",
+        moderate = {"valid": True, "score": 24.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
                     "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0}
         with patch("signal_engine.analyze_timeframe", side_effect=[strong, moderate, strong]):
             result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
@@ -155,7 +155,7 @@ class EngineTests(unittest.TestCase):
 
 
     def test_directional_consensus_without_retest_is_blocked(self):
-        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
                    "indicators": {"atr": 1.0, "smc": {"structure_event": "BOS_up",
                        "retest_long": False}}, "close": 100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
@@ -165,7 +165,7 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(result["entry_context"]["retest_confirmed"])
 
     def test_missing_smc_retest_evidence_cannot_bypass_entry_gate(self):
-        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
                    "indicators": {"atr": 1.0, "smc": {}}, "close": 100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
@@ -193,8 +193,8 @@ class EngineTests(unittest.TestCase):
         self.assertIn("equal_low_level", structure)
 
     def test_failed_breakout_blocks_even_a_retest_flag(self):
-        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
-                   "indicators": {"atr": 1.0, "smc": {"retest_long": True,
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
+                   "indicators": {"atr": 1.0, "smc": {"retest_long": True, "entry_distance_atr": 0.2,
                        "structure_event": "BOS_up", "false_breakout": True,
                        "entry_distance_atr": 0.2}}, "close": 100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
@@ -204,7 +204,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("Failed breakout", result["reason"])
 
     def test_entry_guard_rejects_overextended_retest(self):
-        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
                    "indicators": {"atr": 1.0, "smc": {"retest_long": True,
                        "structure_event": "BOS_up", "entry_distance_atr": 1.2,
                        "previous_swing_low": 98.0}}, "close": 100.0}
@@ -213,6 +213,40 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["signal"], "NO_SIGNAL")
         self.assertEqual(result["entry_stage"], "WAIT")
         self.assertIn("overextended", result["reason"])
+
+
+    def test_indicator_family_conflict_blocks_directional_signal(self):
+        conflicted = {"valid": True, "score": 60.0, "bias": "bullish",
+                      "family_scores": {"trend":-0.8,"momentum":0.7,"strength":0.6,
+                                        "volume":0.7,"structure":0.6,"orderflow":0.8,
+                                        "volatility":0.0,"divergence":0.0},
+                      "indicators": {"atr":1.0,"smc":{"retest_long":True,"entry_distance_atr":0.2}},
+                      "close":100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=conflicted):
+            result = analyze_market({tf:candles() for tf in ("5m","15m","30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+
+    def test_missing_retest_distance_blocks_signal(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,
+                                     "volume":0.8,"structure":0.8,"orderflow":0.8},
+                   "indicators": {"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up"}},
+                   "close":100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result = analyze_market({tf:candles() for tf in ("5m","15m","30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("missing or overextended", result["reason"])
+
+
+    def test_liquidity_sweep_without_breakout_retest_is_not_an_entry(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,
+                                     "volume":0.8,"structure":0.8,"orderflow":0.8},
+                   "indicators": {"atr":1.0,"smc":{"liquidity_sweep":"sell_side",
+                       "retest_long":False,"structure_event":"none"}}, "close":100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result = analyze_market({tf:candles() for tf in ("5m","15m","30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
 
 
 if __name__=="__main__": unittest.main()

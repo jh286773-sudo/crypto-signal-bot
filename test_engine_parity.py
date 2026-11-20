@@ -19,8 +19,8 @@ class CrossEngineContractTests(unittest.TestCase):
             self.assertIn(token,kt)
         self.assertIn("entry_distance_atr",py)
         self.assertIn("entryDistanceAtr",kt)
-        self.assertIn(">.80",kt)
-        self.assertIn("0.80",py)
+        self.assertIn(">.50",kt)
+        self.assertIn("0.50",py)
 
 
     def test_shared_golden_fixture_signal_matches_android_contract(self):
