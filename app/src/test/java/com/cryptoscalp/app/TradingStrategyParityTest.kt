@@ -144,6 +144,24 @@ class TradingStrategyParityTest {
         assertEquals("WAIT", TradingStrategy.evaluate(selected, now).signal)
     }
 
+    @Test fun acceptsFourSelectedTimeframesWithoutRequiringTheDefaultThree() {
+        val duration = mapOf("1m" to 60_000L, "3m" to 180_000L,
+            "15m" to 900_000L, "4h" to 14_400_000L)
+        val now = System.currentTimeMillis()
+        val decision = (now / 14_400_000L) * 14_400_000L
+        val selected = duration.mapValues { (_, step) ->
+            val lastOpen = decision - step
+            series(220, step, lastOpen - 219L * step)
+        }
+        val result = TradingStrategy.evaluate(selected, decision + 1_000L)
+        assertEquals(false, result.reasons.any {
+            it.contains("هیچ تایم‌فریمی") ||
+            it.contains("داده یا زمان‌بندی") ||
+            it.contains("اطلاعات کافی/معتبر") ||
+            it.contains("کندل بسته‌شده مشترک")
+        })
+    }
+
     @Test fun ema21AntiChaseGateRejectsExtendedOrMissingDataAndAcceptsPullback() {
         assertEquals(true, TradingStrategy.entryNotExtended(100.0, 99.5, 1.0))
         assertEquals(false, TradingStrategy.entryNotExtended(100.0, 99.0, 1.0))

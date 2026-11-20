@@ -72,8 +72,8 @@ class CryptoMonitorService : Service() {
 
                 // Only the user's selected timeframes are fetched and analyzed.
                 val marketAsOfMs=ExchangeMarketData.exchangeTimeMs()
-                val selectedTimeframes=prefs.getStringSet("selected_timeframes",setOf("5m","15m","30m"))
-                    ?.filter { it in ExchangeMarketData.supportedTimeframes }.orEmpty()
+                val savedTimeframes=prefs.getStringSet("selected_timeframes",setOf("5m","15m","30m")).orEmpty()
+                val selectedTimeframes=ExchangeMarketData.supportedTimeframes.filter { it in savedTimeframes }
                 if(selectedTimeframes.isEmpty()) throw IllegalStateException("هیچ تایم‌فریمی انتخاب نشده است.")
                 val slowestDuration=selectedTimeframes.maxOf { ExchangeMarketData.durationMs(it) }
                 val candleMap=selectedTimeframes.associateWith { tf ->
@@ -84,7 +84,10 @@ class CryptoMonitorService : Service() {
                 val latestClosedCandleTime=selectedTimeframes.minOf { tf ->
                     candleMap.getValue(tf).last().time + ExchangeMarketData.durationMs(tf)
                 }
-                val key="last_analysis_candle_$symbol"
+                // Keep a separate candle baseline for each selected timeframe set.
+                // This prevents a previous faster selection from delaying a slower one.
+                val selectionKey=selectedTimeframes.joinToString("_")
+                val key="last_analysis_candle_${symbol}_$selectionKey"
                 val previousCandleTime=prefs.getLong(key,-1L)
                 if(previousCandleTime<0L){
                     // First launch establishes a baseline instead of issuing a delayed historical signal.
