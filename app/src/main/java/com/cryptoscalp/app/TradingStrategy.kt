@@ -402,4 +402,4 @@ object TradingStrategy {
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
         return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc,tp3,listOf(1.5,2.5,3.5))
     }
-}\n}\n
+}
