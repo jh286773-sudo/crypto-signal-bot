@@ -92,7 +92,7 @@ object ExchangeMarketData {
             val row = rows.optJSONObject(i) ?: continue
             try {
                 val candleTime = row.optLong("time", row.optLong("curId", 0L))
-                if (candleTime <= 0L || candleTime + duration > now) continue
+                if (!CandleClosePolicy.isClosed(candleTime, duration, now)) continue
                 val open = row.optString("open").toDouble()
                 val high = row.optString("high").toDouble()
                 val low = row.optString("low").toDouble()
@@ -141,7 +141,7 @@ object ExchangeMarketData {
             try {
                 if (row.length() < 6) continue
                 val candleTime = row.optString(0).toLongOrNull() ?: continue
-                if (candleTime <= 0L || candleTime + duration > now) continue
+                if (!CandleClosePolicy.isClosed(candleTime, duration, now)) continue
                 val open = row.optString(1).toDouble()
                 val high = row.optString(2).toDouble()
                 val low = row.optString(3).toDouble()
