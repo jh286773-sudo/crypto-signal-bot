@@ -199,7 +199,30 @@ class ToobitAPI:
             if len(page) < page_size:
                 break
             time.sleep(0.05)
+        ordered_times = sorted(rows_by_time)
+        missing_opens = []
+        for left, right in zip(ordered_times, ordered_times[1:]):
+            missing_opens.extend(range(left + step, right, step))
+        if len(missing_opens) > 50:
+            raise RuntimeError(f"Toobit returned too many missing {interval} candles ({len(missing_opens)}); refusing to synthesize history")
+        # Retry each real exchange interval that was omitted by a paged response.
+        # Only exchange-returned candles are inserted; gaps are never fabricated.
+        for missing_open in missing_opens:
+            for _ in range(3):
+                retry_rows = self.get_klines_range(
+                    symbol, interval, missing_open, missing_open + step, limit=10
+                )
+                match = next((row for row in retry_rows
+                              if int(row["timestamp"]) == missing_open), None)
+                if match is not None:
+                    rows_by_time[missing_open] = match
+                    break
+                time.sleep(0.15)
         rows = [rows_by_time[key] for key in sorted(rows_by_time)]
+        for left, right in zip(rows, rows[1:]):
+            if int(right["timestamp"]) - int(left["timestamp"]) != step:
+                missing = int(left["timestamp"]) + step
+                raise RuntimeError(f"Toobit omitted real {interval} candle at {missing}; refusing to synthesize history")
         return self.closed_candles(rows, interval, end_ms)
 
     def get_historical_funding_rates(self, symbol, limit=1000):
