@@ -58,12 +58,12 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                      risk_fraction: float = 0.005, max_holding_bars: int = 72,
                      loss_streak_limit: int = 2, loss_cooldown_bars: int = 288,
                      allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3)) -> Dict[str, Any]:
-    """Causal portfolio backtest with timestamp as-of alignment and three TP exits.
+    """Long-only reversal backtest: enter on LONG and exit only on SHORT.
 
-    Position quantity is sized so the estimated stop loss INCLUDING opening/
-    closing fees and adverse slippage stays within equity * risk_fraction.
-    Each target closes its configured fraction. After TP1 the stop moves to
-    entry. Intrabar stop wins any ambiguous bar.
+    No SHORT position is ever opened. A LONG remains open through WAIT and
+    repeated LONG signals. The SHORT decision is confirmed on a closed candle
+    and the exit is modeled at the next 5m open. ATR is used only as a sizing
+    risk reference; it is not an active stop and no take-profit exits are used.
     """
     if fee_bps_per_side is not None:
         fee_bps_open = fee_bps_open if fee_bps_open is not None else fee_bps_per_side
@@ -75,17 +75,17 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     if (initial_equity <= 0 or not 0 < risk_fraction <= 0.05 or max_holding_bars < 1
             or loss_streak_limit < 1 or loss_cooldown_bars < 1):
         raise ValueError("invalid equity, risk fraction, or holding horizon")
-    if len(allocation) != 3 or any(x < 0 for x in allocation) or abs(sum(allocation)-1.0) > 1e-9:
-        raise ValueError("TP allocation must contain three non-negative fractions summing to 1")
     indexed = _validate(timeframes)
     five = indexed["5m"]
     if len(five) < 61:
         raise ValueError("at least 61 timestamped 5m candles are required")
+
     equity = float(initial_equity)
     peak = equity
     max_dd = 0.0
-    trades = []
-    loss_streak_indices = []
+    trades: List[dict] = []
+    position = None
+    loss_streak_indices: List[int] = []
     entry_gap_skips = 0
     invalid_level_skips = 0
     decision_diagnostics = {"evaluated": 0, "no_signal": 0, "long_candidates": 0,
@@ -94,25 +94,92 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     cooldown_until_index = -1
     cooldown_events = 0
     cooldown_skipped_bars = 0
+
+    def apply_funding(pos, end_index):
+        cash = 0.0
+        bps_total = 0.0
+        events = 0
+        for j in range(pos["entry_index"], end_index + 1):
+            row = five[j][1]
+            settle_time, rate = row.get("funding_settle_time"), row.get("funding_rate")
+            if settle_time is None or rate is None:
+                continue
+            candle_open = five[j][0]
+            if not candle_open < int(settle_time) <= candle_open + DURATION_MS["5m"]:
+                continue
+            rate = float(rate)
+            cash += pos["entry"] * pos["quantity"] * rate
+            bps_total += rate * 10000
+            events += 1
+        return (cash if events else None, bps_total if events else None, events)
+
+    def finish_position(pos, exit_index, raw_exit, reason):
+        nonlocal equity, peak, max_dd, cooldown_until_index, cooldown_events, loss_streak_indices
+        exit_fill = raw_exit * (1 - slippage_bps_per_side / 10000)
+        exit_slippage = abs(exit_fill - raw_exit) * pos["quantity"]
+        close_fee = abs(exit_fill * pos["quantity"]) * fee_bps_close / 10000
+        realized = (exit_fill - pos["entry_fill"]) * pos["quantity"]
+        funding_cash, funding_bps, funding_events = apply_funding(pos, exit_index)
+        fees = pos["entry_fee"] + close_fee
+        net_pnl = realized - fees - (funding_cash or 0.0)
+        start_equity = equity
+        equity += net_pnl
+        if net_pnl < 0:
+            loss_streak_indices = [x for x in loss_streak_indices
+                                   if exit_index - x <= loss_cooldown_bars]
+            loss_streak_indices.append(exit_index)
+            if len(loss_streak_indices) >= loss_streak_limit:
+                cooldown_until_index = max(cooldown_until_index, exit_index + loss_cooldown_bars)
+                cooldown_events += 1
+                loss_streak_indices = []
+        else:
+            loss_streak_indices = []
+        peak = max(peak, equity)
+        max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else 0.0)
+        trades.append({
+            "side": "LONG",
+            "signal_time": pos["signal_time"],
+            "entry_time": five[pos["entry_index"]][0],
+            "exit_time": five[exit_index][0],
+            "entry": pos["entry"],
+            "exit": exit_fill,
+            "exit_reason": reason,
+            "closed_by_short_signal": reason == "opposite_short_signal",
+            "position_quantity": pos["quantity"],
+            "initial_notional": pos["entry"] * pos["quantity"],
+            "risk_cash": pos["risk_cash"],
+            "risk_fraction": risk_fraction,
+            "risk_reference_distance": pos["risk_distance"],
+            "risk_reference_price": pos["risk_reference_price"],
+            "stop_loss": None,
+            "take_profits": [],
+            "fees_cash": fees,
+            "slippage_cash": pos["entry_slippage"] + exit_slippage,
+            "funding_bps": funding_bps,
+            "funding_cash": funding_cash,
+            "funding_mode": "historical_settlement_events" if funding_events else "not_supplied",
+            "net_pnl": net_pnl,
+            "net_return_pct": net_pnl / start_equity * 100 if start_equity else 0.0,
+            "equity_after": equity,
+        })
+
     i = 59
     while i + 1 < len(five):
-        if i < cooldown_until_index:
+        if position is None and i < cooldown_until_index:
             cooldown_skipped_bars += 1
             i += 1
             continue
+
         decision_open, decision_candle = five[i]
         decision_time = decision_open + DURATION_MS["5m"]
         histories = {tf: _closed_history(indexed[tf], tf, decision_time) for tf in REQUIRED_TFS}
-        # The decision candle itself must be present and closed; HTF bars still forming
-        # at this exact decision instant are excluded, never forward-filled.
         if not histories["5m"] or _timestamp(histories["5m"][-1]) != decision_open:
             i += 1
             continue
         if min(len(histories[tf]) for tf in REQUIRED_TFS) < 60:
             i += 1
             continue
-        # Match the live Android strategy input horizon and bound indicator cost.
-        # Every decision uses the same score-free directional engine as live monitoring.
+
         signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()})
         decision_diagnostics["evaluated"] += 1
         side = signal.get("signal")
@@ -137,38 +204,35 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                             "market_regime": report.get("market_regime"),
                             "high_volatility": report.get("high_volatility"),
                             "indicator_votes": report.get("indicator_votes"),
-                            "smc": (report.get("indicators") or {}).get("smc"),
                         }
                         for tf, report in signal.get("timeframes", {}).items()
                     },
                 })
             i += 1
             continue
-        decision_diagnostics["long_candidates" if side == "LONG" else "short_candidates"] += 1
-        # Preserve exact as-of indicator evidence for later loss diagnosis.
-        # Research telemetry only; it does not alter the signal decision.
-        signal_snapshot = {
-            "entry_stage": signal.get("entry_stage"),
-            "timeframes": {
-                tf: {
-                    "bias": report.get("bias"),
-                    "market_regime": report.get("market_regime"),
-                    "indicator_votes": report.get("indicator_votes"),
-                    "volatility_filter": report.get("volatility_filter"),
-                    "smc": (report.get("indicators") or {}).get("smc"),
-                }
-                for tf, report in signal.get("timeframes", {}).items()
-            },
-        }
+
+        if side == "SHORT":
+            decision_diagnostics["short_candidates"] += 1
+            if position is not None:
+                exit_index = i + 1
+                raw_exit = float(five[exit_index][1]["open"])
+                finish_position(position, exit_index, raw_exit, "opposite_short_signal")
+                position = None
+                i = exit_index
+                continue
+            # SHORT while flat is an exit instruction with nothing to close.
+            i += 1
+            continue
+
+        decision_diagnostics["long_candidates"] += 1
+        if position is not None:
+            # Hold the existing LONG; same-side signals never pyramid or reset entry.
+            i += 1
+            continue
 
         entry_index = i + 1
         entry = float(five[entry_index][1]["open"])
         signal_close = float(decision_candle["close"])
-        stop_signal = signal.get("stop_loss")
-        targets_signal = signal.get("take_profits") or []
-        if stop_signal is None or len(targets_signal) < 3:
-            i += 1
-            continue
         atr = (signal.get("timeframes", {}).get("5m", {})
                .get("indicators", {}).get("atr"))
         if (atr is None or not isfinite(float(atr)) or float(atr) <= 0
@@ -177,199 +241,56 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             i += 1
             continue
         atr = float(atr)
-        entry_gap_atr = abs(entry - signal_close) / atr
-        # A signal is calculated on the just-closed candle. If the next candle
-        # opens too far away, do not chase it or silently translate its levels.
-        if entry_gap_atr > MAX_ENTRY_GAP_ATR:
+        if abs(entry - signal_close) / atr > MAX_ENTRY_GAP_ATR:
             entry_gap_skips += 1
             i += 1
             continue
-        stop = float(stop_signal)
-        targets = [float(t) for t in targets_signal[:3]]
-        levels_finite = isfinite(stop) and all(isfinite(t) for t in targets)
-        if side == "LONG":
-            levels_ordered = stop < entry < targets[0] < targets[1] < targets[2]
-        else:
-            levels_ordered = stop > entry > targets[0] > targets[1] > targets[2]
-        if not levels_finite or not levels_ordered:
-            # Keep the signal's absolute structural levels. If the next-open
-            # price has already invalidated them, skip rather than re-anchor.
-            invalid_level_skips += 1
-            i += 1
-            continue
-        risk_distance = abs(entry - stop)
-        if risk_distance <= 0:
-            invalid_level_skips += 1
-            i += 1
-            continue
+
         risk_cash = equity * risk_fraction
-        # Include both-side fees and adverse slippage in the sizing denominator.
-        # This is an estimate at the modeled stop price; gaps/market impact can
-        # still produce a larger realized loss than the configured risk budget.
-        estimated_stop_fill = stop * (1 - slippage_bps_per_side/10000
-                                      if side == "LONG" else
-                                      1 + slippage_bps_per_side/10000)
+        risk_distance = 1.5 * atr
+        entry_fill = entry * (1 + slippage_bps_per_side / 10000)
+        reference_exit = max(1e-12, entry - risk_distance)
         estimated_loss_per_unit = (
             risk_distance
             + entry * (fee_bps_open + slippage_bps_per_side) / 10000
-            + abs(estimated_stop_fill) * (fee_bps_close + slippage_bps_per_side) / 10000
+            + reference_exit * (fee_bps_close + slippage_bps_per_side) / 10000
         )
         if estimated_loss_per_unit <= 0:
+            invalid_level_skips += 1
             i += 1
             continue
         quantity = risk_cash / estimated_loss_per_unit
-        initial_notional = quantity * entry
-        remaining = quantity
-        realized = 0.0
-        fees = 0.0
-        slippage = 0.0
-        hit_targets = []
-        exit_index = min(entry_index + max_holding_bars, len(five)-1)
-        exit_reason = "time"
-        exit_price = float(five[exit_index][1]["close"])
-        first_fill_index = entry_index
-        funding_exposure = []
-        # Entry costs are charged once. Slippage is modeled adversely on each fill.
-        entry_fill = entry * (1 + slippage_bps_per_side/10000 * (1 if side == "LONG" else -1))
-        fees += abs(entry_fill * quantity) * fee_bps_open / 10000
-        slippage += abs(entry_fill-entry) * quantity
-        for j in range(entry_index, exit_index+1):
-            bar = five[j][1]
-            # A funding settlement can share a 5m candle with an intrabar exit.
-            # OHLC cannot establish event order, so record exposure at bar open;
-            # this conservatively avoids silently omitting a possible settlement.
-            if remaining > quantity*1e-10:
-                funding_exposure.append((j, remaining))
-            o, h, low = float(bar["open"]), float(bar["high"]), float(bar["low"])
-            stop_hit = low <= stop if side == "LONG" else h >= stop
-            if stop_hit:
-                fill = min(o, stop) if side == "LONG" else max(o, stop)
-                if side == "LONG":
-                    fill *= 1 - slippage_bps_per_side/10000
-                else:
-                    fill *= 1 + slippage_bps_per_side/10000
-                realized += (fill-entry_fill) * remaining * (1 if side == "LONG" else -1)
-                fees += abs(fill*remaining)*fee_bps_close/10000
-                slippage += abs(fill-(min(o,stop) if side=="LONG" else max(o,stop)))*remaining
-                remaining = 0.0
-                exit_index, exit_price, exit_reason = j, fill, ("stop_after_tp2" if 1 in hit_targets else "stop_after_tp1") if hit_targets else "stop"
-                break
-            for k, target in enumerate(targets):
-                if k in hit_targets:
-                    continue
-                touched = h >= target if side == "LONG" else low <= target
-                if not touched:
-                    continue
-                fraction = allocation[k]
-                close_qty = min(remaining, quantity*fraction)
-                if close_qty <= 0:
-                    hit_targets.append(k)
-                    continue
-                raw_fill = max(o,target) if side=="LONG" else min(o,target)
-                fill = raw_fill * (1-slippage_bps_per_side/10000 if side=="LONG" else 1+slippage_bps_per_side/10000)
-                realized += (fill-entry_fill)*close_qty*(1 if side=="LONG" else -1)
-                fees += abs(fill*close_qty)*fee_bps_close/10000
-                slippage += abs(fill-raw_fill)*close_qty
-                remaining -= close_qty
-                hit_targets.append(k)
-                if k == 0:
-                    stop = entry
-                    stop_label = "stop_after_tp1"
-                elif k == 1:
-                    # TP2 locks the first target for the remaining position.
-                    stop = targets[0]
-                    stop_label = "stop_after_tp2"
-                else:
-                    stop_label = "stop_after_tp2" if 1 in hit_targets else "stop_after_tp1"
-                if k in (0, 1):
-                    # OHLC cannot order target and stop touches inside one candle;
-                    # resolve an ambiguous same-bar stop conservatively.
-                    protected_hit = low <= stop if side == "LONG" else h >= stop
-                    if protected_hit and remaining > quantity*1e-10:
-                        raw_stop = min(o, stop) if side == "LONG" else max(o, stop)
-                        stop_fill = raw_stop * (
-                            1 - slippage_bps_per_side/10000 if side == "LONG"
-                            else 1 + slippage_bps_per_side/10000
-                        )
-                        realized += (stop_fill-entry_fill)*remaining*(1 if side == "LONG" else -1)
-                        fees += abs(stop_fill*remaining)*fee_bps_close/10000
-                        slippage += abs(stop_fill-raw_stop)*remaining
-                        remaining = 0.0
-                        exit_index, exit_price, exit_reason = j, stop_fill, stop_label
-                        break
-                if remaining <= quantity*1e-10:
-                    remaining = 0.0
-                    exit_index, exit_price, exit_reason = j, fill, "all_targets"
-                    break
-            if remaining <= quantity*1e-10:
-                break
-        if remaining > quantity*1e-10:
-            raw_fill = float(five[exit_index][1]["close"])
-            fill = raw_fill * (1-slippage_bps_per_side/10000 if side=="LONG" else 1+slippage_bps_per_side/10000)
-            realized += (fill-entry_fill)*remaining*(1 if side=="LONG" else -1)
-            fees += abs(fill*remaining)*fee_bps_close/10000
-            slippage += abs(fill-raw_fill)*remaining
-            exit_price = fill
-        funding_cash = 0.0
-        funding_bps_total = 0.0
-        funding_events_applied = 0
-        exposure_by_index = dict(funding_exposure)
-        # Funding is charged once at exchange settlement timestamps, not once
-        # per 5m candle. Exposure is the remaining quantity after that bar's fills.
-        for j in range(entry_index, exit_index+1):
-            row = five[j][1]
-            settle_time = row.get("funding_settle_time")
-            rate = row.get("funding_rate")
-            if settle_time is None or rate is None or j not in exposure_by_index:
-                continue
-            candle_open = five[j][0]
-            if not candle_open < int(settle_time) <= candle_open + DURATION_MS["5m"]:
-                continue
-            exposure = exposure_by_index[j]
-            event_cash = entry * exposure * float(rate) * (1 if side == "LONG" else -1)
-            funding_cash += event_cash
-            funding_bps_total += float(rate) * 10000 * (1 if side == "LONG" else -1) * (exposure / quantity)
-            funding_events_applied += 1
-        funding_mode = "historical_settlement_events" if funding_events_applied else "not_supplied"
-        funding = funding_bps_total if funding_events_applied else None
-        funding_cash = funding_cash if funding_events_applied else None
-        net_pnl = realized - fees - (funding_cash or 0.0)
-        # Count every consecutive net losing trade, including a loss after
-        # TP1/TP2 protected-stop exits and losses caused by fees/funding.
-        if net_pnl < 0:
-            loss_streak_indices = [
-                index for index in loss_streak_indices
-                if exit_index - index <= loss_cooldown_bars
-            ]
-            loss_streak_indices.append(exit_index)
-            if len(loss_streak_indices) >= loss_streak_limit:
-                cooldown_until_index = max(cooldown_until_index, exit_index + loss_cooldown_bars)
-                cooldown_events += 1
-                loss_streak_indices = []
-        else:
-            loss_streak_indices = []
-        start_equity = equity
-        equity += net_pnl
-        peak = max(peak, equity)
-        max_dd = max(max_dd, (peak-equity)/peak if peak > 0 else 0.0)
-        trades.append({
-            "side": side, "signal_time": decision_time, "entry_time": five[entry_index][0],
-            "signal_snapshot": signal_snapshot,
-            "exit_time": five[exit_index][0], "entry": entry, "exit": exit_price,
-            "exit_reason": exit_reason, "targets_hit": [f"TP{x+1}" for x in sorted(hit_targets)],
-            "position_quantity": quantity, "initial_notional": initial_notional,
-            "risk_cash": risk_cash, "risk_fraction": risk_fraction,
-            "entry_gap_atr": entry_gap_atr, "stop_loss": stop,
-            "take_profits": targets,
-            "estimated_stop_loss_per_unit": estimated_loss_per_unit,
-            "estimated_risk_cash_including_costs": quantity * estimated_loss_per_unit,
-            "fees_cash": fees, "slippage_cash": slippage,
-            "funding_bps": funding, "funding_cash": funding_cash,
-            "funding_mode": funding_mode, "net_pnl": net_pnl,
-            "net_return_pct": net_pnl/start_equity*100 if start_equity else 0.0,
-            "equity_after": equity,
-        })
-        i = max(exit_index+1, i+1)
+        entry_fee = abs(entry_fill * quantity) * fee_bps_open / 10000
+        position = {
+            "signal_time": decision_time,
+            "entry_index": entry_index,
+            "entry": entry,
+            "entry_fill": entry_fill,
+            "quantity": quantity,
+            "entry_fee": entry_fee,
+            "entry_slippage": abs(entry_fill - entry) * quantity,
+            "risk_cash": risk_cash,
+            "risk_distance": risk_distance,
+            "risk_reference_price": reference_exit,
+            "signal_snapshot": {
+                "timeframes": {
+                    tf: {
+                        "bias": report.get("bias"),
+                        "indicator_votes": report.get("indicator_votes"),
+                        "high_volatility": report.get("high_volatility"),
+                    }
+                    for tf, report in signal.get("timeframes", {}).items()
+                }
+            },
+        }
+        i = entry_index
+
+    # A position still open at the end of the historical sample is marked out at
+    # the final candle close; it is not silently discarded from reported equity.
+    if position is not None:
+        last_index = len(five) - 1
+        finish_position(position, last_index, float(five[last_index][1]["close"]), "end_of_data")
+
     returns = [t["net_return_pct"] for t in trades]
     wins = sum(t["net_pnl"] > 0 for t in trades)
     side_stats = {}
@@ -392,29 +313,38 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     gross_profit = sum(max(0.0, t["net_pnl"]) for t in trades)
     gross_loss = sum(min(0.0, t["net_pnl"]) for t in trades)
     return {
-        "trades": trades, "trade_count": len(trades),
-        "initial_equity": initial_equity, "final_equity": equity,
-        "net_return_pct": (equity/initial_equity-1)*100,
-        "win_rate_pct": wins/len(trades)*100 if trades else 0.0,
+        "trades": trades,
+        "trade_count": len(trades),
+        "initial_equity": initial_equity,
+        "final_equity": equity,
+        "net_return_pct": (equity / initial_equity - 1) * 100,
+        "win_rate_pct": wins / len(trades) * 100 if trades else 0.0,
         "profit_factor": gross_profit / abs(gross_loss) if gross_loss else (float("inf") if gross_profit else 0.0),
-        "gross_profit": gross_profit, "gross_loss": gross_loss,
+        "gross_profit": gross_profit,
+        "gross_loss": gross_loss,
         "side_stats": side_stats,
         "max_consecutive_losses": max_consecutive_losses,
         "decision_diagnostics": decision_diagnostics,
-        "loss_guard": {"loss_streak_limit": loss_streak_limit,
-                       "cooldown_bars": loss_cooldown_bars,
-                       "cooldown_events": cooldown_events,
-                       "cooldown_skipped_bars": cooldown_skipped_bars,
-                       "counted_losses": "all_negative_net_pnl_including_protected_stops"},
-        "entry_filter": {"max_entry_gap_atr": MAX_ENTRY_GAP_ATR,
-                         "entry_gap_skips": entry_gap_skips,
-                         "invalid_level_skips": invalid_level_skips,
-                         "levels_policy": "preserve_signal_levels; never_reanchor_after_gap"},
-        "max_drawdown_pct": max_dd*100, "risk_fraction": risk_fraction,
-        "fee_bps_open": fee_bps_open, "fee_bps_close": fee_bps_close,
+        "loss_guard": {
+            "loss_streak_limit": loss_streak_limit,
+            "cooldown_bars": loss_cooldown_bars,
+            "cooldown_events": cooldown_events,
+            "cooldown_skipped_bars": cooldown_skipped_bars,
+            "counted_losses": "net losing LONG positions closed by SHORT or end of data",
+        },
+        "entry_filter": {
+            "max_entry_gap_atr": MAX_ENTRY_GAP_ATR,
+            "entry_gap_skips": entry_gap_skips,
+            "invalid_level_skips": invalid_level_skips,
+            "levels_policy": "no active stop or take-profit; hold LONG until SHORT",
+        },
+        "max_drawdown_pct": max_dd * 100,
+        "risk_fraction": risk_fraction,
+        "fee_bps_open": fee_bps_open,
+        "fee_bps_close": fee_bps_close,
         "slippage_bps_per_side": slippage_bps_per_side,
-        "position_sizing": "risk_budget_includes_estimated_round_trip_fees_and_slippage",
+        "position_sizing": "risk_budget_uses_1.5_ATR_reference_only; no stop exit",
         "timestamp_alignment": "asof_closed_only",
-        "funding_mode": "historical_settlement_events" if any(t["funding_mode"]=="historical_settlement_events" for t in trades) else "not_supplied",
-        "note": "Requires real exchange OHLCV timestamps and explicit fee/slippage inputs. Funding is charged only on supplied historical settlement events; no missing exchange data is synthesized. Liquidation, queue priority and partial fill uncertainty remain outside this OHLCV model."
+        "funding_mode": "historical_settlement_events" if any(t["funding_mode"] == "historical_settlement_events" for t in trades) else "not_supplied",
+        "note": "Long-only reversal model: LONG opens, SHORT closes at next 5m open, WAIT holds, and no SHORT position is opened. ATR is a sizing reference only, not an active stop. Positions still open at sample end are marked to the final close. Funding uses only supplied historical settlement events.",
     }
