@@ -133,6 +133,14 @@ class ShadowLedger:
             self._fill(db, symbol, state, fill, fraction, stamp, persist=False)
             if state["remaining"] <= 1e-9:
                 return True
+            # If TP1/TP2 and the newly protected stop are both touched in this
+            # OHLC candle, assume target first then stop: conservative for the remainder.
+            protected_stop = float(state["stop"])
+            protected_stop_hit = low <= protected_stop if long else high >= protected_stop
+            if index < 2 and protected_stop_hit:
+                protected_fill = min(op, protected_stop) if long else max(op, protected_stop)
+                self._fill(db, symbol, state, protected_fill, float(state["remaining"]), stamp, persist=False)
+                return True
             if index < 2:
                 break
         if stamp - int(state.get("opened_at", stamp)) >= 72 * 300000:
