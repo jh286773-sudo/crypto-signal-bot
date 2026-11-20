@@ -1,9 +1,9 @@
 {
-  "start_ms": 1700000000000,
+  "start_ms": 1700001000000,
   "base_price": 100,
   "bars": {
-    "5m": 660,
-    "15m": 220,
+    "5m": 1320,
+    "15m": 440,
     "30m": 220
   },
   "expected_signal": "NO_SIGNAL",
