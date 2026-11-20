@@ -198,8 +198,15 @@ class CryptoMonitorService : Service() {
         }
     }
     private fun notificationBuilder(channel:String):Notification.Builder = if(Build.VERSION.SDK_INT>=26) Notification.Builder(this,channel) else Notification.Builder(this)
-    private fun serviceNotification(message:String)=notificationBuilder(serviceChannel).setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("Crypto Scalp • پایش فعال").setContentText(message).setOngoing(true).build()
+    private fun serviceNotification(message:String):Notification {
+        val totalAnalyses=prefs.getInt("analysis_count_total",0)
+        val notificationText="توبیت • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه"
+        return notificationBuilder(serviceChannel).setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setContentTitle("Crypto Scalp • پایش فعال").setContentText(notificationText)
+            .setStyle(Notification.BigTextStyle().bigText(notificationText)).setOngoing(true).build()
+    }
     private fun updateStatus(message:String){
+        // Keep detailed runtime status inside the app only; the phone notification stays compact.
         prefs.edit().putString("latest_monitor_status",message)
             .putLong("latest_monitor_status_at",System.currentTimeMillis()).apply()
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(9100,serviceNotification(message))
