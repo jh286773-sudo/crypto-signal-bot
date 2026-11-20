@@ -48,10 +48,7 @@ class MainActivity : Activity() {
     private val selectedSymbols = linkedSetOf<String>()
     private val channelId = "scalp_signals"
     private val logoCache = mutableMapOf<String, android.graphics.Bitmap>()
-    private lateinit var marketChart: MarketVisualView
-    private lateinit var marketPriceLabel: TextView
-    private lateinit var marketSymbolLabel: TextView
-    private lateinit var marketChangeLabel: TextView
+    private lateinit var marketChartsContainer: LinearLayout
     private var selectedChartTimeframe = "5m"
     private val timeframeButtons = mutableMapOf<String, TextView>()
 
@@ -217,30 +214,12 @@ class MainActivity : Activity() {
             setPadding(dp(10), dp(7), dp(10), dp(7))
         })
         visualCard.addView(visualHeader)
-        val quoteRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(14), 0, dp(5))
+        marketChartsContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
         }
-        val quoteInfo = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        marketSymbolLabel = text("در انتظار داده بازار", 10, muted, true)
-        marketPriceLabel = text("—", 27, Color.WHITE, true).apply {
-            setShadowLayer(dp(7).toFloat(), 0f, dp(2).toFloat(), Color.rgb(165, 119, 31))
-        }
-        quoteInfo.addView(marketSymbolLabel)
-        quoteInfo.addView(marketPriceLabel)
-        quoteRow.addView(quoteInfo, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        marketChangeLabel = text("دریافت داده…", 11, goldLight, true).apply {
-            gravity = Gravity.CENTER
-            background = rounded(Color.rgb(38, 33, 23), gold, 12)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-        }
-        quoteRow.addView(marketChangeLabel)
-        visualCard.addView(quoteRow)
-        marketChart = MarketVisualView(this)
-        visualCard.addView(marketChart, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(205)).apply {
-            topMargin = dp(7); bottomMargin = dp(9)
-        })
+        visualCard.addView(marketChartsContainer, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(12); bottomMargin = dp(8) })
         val timeframeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         timeframeRow.addView(text("بازه زمانی", 10, muted, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         listOf("5m" to "۵ دقیقه", "15m" to "۱۵ دقیقه", "30m" to "۳۰ دقیقه").forEach { (tf, label) ->
@@ -267,7 +246,7 @@ class MainActivity : Activity() {
             timeframeRow.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(5) })
         }
         visualCard.addView(timeframeRow)
-        visualCard.addView(text("کندل‌های تکمیل‌شده از بازار Toobit", 9, muted))
+        visualCard.addView(text("برای هر دارایی انتخاب‌شده، نمودار مستقل کندل‌های تکمیل‌شده Toobit نمایش داده می‌شود.", 9, muted))
         root.addView(visualCard, marginParams(bottom = 15))
 
         val exchangeCard = card().apply {
@@ -535,36 +514,89 @@ class MainActivity : Activity() {
     }
 
     private fun refreshMarketChart() {
-        if (!::marketChart.isInitialized) return
-        val symbol = selectedSymbols.firstOrNull() ?: symbols.firstOrNull()
-        if (symbol == null) {
-            marketSymbolLabel.text = "ابتدا یک دارایی انتخاب کن"
-            marketPriceLabel.text = "—"
-            marketChangeLabel.text = "بدون نماد"
-            marketChart.setCandles(emptyList())
+        if (!::marketChartsContainer.isInitialized) return
+        marketChartsContainer.removeAllViews()
+
+        val chosen = selectedSymbols.toList()
+        if (chosen.isEmpty()) {
+            marketChartsContainer.addView(text(
+                "هنوز ارزی انتخاب نشده است؛ از بخش انتخاب ارزها، دارایی‌های موردنظر را اضافه کن.",
+                12, muted
+            ).apply { gravity = Gravity.CENTER; setPadding(dp(12), dp(24), dp(12), dp(24)) })
             return
         }
+
         val timeframe = selectedChartTimeframe
-        marketSymbolLabel.text = symbol.removeSuffix("-SWAP-USDT") + "  •  TOOBIT / " + timeframe
-        marketChangeLabel.text = "در حال دریافت…"
-        thread(name = "toobit-chart") {
-            try {
-                val candles = ExchangeMarketData.candles("Toobit", symbol, timeframe)
-                val last = candles.last()
-                val livePrice = ExchangeMarketData.lastPrice("Toobit", symbol)
-                val first = candles[max(0, candles.size - 13)]
-                val change = if (first.close == 0.0) 0.0 else (last.close - first.close) / first.close * 100.0
-                runOnUiThread {
-                    marketPriceLabel.text = fmt(livePrice)
-                    marketChangeLabel.text = String.format(java.util.Locale.US, "%+.2f%%", change)
-                    marketChangeLabel.setTextColor(if (change >= 0) Color.rgb(112, 231, 157) else Color.rgb(255, 119, 108))
-                    marketChart.setCandles(candles.takeLast(36))
+        chosen.forEach { symbol ->
+            val base = symbol.removeSuffix("-SWAP-USDT")
+            val chartCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(13), dp(11), dp(13), dp(12))
+                background = android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(Color.rgb(43, 37, 26), Color.rgb(20, 21, 25), Color.rgb(11, 13, 17))
+                ).apply {
+                    cornerRadius = dp(16).toFloat()
+                    setStroke(dp(1), Color.rgb(137, 104, 48))
                 }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    marketChangeLabel.text = "داده در دسترس نیست"
-                    marketPriceLabel.text = "—"
-                    marketChart.setCandles(emptyList())
+                elevation = dp(5).toFloat()
+            }
+
+            val heading = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val coinName = text("$base  •  TOOBIT", 13, goldLight, true)
+            heading.addView(coinName, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val priceLabel = text("—", 15, Color.WHITE, true).apply { gravity = Gravity.END }
+            heading.addView(priceLabel)
+            chartCard.addView(heading)
+
+            val detailRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            detailRow.addView(text("FUTURES / $timeframe", 9, muted, true),
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val changeLabel = text("در حال دریافت…", 10, goldLight, true).apply {
+                gravity = Gravity.END
+            }
+            detailRow.addView(changeLabel)
+            chartCard.addView(detailRow)
+
+            val chartView = MarketVisualView(this)
+            chartCard.addView(chartView, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(185)
+            ).apply { topMargin = dp(5) })
+            marketChartsContainer.addView(chartCard, marginParams(bottom = 10))
+
+            thread(name = "toobit-chart-$base") {
+                try {
+                    val candles = ExchangeMarketData.candles("Toobit", symbol, timeframe)
+                    val last = candles.last()
+                    val livePrice = ExchangeMarketData.lastPrice("Toobit", symbol)
+                    val first = candles[max(0, candles.size - 13)]
+                    val change = if (first.close == 0.0) 0.0
+                        else (last.close - first.close) / first.close * 100.0
+                    runOnUiThread {
+                        // Ignore responses from cards removed by a later watchlist/timeframe change.
+                        if (marketChartsContainer.indexOfChild(chartCard) < 0) return@runOnUiThread
+                        priceLabel.text = fmt(livePrice)
+                        changeLabel.text = String.format(java.util.Locale.US, "%+.2f%%", change)
+                        changeLabel.setTextColor(
+                            if (change >= 0) Color.rgb(112, 231, 157)
+                            else Color.rgb(255, 119, 108)
+                        )
+                        chartView.setCandles(candles.takeLast(36))
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        if (marketChartsContainer.indexOfChild(chartCard) < 0) return@runOnUiThread
+                        priceLabel.text = "—"
+                        changeLabel.text = "دریافت ناموفق"
+                        changeLabel.setTextColor(Color.rgb(255, 119, 108))
+                        chartView.setCandles(emptyList())
+                    }
                 }
             }
         }
