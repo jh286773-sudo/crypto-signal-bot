@@ -7,7 +7,7 @@ import kotlin.math.sqrt
 import kotlin.math.roundToInt
 
 data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L, val takerBuyVolume: Double? = null)
-data class StrategyResult(val signal: String, val score: Int, val entry: Double, val stop: Double, val target1: Double, val target2: Double, val reasons: List<String>, val smc: List<String>, val target3: Double = target2, val riskReward: List<Double> = listOf(1.5, 2.5, 3.5))
+data class StrategyResult(val signal: String, val score: Int, val entry: Double, val reasons: List<String>, val smc: List<String>)
 
 /** AURUM X 0.3.0 read-only engine: selected 10-indicator suite and 5m/15m/30m consensus. */
 object TradingStrategy {
@@ -331,7 +331,7 @@ object TradingStrategy {
         }
         val price=five.lastOrNull()?.close?:0.0
         if(!validSeries(five,300_000L)||!validSeries(fifteen,900_000L)||!validSeries(thirty,1_800_000L)){
-            return StrategyResult("WAIT",0,price,price,price,price,
+            return StrategyResult("WAIT",0,price,
                 listOf("داده یا زمان‌بندی یکی از تایم‌فریم‌های ۵، ۱۵ یا ۳۰ دقیقه نامعتبر/ناپیوسته است؛ سیگنال متوقف شد"),emptyList())
         }
 
@@ -339,7 +339,7 @@ object TradingStrategy {
         // candles are selected only if they had fully closed by that same boundary.
         val decisionTime=five.last().time+300_000L
         if(decisionTime>asOfMs||asOfMs-decisionTime>=300_000L){
-            return StrategyResult("WAIT",0,price,price,price,price,
+            return StrategyResult("WAIT",0,price,
                 listOf("کندل ۵ دقیقه‌ای بسته‌شده تازه و قابل‌همگام‌سازی نیست؛ سیگنال صادر نمی‌شود"),emptyList())
         }
         val expected15=(decisionTime/900_000L)*900_000L-900_000L
@@ -348,24 +348,24 @@ object TradingStrategy {
         val closed30=thirty.filter{it.time+1_800_000L<=decisionTime}
         if(closed15.size<MIN_CANDLES||closed30.size<MIN_CANDLES||
             closed15.last().time!=expected15||closed30.last().time!=expected30){
-            return StrategyResult("WAIT",0,price,price,price,price,
+            return StrategyResult("WAIT",0,price,
                 listOf("آخرین کندل بسته‌شده ۱۵ یا ۳۰ دقیقه با مرز تصمیم ۵ دقیقه همگام نیست؛ هیچ سیگنالی صادر نمی‌شود"),emptyList())
         }
 
         val reports=linkedMapOf("5m" to analyze(five,"5m"),"15m" to analyze(closed15,"15m"),"30m" to analyze(closed30,"30m"))
         val invalid=reports.filterValues{!it.valid}.keys
-        if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,price,price,price,
+        if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,
             listOf("داده معتبر کافی نیست: "+invalid.joinToString("، ")),emptyList())
 
         val combined=reports.entries.sumOf{it.value.score*(tfWeights[it.key]?:0.0)}
         val volatilityBlocked=reports.filterValues{it.highVolatility}.keys
-        if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+        if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,
             listOf("فیلتر نوسان غیرعادی فعال شد؛ سیگنال متوقف شد: "+volatilityBlocked.joinToString("، ")),emptyList())
         // ADX is contextual: block only when BOTH higher timeframes independently
         // show a ranging market. The 5m entry trigger and transition regimes are not hard gates.
         val higherTimeframesBothRanging =
             reports["15m"]!!.marketRegime=="ranging" && reports["30m"]!!.marketRegime=="ranging"
-        if(higherTimeframesBothRanging)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+        if(higherTimeframesBothRanging)return StrategyResult("WAIT",combined.roundToInt(),price,
             listOf("قدرت روند در هر دو تایم‌فریم بالاتر پایین است؛ فعلاً ورودی صادر نمی‌شود"),emptyList())
 
         // Each timeframe derives its own bias independently.
@@ -386,30 +386,21 @@ object TradingStrategy {
         val expectancy = if(rawSignal=="LONG"||rawSignal=="SHORT") ExpectancyPolicy.evaluate(expectancyStats?.get(rawSignal).orEmpty()) else null
         val signal = if(enforceExpectancy && rawSignal!="WAIT" && expectancy?.allowed!=true) "WAIT" else rawSignal
         val a=reports["5m"]?.atr?:0.0
-        if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+        if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,
             listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
         val entryDistance=sm5?.entryDistanceAtr
         if(signal!="WAIT"&&(entryDistance==null||entryDistance>.50)){
-            return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+            return StrategyResult("WAIT",combined.roundToInt(),price,
                 listOf("فاصله Retest نامشخص یا بیش از ۰٫۵ ATR است؛ ورود دیرهنگام رد شد"),reports.values.flatMap{it.smc}.distinct())
         }
         if(signal!="WAIT"&&!entryNotExtended(price,trigger5.ema21,a)){
-            return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+            return StrategyResult("WAIT",combined.roundToInt(),price,
                 listOf("فاصله ورود از EMA21 بیش از ۰٫۸ ATR یا داده EMA/ATR نامعتبر است؛ ورود تعقیبی رد شد"),reports.values.flatMap{it.smc}.distinct())
         }
         if(signal!="WAIT"&&sm5?.falseBreakout==true){
-            return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+            return StrategyResult("WAIT",combined.roundToInt(),price,
                 listOf("شکست جعلی شناسایی شد؛ ساختار فعلی نامعتبر است و باید منتظر ساختار تازه ماند"),reports.values.flatMap{it.smc}.distinct())
         }
-        val atrRisk=max(a*1.5,price*.001)
-        val structuralStop=if(signal=="LONG")sm5?.previousSwingLow?.minus(a*.15) else sm5?.previousSwingHigh?.plus(a*.15)
-        val candidate=structuralStop?:if(signal=="LONG")price-atrRisk else price+atrRisk
-        val structuralRisk=abs(price-candidate)
-        val risk=if(candidate>0&&(if(signal=="LONG")candidate<price else candidate>price)&&structuralRisk<=3.0*a&&structuralRisk>=a*.25)structuralRisk else atrRisk
-        val stop=if(signal=="LONG")price-risk else if(signal=="SHORT")price+risk else price
-        val tp1=if(signal=="LONG")price+1.5*risk else if(signal=="SHORT")price-1.5*risk else price
-        val tp2=if(signal=="LONG")price+2.5*risk else if(signal=="SHORT")price-2.5*risk else price
-        val tp3=if(signal=="LONG")price+3.5*risk else if(signal=="SHORT")price-3.5*risk else price
         val reasons=mutableListOf("موتور تحلیل نسخه ۰.۳.۰: هشت خانواده شاخص",
             "امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
         for((tf,rep) in reports){
@@ -425,6 +416,6 @@ object TradingStrategy {
             reasons.add("ورود متوقف شد: امید ریاضی خالص این جهت هنوز با حداقل ۳۰ معامله بسته‌شده اثبات نشده است")
         }
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
-        return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc,tp3,listOf(1.5,2.5,3.5))
+        return StrategyResult(signal,combined.roundToInt(),price,reasons,smc)
     }
 }

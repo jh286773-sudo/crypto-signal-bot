@@ -17,57 +17,53 @@ class ShadowLedgerTests(unittest.TestCase):
     def candle(ts, open_, high, low, close):
         return {"timestamp": ts, "open": open_, "high": high, "low": low, "close": close, "volume": 1}
 
-    def candidate(self, side="LONG"):
-        if side == "LONG":
-            return {"signal": "LONG", "entry": 100, "stop_loss": 90, "take_profits": [115, 125, 135]}
-        return {"signal": "SHORT", "entry": 100, "stop_loss": 110, "take_profits": [85, 75, 65]}
+    @staticmethod
+    def candidate(side="LONG", entry=100):
+        return {"signal": side, "entry": entry}
 
-    def test_shadow_trade_warms_up_and_records_net_r_after_tp1_then_breakeven(self):
-        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 105, 99, 102), self.candidate())
+    def open_state(self, symbol="BTC-SWAP-USDT"):
+        with self.ledger._db() as db:
+            row = db.execute("SELECT state FROM shadow_open WHERE symbol=?", (symbol,)).fetchone()
+        return None if row is None else __import__("json").loads(row[0])
+
+    def test_long_is_held_through_price_moves_and_wait(self):
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 130, 70, 110), self.candidate("LONG"))
+        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 110, 150, 60, 90), {"signal": "NO_SIGNAL"})
+        self.ledger.process("BTC-SWAP-USDT", self.candle(900000, 90, 140, 50, 120), {"signal": "WAIT"})
+        self.assertEqual(self.open_state()["side"], "LONG")
         self.assertEqual(self.ledger.stats("BTC-SWAP-USDT")["LONG"], [])
-        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 102, 116, 101, 114), {"signal": "NO_SIGNAL"})
-        self.ledger.process("BTC-SWAP-USDT", self.candle(900000, 102, 110, 99, 100), {"signal": "NO_SIGNAL"})
-        values = self.ledger.stats("BTC-SWAP-USDT")["LONG"]
-        self.assertEqual(len(values), 1)
-        self.assertGreater(values[0], 0.0)
-        self.assertEqual(self.ledger.stats("ETH-SWAP-USDT")["LONG"], [])
 
-    def test_tp1_and_new_breakeven_stop_in_same_candle_closes_remainder_conservatively(self):
-        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 105, 99, 102), self.candidate())
-        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 116, 99, 110), {"signal": "NO_SIGNAL"})
-        values = self.ledger.stats("BTC-SWAP-USDT")["LONG"]
-        self.assertEqual(len(values), 1)
-        # One third exits at +1.5R; the remaining two thirds exit at breakeven.
-        self.assertGreater(values[0], 0.45)
-        self.assertLess(values[0], 0.50)
-    def test_ambiguous_stop_and_target_candle_resolves_to_stop(self):
-        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 105, 99, 100), self.candidate())
-        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 116, 89, 100), {"signal": "NO_SIGNAL"})
-        values = self.ledger.stats("BTC-SWAP-USDT")["LONG"]
-        self.assertEqual(len(values), 1)
-        self.assertLess(values[0], 0.0)
-
-    def test_long_and_short_expectancy_are_separate(self):
-        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("LONG"))
-        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 116, 101, 114), {"signal": "NO_SIGNAL"})
-        self.ledger.process("BTC-SWAP-USDT", self.candle(900000, 100, 110, 99, 100), {"signal": "NO_SIGNAL"})
-        self.ledger.process("BTC-SWAP-USDT", self.candle(1200000, 100, 101, 99, 100), self.candidate("SHORT"))
-        self.ledger.process("BTC-SWAP-USDT", self.candle(1500000, 100, 101, 84, 86), {"signal": "NO_SIGNAL"})
-        self.ledger.process("BTC-SWAP-USDT", self.candle(1800000, 100, 101, 90, 100), {"signal": "NO_SIGNAL"})
+    def test_long_reverses_to_short_on_opposite_signal(self):
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("LONG", 100))
+        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 105, 110, 104, 108), self.candidate("SHORT", 108))
+        state = self.open_state()
+        self.assertEqual(state["side"], "SHORT")
+        self.assertEqual(state["entry"], 108)
         self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["LONG"]), 1)
+        self.assertGreater(self.ledger.stats("BTC-SWAP-USDT")["LONG"][0], 0)
+
+    def test_short_reverses_to_long_on_opposite_signal(self):
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("SHORT", 100))
+        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 95, 96, 90, 92), self.candidate("LONG", 92))
+        state = self.open_state()
+        self.assertEqual(state["side"], "LONG")
+        self.assertEqual(state["entry"], 92)
         self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["SHORT"]), 1)
+        self.assertGreater(self.ledger.stats("BTC-SWAP-USDT")["SHORT"][0], 0)
 
-    def test_shadow_trade_closes_after_72_five_minute_bars(self):
-        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate())
-        self.ledger.process("BTC-SWAP-USDT", self.candle(300000 + 72 * 300000, 100, 101, 99, 100), {"signal": "NO_SIGNAL"})
-        self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["LONG"]), 1)
+    def test_same_side_signal_does_not_duplicate_or_reset_position(self):
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("LONG", 100))
+        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 110, 111, 109, 110), self.candidate("LONG", 110))
+        self.assertEqual(self.open_state()["entry"], 100)
+        with self.ledger._db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM shadow_open").fetchone()[0], 1)
+
     def test_duplicate_candle_does_not_duplicate_entry_or_exit(self):
         bar = self.candle(300000, 100, 101, 99, 100)
         self.ledger.process("BTC-SWAP-USDT", bar, self.candidate())
         self.ledger.process("BTC-SWAP-USDT", bar, self.candidate())
         with self.ledger._db() as db:
-            count = db.execute("SELECT COUNT(*) FROM shadow_open").fetchone()[0]
-        self.assertEqual(count, 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM shadow_open").fetchone()[0], 1)
 
 
 if __name__ == "__main__":

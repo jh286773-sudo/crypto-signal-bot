@@ -469,29 +469,6 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         return {"valid":False,"reason":f"Invalid candle data: {exc}"}
 
 
-def _levels(side, price, volatility, structure=None):
-    """ATR + confirmed swing invalidation; targets use explicit reward/risk multiples."""
-    atr_risk=max(volatility*1.5,price*0.001)
-    structure=structure or {}
-    if side=="LONG":
-        swing=structure.get("previous_swing_low")
-        candidate=float(swing)-0.15*volatility if swing is not None else price-atr_risk
-        structural_risk=price-candidate
-        stop=candidate if 0 < candidate < price and 0.25*volatility <= structural_risk <= 3.0*volatility else price-atr_risk
-        risk=price-stop
-        return {"entry":price,"stop_loss":stop,
-                "take_profits":[price+1.5*risk,price+2.5*risk,price+3.5*risk],
-                "risk_per_unit":risk,"risk_reward":[1.5,2.5,3.5]}
-    swing=structure.get("previous_swing_high")
-    candidate=float(swing)+0.15*volatility if swing is not None else price+atr_risk
-    structural_risk=candidate-price
-    stop=candidate if candidate > price and 0.25*volatility <= structural_risk <= 3.0*volatility else price+atr_risk
-    risk=stop-price
-    return {"entry":price,"stop_loss":stop,
-            "take_profits":[price-1.5*risk,price-2.5*risk,price-3.5*risk],
-            "risk_per_unit":risk,"risk_reward":[1.5,2.5,3.5]}
-
-
 def _family_bias(family_scores: Dict[str, float]) -> str:
     """Choose direction from family votes; score magnitude never gates the bias."""
     bullish = sum(1 for value in family_scores.values() if float(value) > 0.0)
@@ -650,7 +627,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                     "entry_stage":"WAIT",
                     "reason":"Entry is overextended from EMA21 (>0.80 ATR); skip chasing the move.",
                     "rejection_reasons":["ema21_entry_distance_over_0_80_atr"],"trade_enabled":False}
-        result.update(_levels(signal,p,a,smc))
+        result["entry"] = p
         result["entry_stage"] = "ENTRY"
     else:
         smc = reports["5m"]["indicators"].get("smc", {})

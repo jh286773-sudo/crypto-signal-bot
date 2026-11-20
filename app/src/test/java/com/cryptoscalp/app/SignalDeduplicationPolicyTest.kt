@@ -27,5 +27,15 @@ class SignalDeduplicationPolicyTest {
     @Test fun waitNeverCreatesAnEntryOrReversal() {
         assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "WAIT", null, false))
         assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("LONG", "WAIT", "LONG", false))
+        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("SHORT", "WAIT", "SHORT", false))
+    }
+
+    @Test fun reversesSymmetricallyFromShortToLong() {
+        assertEquals(SignalDecision.REVERSE, SignalDeduplicationPolicy.decide("SHORT", "LONG", "SHORT", false))
+    }
+
+    @Test fun sameSideSignalsNeverDuplicateOpenPositions() {
+        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("LONG", "LONG", "LONG", false))
+        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("SHORT", "SHORT", "SHORT", false))
     }
 }
