@@ -201,6 +201,30 @@ class ToobitAPI:
             # historical candles remain. Continue from the last real timestamp.
             time.sleep(0.05)
         ordered_times = sorted(rows_by_time)
+        expected_first = (start_ms // step) * step
+        expected_last = ((end_ms - 1) // step) * step
+        # A partial first page can begin later than the requested start. Retry
+        # the missing prefix as a narrower exchange query before accepting it.
+        if ordered_times and ordered_times[0] > expected_first:
+            prefix = self._get("/quote/v1/klines", {
+                "symbol": symbol, "interval": interval, "startTime": expected_first,
+                "endTime": ordered_times[0], "limit": page_size
+            })
+            for row in prefix if isinstance(prefix, list) else []:
+                if len(row) < 6:
+                    continue
+                opened = int(row[0])
+                if expected_first <= opened < ordered_times[0]:
+                    item = {
+                        "timestamp": opened, "open_time": opened,
+                        "open": float(row[1]), "high": float(row[2]),
+                        "low": float(row[3]), "close": float(row[4]),
+                        "volume": float(row[5])
+                    }
+                    if len(row) > 9:
+                        item["taker_buy_volume"] = float(row[9])
+                    rows_by_time[opened] = item
+            ordered_times = sorted(rows_by_time)
         missing_opens = []
         for left, right in zip(ordered_times, ordered_times[1:]):
             missing_opens.extend(range(left + step, right, step))
@@ -220,6 +244,10 @@ class ToobitAPI:
                     break
                 time.sleep(0.15)
         rows = [rows_by_time[key] for key in sorted(rows_by_time)]
+        if rows and int(rows[0]["timestamp"]) != expected_first:
+            raise RuntimeError(f"Toobit omitted leading real {interval} candles starting at {expected_first}; refusing to synthesize history")
+        if rows and int(rows[-1]["timestamp"]) != expected_last:
+            raise RuntimeError(f"Toobit omitted trailing real {interval} candles ending at {expected_last}; refusing to synthesize history")
         for left, right in zip(rows, rows[1:]):
             if int(right["timestamp"]) - int(left["timestamp"]) != step:
                 missing = int(left["timestamp"]) + step
