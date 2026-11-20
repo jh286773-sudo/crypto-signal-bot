@@ -37,6 +37,8 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
     private lateinit var coinPickerButton: Button
+    private lateinit var timeframePickerButton: Button
+    private val selectedTimeframes = linkedSetOf("5m", "15m", "30m")
     private val selectedExchanges = linkedSetOf("Toobit")
     private var coinChoices: ListView? = null
     private var coinAdapter: CoinListAdapter? = null
@@ -66,6 +68,12 @@ class MainActivity : Activity() {
             .putStringSet("selected_exchanges", setOf("Toobit")).apply()
         val saved = prefs.getStringSet("selected_symbols", null)
         if (saved != null) { selectedSymbols.clear(); selectedSymbols.addAll(saved) }
+        val savedTimeframes = prefs.getStringSet("selected_timeframes", null)
+        selectedTimeframes.clear()
+        selectedTimeframes.addAll((savedTimeframes ?: setOf("5m", "15m", "30m"))
+            .filter { it in ExchangeMarketData.supportedTimeframes })
+        if (selectedTimeframes.isEmpty()) selectedTimeframes.addAll(listOf("5m", "15m", "30m"))
+        renderSelectedTimeframes()
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 71)
         }
@@ -280,6 +288,21 @@ class MainActivity : Activity() {
         selectCard.addView(coinPickerButton, marginParams(top = 10))
         renderSelectedChoices()
         coinPickerButton.setOnClickListener { showCoinPicker() }
+        timeframePickerButton = Button(this).apply {
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(30, 22, 8))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.WHITE, goldLight, gold, Color.rgb(155, 105, 24))
+            ).apply { cornerRadius = dp(14).toFloat(); setStroke(dp(1), Color.rgb(255, 231, 157)) }
+            elevation = dp(8).toFloat()
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            minHeight = dp(48)
+        }
+        selectCard.addView(timeframePickerButton, marginParams(top = 8))
+        renderSelectedTimeframes()
+        timeframePickerButton.setOnClickListener { showTimeframePicker() }
         root.addView(selectCard, marginParams(bottom = 15))
 
         val monitorCard = card().apply {
@@ -291,7 +314,7 @@ class MainActivity : Activity() {
         }
         monitorCard.addView(text("AUTOMATED MONITOR", 9, goldLight, true))
         monitorCard.addView(text("موتور پایش خودکار", 17, Color.WHITE, true))
-        monitorCard.addView(text("پایش پس‌زمینه • تایم‌فریم‌های ۵، ۱۵ و ۳۰ دقیقه • هشدار لانگ و شورت", 10, muted))
+        monitorCard.addView(text("پایش پس‌زمینه • تایم‌فریم‌های انتخابی • هشدار لانگ و شورت", 10, muted))
         root.addView(monitorCard, marginParams(bottom = 14))
 
         val disclaimer = text("فقط تحلیل و هشدار؛ هیچ سفارشی ثبت نمی‌شود. سطوح قیمتی تخمینی‌اند و سود تضمین‌شده نیست.", 9, muted)
@@ -892,6 +915,44 @@ class MainActivity : Activity() {
         ).apply { cornerRadius = dp(12).toFloat(); setStroke(dp(1), gold) }
         elevation = dp(7).toFloat()
         setPadding(dp(2), dp(2), dp(2), dp(2))
+    }
+
+    private fun renderSelectedTimeframes() {
+        if (!::timeframePickerButton.isInitialized) return
+        val labels = mapOf("1m" to "۱د", "3m" to "۳د", "5m" to "۵د", "15m" to "۱۵د",
+            "30m" to "۳۰د", "1h" to "۱س", "4h" to "۴س")
+        val ordered = ExchangeMarketData.supportedTimeframes.filter { it in selectedTimeframes }
+        timeframePickerButton.text = "انتخاب تایم‌فریم‌ها • " + ordered.joinToString("، ") { labels[it] ?: it }
+    }
+
+    private fun showTimeframePicker() {
+        val options = arrayOf("۱ دقیقه", "۳ دقیقه", "۵ دقیقه", "۱۵ دقیقه", "۳۰ دقیقه", "۱ ساعت", "۴ ساعت")
+        val values = ExchangeMarketData.supportedTimeframes
+        val pending = selectedTimeframes.toMutableSet()
+        val checked = BooleanArray(values.size) { values[it] in pending }
+        AlertDialog.Builder(this)
+            .setTitle("انتخاب تایم‌فریم‌های تحلیل")
+            .setMultiChoiceItems(options, checked) { _, which, isChecked ->
+                if (isChecked) pending.add(values[which]) else pending.remove(values[which])
+            }
+            .setNegativeButton("انصراف", null)
+            .setPositiveButton("ذخیره انتخاب‌ها") { _, _ ->
+                if (pending.isEmpty()) {
+                    status.text = "حداقل یک تایم‌فریم باید انتخاب شود؛ تنظیم قبلی حفظ شد."
+                    return@setPositiveButton
+                }
+                selectedTimeframes.clear()
+                selectedTimeframes.addAll(values.filter { it in pending })
+                getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit()
+                    .putStringSet("selected_timeframes", selectedTimeframes.toSet()).apply()
+                renderSelectedTimeframes()
+                status.text = "تایم‌فریم‌های تحلیل به‌روزرسانی شد."
+                val intent = Intent(this, CryptoMonitorService::class.java).apply {
+                    action = CryptoMonitorService.ACTION_START
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+            }
+            .show()
     }
 
     private fun showCoinPicker() {
