@@ -606,16 +606,31 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
             "combined_score":round(combined,2),"timeframes":reports,
             "timeframe_weights":weights,"trade_enabled":False,
             "note":"Read-only analysis; confidence is a model score, not a probability or guarantee."}
+    rejection_reasons = []
+    if signal == "NO_SIGNAL":
+        if longs != 3 and shorts != 3:
+            rejection_reasons.append("three_timeframe_directional_alignment")
+        if -34 < combined < 34:
+            rejection_reasons.append("combined_score_below_34")
+        if not higher_long and not higher_short:
+            rejection_reasons.append("15m_30m_score_or_directional_quality")
+        if not trigger_long and not trigger_short:
+            rejection_reasons.append("5m_trigger_score_or_directional_quality")
+        if not rejection_reasons:
+            rejection_reasons.append("directional_candidate_not_formed")
+    result["rejection_reasons"] = rejection_reasons
     blocked=[tf for tf in REQUIRED_TFS if reports[tf].get("high_volatility")]
     if blocked:
         result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                        "reason":"Abnormal volatility filter blocked: "+", ".join(blocked),
+                       "rejection_reasons":["high_volatility:"+tf for tf in blocked],
                        "high_volatility_block":blocked})
         return result
     non_trending = [tf for tf in REQUIRED_TFS if (reports[tf].get("market_regime") or {}).get("state") != "trending"]
     if non_trending:
         result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                        "reason":"Market regime is ranging, transitional or unconfirmed: "+", ".join(non_trending),
+                       "rejection_reasons":["adx_regime_not_trending:"+tf for tf in non_trending],
                        "blocked_market_regime":non_trending})
         return result
     if signal in ("LONG","SHORT"):
@@ -627,7 +642,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
         if not allowed:
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT","reason":"Closed-trade net expectancy is not statistically established for this symbol and direction.",
-                    "trade_enabled":False}
+                    "rejection_reasons":["net_expectancy_gate"],"trade_enabled":False}
         a=reports["5m"]["indicators"]["atr"]; p=reports["5m"]["close"]
         if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}
         smc = reports["5m"]["indicators"].get("smc", {})
@@ -647,23 +662,23 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT",
                     "reason":"Failed breakout detected; invalidate the setup and wait for a fresh structure.",
-                    "trade_enabled":False}
+                    "rejection_reasons":["smc_false_breakout"],"trade_enabled":False}
         if not smc.get(retest_key):
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "reason":"Setup is not entry-ready: wait for confirmed retest; do not chase the breakout.",
-                    "trade_enabled":False}
+                    "rejection_reasons":["smc_retest_not_confirmed"],"trade_enabled":False}
         distance = smc.get("entry_distance_atr")
         if distance is None or distance > 0.50:
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT",
                     "reason":"Retest is missing or overextended (>0.50 ATR); skip late entry.",
-                    "trade_enabled":False}
+                    "rejection_reasons":["smc_retest_distance_over_0_50_atr"],"trade_enabled":False}
         ema21 = reports["5m"].get("ema21")
         if not _entry_not_chasing(p, ema21, a):
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT",
                     "reason":"Entry is overextended from EMA21 (>0.80 ATR); skip chasing the move.",
-                    "trade_enabled":False}
+                    "rejection_reasons":["ema21_entry_distance_over_0_80_atr"],"trade_enabled":False}
         result.update(_levels(signal,p,a,smc))
         result["entry_stage"] = "ENTRY"
     else:
