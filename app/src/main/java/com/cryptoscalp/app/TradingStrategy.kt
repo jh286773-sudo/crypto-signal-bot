@@ -35,13 +35,20 @@ object TradingStrategy {
         for (x in d.drop(n)) { g=(g*(n-1)+max(x,0.0))/n; l=(l*(n-1)+max(-x,0.0))/n }
         return if (l==0.0) 100.0 else 100.0-100.0/(1.0+g/l)
     }
+    private fun emaSeries(v:List<Double>,n:Int):List<Double?> {
+        val out=MutableList<Double?>(v.size){null}
+        if(v.size<n)return out
+        val alpha=2.0/(n+1.0)
+        var value=v.take(n).average()
+        out[n-1]=value
+        for(i in n until v.size){value=alpha*v[i]+(1.0-alpha)*value;out[i]=value}
+        return out
+    }
     private fun macd(v: List<Double>): Triple<Double?,Double?,Double?> {
         if (v.size<35) return Triple(null,null,null)
-        val vals=(26..v.size).mapNotNull { end ->
-            val f=ema(v.take(end),12); val s=ema(v.take(end),26)
-            if (f==null||s==null) null else f-s
-        }
-        val line=(ema(v,12)?:return Triple(null,null,null))-(ema(v,26)?:return Triple(null,null,null))
+        val fast=emaSeries(v,12);val slow=emaSeries(v,26)
+        val vals=(25 until v.size).map{(fast[it]?:0.0)-(slow[it]?:0.0)}
+        val line=vals.last()
         val signal=ema(vals,9)
         return Triple(line,signal,signal?.let{line-it})
     }
@@ -59,7 +66,15 @@ object TradingStrategy {
     }
     private fun stochRsi(v:List<Double>,n:Int=14):Double? {
         if(v.size<2*n+1)return null
-        val rs=(n+1..v.size).mapNotNull{rsi(v.take(it),n)}
+        val deltas=(1 until v.size).map{v[it]-v[it-1]}
+        var avgGain=deltas.take(n).sumOf{max(it,0.0)}/n
+        var avgLoss=deltas.take(n).sumOf{max(-it,0.0)}/n
+        val rs=mutableListOf(if(avgLoss==0.0)100.0 else 100.0-100.0/(1.0+avgGain/avgLoss))
+        for(delta in deltas.drop(n)){
+            avgGain=(avgGain*(n-1)+max(delta,0.0))/n
+            avgLoss=(avgLoss*(n-1)+max(-delta,0.0))/n
+            rs.add(if(avgLoss==0.0)100.0 else 100.0-100.0/(1.0+avgGain/avgLoss))
+        }
         if(rs.size<n)return null
         val w=rs.takeLast(n);val lo=w.minOrNull()!!;val hi=w.maxOrNull()!!
         return if(hi==lo)0.0 else 100*(rs.last()-lo)/(hi-lo)
