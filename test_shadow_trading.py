@@ -33,14 +33,16 @@ class ShadowLedgerTests(unittest.TestCase):
         self.assertEqual(self.ledger.stats("ETH-SWAP-USDT")["LONG"], [])
 
     def test_ambiguous_stop_and_target_candle_resolves_to_stop(self):
-        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 116, 89, 100), self.candidate())
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 105, 99, 100), self.candidate())
+        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 116, 89, 100), {"signal": "NO_SIGNAL"})
         values = self.ledger.stats("BTC-SWAP-USDT")["LONG"]
         self.assertEqual(len(values), 1)
         self.assertLess(values[0], 0.0)
 
     def test_long_and_short_expectancy_are_separate(self):
         self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("LONG"))
-        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 111, 99, 110), {"signal": "NO_SIGNAL"})
+        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 116, 101, 114), {"signal": "NO_SIGNAL"})
+        self.ledger.process("BTC-SWAP-USDT", self.candle(900000, 100, 110, 99, 100), {"signal": "NO_SIGNAL"})
         self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["LONG"]), 1)
         self.assertEqual(self.ledger.stats("BTC-SWAP-USDT")["SHORT"], [])
 
