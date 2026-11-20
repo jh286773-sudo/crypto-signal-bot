@@ -20,6 +20,7 @@ class ToobitClosedCandleTests(unittest.TestCase):
         self.assertEqual(get.call_args_list[0].kwargs["as_of_ms"], 1_800_000)
         self.assertEqual(get.call_args_list[1].kwargs["as_of_ms"], 1_800_000)
         self.assertEqual(get.call_args_list[2].kwargs["as_of_ms"], 1_800_000)
+        self.assertEqual([call.args[2] for call in get.call_args_list], [260, 260, 260])
         self.assertEqual(result["15m"], fifteen[:1])
         self.assertEqual(result["30m"], thirty[:1])
 
