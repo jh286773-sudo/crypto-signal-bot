@@ -89,7 +89,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         if min(len(histories[tf]) for tf in REQUIRED_TFS) < 60:
             i += 1
             continue
-        signal = analyze_market(histories)
+        # Match the live Android strategy input horizon and bound indicator cost.
+        signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()})
         side = signal.get("signal")
         if side not in ("LONG", "SHORT"):
             i += 1
@@ -143,6 +144,11 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         slippage += abs(entry_fill-entry) * quantity
         for j in range(entry_index, exit_index+1):
             bar = five[j][1]
+            # A funding settlement can share a 5m candle with an intrabar exit.
+            # OHLC cannot establish event order, so record exposure at bar open;
+            # this conservatively avoids silently omitting a possible settlement.
+            if remaining > quantity*1e-10:
+                funding_exposure.append((j, remaining))
             o, h, low = float(bar["open"]), float(bar["high"]), float(bar["low"])
             stop_hit = low <= stop if side == "LONG" else h >= stop
             if stop_hit:
@@ -176,13 +182,29 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                 remaining -= close_qty
                 hit_targets.append(k)
                 if k == 0:
+                    # Once TP1 is filled, the stop moves to entry. OHLC bars do
+                    # not reveal whether the post-TP1 adverse move happened before
+                    # TP2/TP3, so if the same bar also crosses breakeven, close
+                    # the remainder there instead of optimistically filling later
+                    # targets. This is deliberately conservative.
                     stop = entry
+                    breakeven_hit = low <= stop if side == "LONG" else h >= stop
+                    if breakeven_hit and remaining > quantity*1e-10:
+                        raw_stop = min(o, stop) if side == "LONG" else max(o, stop)
+                        stop_fill = raw_stop * (
+                            1 - slippage_bps_per_side/10000 if side == "LONG"
+                            else 1 + slippage_bps_per_side/10000
+                        )
+                        realized += (stop_fill-entry_fill)*remaining*(1 if side == "LONG" else -1)
+                        fees += abs(stop_fill*remaining)*fee_bps_close/10000
+                        slippage += abs(stop_fill-raw_stop)*remaining
+                        remaining = 0.0
+                        exit_index, exit_price, exit_reason = j, stop_fill, "stop_after_tp1"
+                        break
                 if remaining <= quantity*1e-10:
                     remaining = 0.0
                     exit_index, exit_price, exit_reason = j, fill, "all_targets"
                     break
-            if remaining > quantity*1e-10:
-                funding_exposure.append((j, remaining))
             if remaining <= quantity*1e-10:
                 break
         if remaining > quantity*1e-10:

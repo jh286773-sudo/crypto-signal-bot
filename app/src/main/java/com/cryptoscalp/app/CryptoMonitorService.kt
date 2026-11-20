@@ -83,7 +83,7 @@ class CryptoMonitorService : Service() {
                     // All three datasets contain closed candles only; 15m/30m may be unchanged between scans.
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m")
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
-                    val r=TradingStrategy.evaluate(five,fifteen,thirty)
+                    val r=TradingStrategy.evaluate(five,fifteen,thirty,ExchangeMarketData.exchangeTimeMs())
                     val open=prefs.getString("open_setup_$symbol",null)
                     val previous=prefs.getString("last_signal_$symbol",null)
                     if(open==null && isDirectionalSignal(r.signal) && previous!=r.signal) {
@@ -129,9 +129,14 @@ class CryptoMonitorService : Service() {
         if(stop){closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(price)}");return}
         val tp1=if(long)price>=s.optDouble("tp1") else price<=s.optDouble("tp1")
         if(tp1&&!s.optBoolean("tp1Done")){
-            s.put("tp1Done",true);prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
-            notifyExit(symbol,"مرحله اول حد سود لمس شد",
-                "قیمت فعلی: ${fmt(price)} • هدف دوم: ${fmt(s.optDouble("tp2"))} • یادآوری خروج پله‌ای؛ سفارش خودکار اجرا نمی‌شود")
+            // After TP1, protect the remaining setup at breakeven. This is an
+            // app-side alert level only; no stop/partial-close order is sent.
+            s.put("tp1Done",true)
+            val entryPrice=s.optDouble("entry",0.0)
+            if(entryPrice>0.0)s.put("stop",entryPrice)
+            prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
+            notifyExit(symbol,"مرحله اول حد سود لمس شد • حد ضرر به نقطه ورود منتقل شد",
+                "قیمت فعلی: ${fmt(price)} • حد ضرر جدید: ${fmt(s.optDouble("stop"))} • هدف دوم: ${fmt(s.optDouble("tp2"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
         }
         val tp2=if(long)price>=s.optDouble("tp2") else price<=s.optDouble("tp2")
         if(tp2&&!s.optBoolean("tp2Done")){

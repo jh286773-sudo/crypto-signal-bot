@@ -6,7 +6,7 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.math.roundToInt
 
-data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L)
+data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L, val takerBuyVolume: Double? = null)
 data class StrategyResult(val signal: String, val score: Int, val entry: Double, val stop: Double, val target1: Double, val target2: Double, val reasons: List<String>, val smc: List<String>, val target3: Double = target2, val riskReward: List<Double> = listOf(1.5, 2.5, 3.5))
 
 /** AURUM X 0.2.9 read-only engine: eight indicator families and 5m/15m/30m consensus. */
@@ -35,13 +35,20 @@ object TradingStrategy {
         for (x in d.drop(n)) { g=(g*(n-1)+max(x,0.0))/n; l=(l*(n-1)+max(-x,0.0))/n }
         return if (l==0.0) 100.0 else 100.0-100.0/(1.0+g/l)
     }
+    private fun emaSeries(v:List<Double>,n:Int):List<Double?> {
+        val out=MutableList<Double?>(v.size){null}
+        if(v.size<n)return out
+        val alpha=2.0/(n+1.0)
+        var value=v.take(n).average()
+        out[n-1]=value
+        for(i in n until v.size){value=alpha*v[i]+(1.0-alpha)*value;out[i]=value}
+        return out
+    }
     private fun macd(v: List<Double>): Triple<Double?,Double?,Double?> {
         if (v.size<35) return Triple(null,null,null)
-        val vals=(26..v.size).mapNotNull { end ->
-            val f=ema(v.take(end),12); val s=ema(v.take(end),26)
-            if (f==null||s==null) null else f-s
-        }
-        val line=(ema(v,12)?:return Triple(null,null,null))-(ema(v,26)?:return Triple(null,null,null))
+        val fast=emaSeries(v,12);val slow=emaSeries(v,26)
+        val vals=(25 until v.size).map{(fast[it]?:0.0)-(slow[it]?:0.0)}
+        val line=vals.last()
         val signal=ema(vals,9)
         return Triple(line,signal,signal?.let{line-it})
     }
@@ -59,7 +66,15 @@ object TradingStrategy {
     }
     private fun stochRsi(v:List<Double>,n:Int=14):Double? {
         if(v.size<2*n+1)return null
-        val rs=(n+1..v.size).mapNotNull{rsi(v.take(it),n)}
+        val deltas=(1 until v.size).map{v[it]-v[it-1]}
+        var avgGain=deltas.take(n).sumOf{max(it,0.0)}/n
+        var avgLoss=deltas.take(n).sumOf{max(-it,0.0)}/n
+        val rs=mutableListOf(if(avgLoss==0.0)100.0 else 100.0-100.0/(1.0+avgGain/avgLoss))
+        for(delta in deltas.drop(n)){
+            avgGain=(avgGain*(n-1)+max(delta,0.0))/n
+            avgLoss=(avgLoss*(n-1)+max(-delta,0.0))/n
+            rs.add(if(avgLoss==0.0)100.0 else 100.0-100.0/(1.0+avgGain/avgLoss))
+        }
         if(rs.size<n)return null
         val w=rs.takeLast(n);val lo=w.minOrNull()!!;val hi=w.maxOrNull()!!
         return if(hi==lo)0.0 else 100*(rs.last()-lo)/(hi-lo)
@@ -235,8 +250,15 @@ object TradingStrategy {
 
     private fun analyze(c:List<MarketCandle>,timeframe:String):Report {
         if(c.size<MIN_CANDLES)return Report(false,"حداقل ۶۰ کندل لازم است")
-        if(c.takeLast(MIN_CANDLES).any{!it.open.isFinite()||!it.high.isFinite()||!it.low.isFinite()||!it.close.isFinite()||!it.volume.isFinite()||it.open<=0||it.high<=0||it.low<=0||it.close<=0||it.high<it.low})
-            return Report(false,"داده کندل نامعتبر است")
+        // All history feeds recursive indicators, so validate every candle,
+        // not only the visible tail; an old NaN can otherwise poison EMA/ATR.
+        if(c.any{
+            !it.open.isFinite()||!it.high.isFinite()||!it.low.isFinite()||
+            !it.close.isFinite()||!it.volume.isFinite()||
+            it.open<=0||it.high<=0||it.low<=0||it.close<=0||it.volume<0||
+            it.high<max(it.open,it.close)||it.low>min(it.open,it.close)||it.high<it.low||
+            (it.takerBuyVolume!=null&&(!it.takerBuyVolume.isFinite()||it.takerBuyVolume<0.0||it.takerBuyVolume>it.volume*1.001))
+        }) return Report(false,"داده کندل نامعتبر است")
         val v=c.map{it.close};val price=v.last()
         val e9=ema(v,9)!!;val e21=ema(v,21)!!;val e50=ema(v,50)!!
         val s20=sma(v,20);val s50=sma(v,50);val r=rsi(v);val mc=macd(v);val bands=bb(v)
@@ -267,8 +289,13 @@ object TradingStrategy {
         val smcBear=sm.event=="BOS_down"||sm.event=="CHoCH_down"||sm.sweep=="buy_side"||inBearOb
         vote("structure","SMC",if(smcBull&&!smcBear)1 else if(smcBear&&!smcBull)-1 else 0,1.3)
         vote("divergence","Divergence",if(div=="bullish")1 else if(div=="bearish")-1 else 0,1.1)
-        // Toobit does not currently expose taker_buy_volume in this candle response.
-        vote("orderflow","TakerFlow",0)
+        val flowRows=c.filter{it.takerBuyVolume!=null}
+        val flowTotal=flowRows.sumOf{max(it.volume,0.0)}
+        val flowBuy=flowRows.sumOf{max(it.takerBuyVolume?:0.0,0.0)}
+        val flowSell=max(0.0,flowTotal-flowBuy)
+        val takerVote=if(flowTotal>0.0&&flowBuy/flowTotal>=.55)1
+            else if(flowTotal>0.0&&flowSell/flowTotal>=.55)-1 else 0
+        vote("orderflow","TakerFlow",takerVote)
         val families=groups.mapValues{(_,items)->val den=items.sumOf{it.second};if(den==0.0)0.0 else items.sumOf{it.first*it.second}/den}
         val activeWeights=if(regime=="ranging")familyWeights+mapOf("trend" to .8,"structure" to 1.6,"divergence" to 1.2) else familyWeights
         val den=families.keys.sumOf{activeWeights[it]?:0.0}
@@ -291,7 +318,7 @@ object TradingStrategy {
         return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
     }
 
-    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>):StrategyResult {
+    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
             if(rows.size<MIN_CANDLES||rows.any{it.time<=0L})return false
             for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
@@ -302,7 +329,7 @@ object TradingStrategy {
             return StrategyResult("WAIT",0,p,p,p,p,listOf("زمان کندل‌ها نامعتبر، ناقص یا غیرپیوسته است؛ تحلیل متوقف شد"),emptyList())
         }
         val decisionTime=five.last().time+300_000L
-        if(decisionTime>System.currentTimeMillis()){
+        if(decisionTime>asOfMs){
             val p=five.last().close
             return StrategyResult("WAIT",0,p,p,p,p,listOf("کندل ۵ دقیقه‌ای هنوز به‌طور قطعی بسته نشده است؛ سیگنال صادر نمی‌شود"),emptyList())
         }

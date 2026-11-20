@@ -53,6 +53,46 @@ class TradingStrategyParityTest {
         assertEquals(number("expected_score").toInt(), result.score)
     }
 
+    @Test fun rejectsTakerBuyVolumeAboveTotalVolume() {
+        val now = System.currentTimeMillis()
+        val fiveStart = (now / 300_000L) * 300_000L - 80 * 300_000L
+        val fifteenStart = (now / 900_000L) * 900_000L - 80 * 900_000L
+        val thirtyStart = (now / 1_800_000L) * 1_800_000L - 80 * 1_800_000L
+        val five = series(80, 300_000L, fiveStart).toMutableList()
+        five[0] = five[0].copy(takerBuyVolume = five[0].volume + 1.0)
+        val result = TradingStrategy.evaluate(
+            five, series(80, 900_000L, fifteenStart), series(80, 1_800_000L, thirtyStart)
+        )
+        assertEquals("WAIT", result.signal)
+        assert(result.reasons.any { it.contains("داده معتبر کافی نیست") })
+    }
+
+    @Test fun usesExchangeAsOfTimeToRejectAnUnclosedFiveMinuteCandle() {
+        val now = System.currentTimeMillis()
+        val fiveStart = (now / 300_000L) * 300_000L - 79 * 300_000L
+        val fifteenStart = (now / 900_000L) * 900_000L - 79 * 900_000L
+        val thirtyStart = (now / 1_800_000L) * 1_800_000L - 79 * 1_800_000L
+        val five = series(80, 300_000L, fiveStart)
+        val fifteen = series(80, 900_000L, fifteenStart)
+        val thirty = series(80, 1_800_000L, thirtyStart)
+        val decisionTime = five.last().time + 300_000L
+        val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime - 1L)
+        assertEquals("WAIT", result.signal)
+        assert(result.reasons.any { it.contains("هنوز به‌طور قطعی بسته نشده") })
+    }
+
+    @Test fun rejectsMalformedOldCandleBeforeRecursiveIndicators() {
+        val now = System.currentTimeMillis()
+        val base5 = (now / 300_000L) * 300_000L - 80 * 300_000L
+        val base15 = (now / 900_000L) * 900_000L - 80 * 900_000L
+        val base30 = (now / 1_800_000L) * 1_800_000L - 80 * 1_800_000L
+        val five = series(80, 300_000L, base5).toMutableList()
+        five[0] = five[0].copy(high = five[0].open - 1.0)
+        val fifteen = series(80, 900_000L, base15)
+        val thirty = series(80, 1_800_000L, base30)
+        assertEquals("WAIT", TradingStrategy.evaluate(five, fifteen, thirty).signal)
+    }
+
     @Test fun returnsWaitWhenHigherTimeframeHistoryIsInsufficientAfterAsOfTrim() {
         val now = System.currentTimeMillis()
         val base5 = (now / 300_000L) * 300_000L - 80 * 300_000L

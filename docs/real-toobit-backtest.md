@@ -36,3 +36,39 @@ Use Actions -> Toobit Real Historical Walk-Forward -> Run workflow. For account 
 - Historical OHLCV still cannot reconstruct queue position, exact intrabar execution order, market impact, liquidation, or actual historical per-trade VIP fee changes. Current account rates are applied consistently across the selected historical period and this is stated in the output.
 - Android monitors TP1/TP2/TP3 as staged exit reminders. The current app does not submit exchange orders or automatically execute partial closes.
 - This is a backtest, not a profitability guarantee or live execution engine.
+
+
+## Conservative same-bar exit handling
+
+When TP1 is reached and the same OHLC candle also trades through the newly
+raised breakeven stop, the simulator books TP1 and closes the remaining size at
+the breakeven stop (with modeled adverse slippage). It does not assume that TP2
+or TP3 filled first. This avoids optimistic sequencing that cannot be proven
+from a single OHLC candle.
+
+## Validation scope
+
+The Python and Android strategy engines validate every OHLCV candle used by
+recursive indicators. Non-finite values, negative volume, and impossible
+high/low ranges invalidate the dataset and suppress a directional signal.
+
+The walk-forward runner uses closed candles only and enters at the next 5m open.
+This is not a full exchange matching-engine simulation: liquidation, queue
+priority, market impact, partial fills, and exact intrabar event order are not
+recoverable from OHLCV alone. A real performance report still requires a
+measured adverse slippage input and either authenticated account commission
+rates or the explicitly labeled public VIP-0 fee schedule.
+
+Funding settlement timestamps are charged once. If a settlement and an intrabar
+exit fall in the same 5m OHLC candle, exposure at that candle's open is used
+because OHLC cannot establish the order of the settlement and exit; this avoids
+optimistically omitting a potentially payable funding event.
+
+
+## Price-source parity
+
+The Android strategy and the Python walk-forward runner both use Toobit's
+contract-price `/quote/v1/klines` OHLCV stream, including the exchange's
+taker-buy base-volume field when supplied. The Android chart remains explicitly
+a mark-price chart and now displays the matching mark-price quote; the chart
+series is not silently reused as the strategy/backtest input.

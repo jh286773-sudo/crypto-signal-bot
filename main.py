@@ -6,7 +6,7 @@ import logging
 from toobit_api import ToobitAPI
 from signal_engine import analyze_market
 
-SYMBOL = "BTCUSDT"
+SYMBOL = "BTC-SWAP-USDT"
 CHECK_INTERVAL = 30
 
 logging.basicConfig(
@@ -26,7 +26,7 @@ def main():
 
             result = analyze_market(candles)
 
-            logging.info("Price: %s", result.get("price"))
+            logging.info("Price: %s", result.get("timeframes", {}).get("5m", {}).get("close"))
             logging.info("Signal: %s", result.get("signal"))
             logging.info("Reason: %s", result.get("reason", ""))
             logging.info("Details: %s", result)

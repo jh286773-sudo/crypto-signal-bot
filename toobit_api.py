@@ -93,12 +93,13 @@ class ToobitAPI:
     def get_price(self, symbol="BTC-SWAP-USDT"):
         return self._get("/quote/v1/contract/ticker/price", {"symbol": symbol})
 
-    def get_klines(self, symbol, interval="5m", limit=200):
+    def get_klines(self, symbol, interval="5m", limit=200, as_of_ms=None):
         if interval not in self.INTERVALS:
             raise ValueError("Invalid interval")
 
         limit = max(60, min(int(limit), 1000))
-        end_time = int(time.time() * 1000)
+        # Use exchange server time, not the host clock, to decide whether a candle is closed.
+        end_time = int(as_of_ms) if as_of_ms is not None else int(self.server_time()["serverTime"])
         start_time = end_time - self.INTERVALS[interval] * limit
 
         rows = self._get(
@@ -126,6 +127,8 @@ class ToobitAPI:
                     "volume": float(row[5]),
                 }
             )
+            if len(row) > 9:
+                candles[-1]["taker_buy_volume"] = float(row[9])
         # Exchange kline endpoints may include the currently-forming candle.
         # Never pass that candle into indicator or signal calculations.
         candles.sort(key=lambda item: item["open_time"])
@@ -137,9 +140,10 @@ class ToobitAPI:
         return [row for row in candles if int(row["open_time"]) + duration <= int(as_of_ms)]
 
     def get_multi_timeframe(self, symbol):
-        five = self.get_klines(symbol, "5m", 200)
-        fifteen = self.get_klines(symbol, "15m", 200)
-        thirty = self.get_klines(symbol, "30m", 200)
+        server_now = int(self.server_time()["serverTime"])
+        five = self.get_klines(symbol, "5m", 260, as_of_ms=server_now)
+        fifteen = self.get_klines(symbol, "15m", 260, as_of_ms=server_now)
+        thirty = self.get_klines(symbol, "30m", 260, as_of_ms=server_now)
         if not five:
             return {"5m": [], "15m": [], "30m": []}
         # Freeze all series to the same 5m decision close. A higher-timeframe
@@ -244,9 +248,10 @@ class ToobitAPI:
 
     def get_historical_multi_timeframe(self, symbol, bars_5m=1000, bars_15m=400, bars_30m=200):
         """Fetch longer real exchange histories for walk-forward backtests."""
-        five = self.get_klines(symbol, "5m", bars_5m)
-        fifteen = self.get_klines(symbol, "15m", bars_15m)
-        thirty = self.get_klines(symbol, "30m", bars_30m)
+        server_now = int(self.server_time()["serverTime"])
+        five = self.get_klines(symbol, "5m", bars_5m, as_of_ms=server_now)
+        fifteen = self.get_klines(symbol, "15m", bars_15m, as_of_ms=server_now)
+        thirty = self.get_klines(symbol, "30m", bars_30m, as_of_ms=server_now)
         if not five:
             raise RuntimeError("Toobit returned no closed 5m history")
         decision_time = int(five[-1]["open_time"]) + self.INTERVALS["5m"]

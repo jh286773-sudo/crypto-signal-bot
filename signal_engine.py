@@ -6,7 +6,7 @@ when the exchange explicitly supplies it.
 """
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
-from math import sqrt
+from math import isfinite, sqrt
 
 REQUIRED_TFS = ("5m", "15m", "30m")
 
@@ -37,13 +37,27 @@ def _rsi(v, n=14):
     return 100.0 if al == 0 else 100-(100/(1+ag/al))
 
 
+def _ema_series(v, n):
+    """EMA values with the same SMA seed as _ema, computed in linear time."""
+    out = [None] * len(v)
+    if len(v) < n:
+        return out
+    alpha = 2.0 / (n + 1.0)
+    value = sum(v[:n]) / n
+    out[n-1] = value
+    for i in range(n, len(v)):
+        value = alpha * v[i] + (1.0-alpha) * value
+        out[i] = value
+    return out
+
+
 def _macd(v):
     if len(v)<35: return {"line":None,"signal":None,"histogram":None}
-    vals=[]
-    for end in range(26,len(v)+1):
-        f=_ema(v[:end],12); s=_ema(v[:end],26)
-        if f is not None and s is not None: vals.append(f-s)
-    line=_ema(v,12)-_ema(v,26); sig=_ema(vals,9)
+    fast = _ema_series(v, 12)
+    slow = _ema_series(v, 26)
+    vals = [fast[i] - slow[i] for i in range(25, len(v))]
+    line = vals[-1]
+    sig = _ema(vals, 9)
     return {"line":line,"signal":sig,"histogram":line-sig if sig is not None else None}
 
 
@@ -67,10 +81,14 @@ def _bollinger(v,n=20):
 
 def _stoch_rsi(v,n=14):
     if len(v)<2*n+1: return None
-    rs=[]
-    for end in range(n+1,len(v)+1):
-        rs.append(_rsi(v[:end],n))
-    rs=[x for x in rs if x is not None]
+    deltas = [v[i]-v[i-1] for i in range(1,len(v))]
+    avg_gain = sum(max(x,0.0) for x in deltas[:n]) / n
+    avg_loss = sum(max(-x,0.0) for x in deltas[:n]) / n
+    rs = [100.0 if avg_loss == 0 else 100.0-100.0/(1.0+avg_gain/avg_loss)]
+    for delta in deltas[n:]:
+        avg_gain = (avg_gain*(n-1)+max(delta,0.0))/n
+        avg_loss = (avg_loss*(n-1)+max(-delta,0.0))/n
+        rs.append(100.0 if avg_loss == 0 else 100.0-100.0/(1.0+avg_gain/avg_loss))
     if len(rs)<n: return None
     w=rs[-n:]; lo=min(w); hi=max(w)
     return 0.0 if hi==lo else 100*(rs[-1]-lo)/(hi-lo)
@@ -380,8 +398,23 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
     if len(candles)<60:
         return {"valid":False,"reason":"At least 60 candles required for stable indicator calculation"}
     try:
-        for x in candles[-60:]:
-            for k in ("open","high","low","close","volume"): float(x[k])
+        # Every candle participates in recursive indicators; validating only
+        # the last 60 bars can let an older NaN/invalid OHLC value poison the
+        # entire EMA/ATR history while the current tail appears valid.
+        for index, x in enumerate(candles):
+            o, h, low, close_value, volume = (
+                float(x[k]) for k in ("open", "high", "low", "close", "volume")
+            )
+            taker_buy = x.get("taker_buy_volume")
+            if taker_buy is not None:
+                taker_buy = float(taker_buy)
+            if (not all(isfinite(v) for v in (o, h, low, close_value, volume))
+                    or min(o, h, low, close_value) <= 0 or volume < 0
+                    or h < max(o, close_value) or low > min(o, close_value)
+                    or h < low
+                    or (taker_buy is not None and
+                        (not isfinite(taker_buy) or taker_buy < 0 or taker_buy > volume * 1.001))):
+                raise ValueError(f"invalid OHLCV/order-flow values at candle index {index}")
         c=candles; close=_series(c,"close"); price=close[-1]
         e9=_ema(close,9); e21=_ema(close,21); e50=_ema(close,50)
         s20=_sma(close,20); s50=_sma(close,50)

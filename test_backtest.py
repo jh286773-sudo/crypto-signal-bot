@@ -14,7 +14,7 @@ class BacktestTests(unittest.TestCase):
     def test_public_backtest_uses_timestamp_walk_forward_and_partial_exits(self):
         data={tf:candles(tf) for tf in DURATION_MS}
         for row in data["5m"][60:]:
-            row["low"]=100.0; row["high"]=105.0
+            row["low"]=101.5; row["high"]=105.0
         with patch("walk_forward.analyze_market",return_value={
             "signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]
         }):

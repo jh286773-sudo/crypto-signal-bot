@@ -39,10 +39,22 @@ class WalkForwardTests(unittest.TestCase):
             self.assertLessEqual(snap["15m"]+DURATION_MS["15m"],decision_close)
             self.assertLessEqual(snap["30m"]+DURATION_MS["30m"],decision_close)
 
+    def test_strategy_receives_only_live_equivalent_260_bar_windows(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        seen=[]
+        def fake(hist):
+            seen.append({tf:len(rows) for tf,rows in hist.items()})
+            return {"signal":"NO_SIGNAL"}
+        with patch("walk_forward.analyze_market",side_effect=fake):
+            run_walk_forward(data,fee_bps_per_side=5,slippage_bps_per_side=1)
+        self.assertTrue(seen)
+        self.assertTrue(all(count<=260 for snap in seen for count in snap.values()))
+        self.assertEqual(seen[0]["5m"],260)
+
     def test_position_sizing_and_partial_targets_are_reported(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][60:]:
-            row["low"]=100.0; row["high"]=105.0
+            row["low"]=101.5; row["high"]=105.0
         signal={"signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]}
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
@@ -55,6 +67,20 @@ class WalkForwardTests(unittest.TestCase):
         self.assertIn("TP2",trade["targets_hit"])
         self.assertIn("TP3",trade["targets_hit"])
 
+
+    def test_tp1_then_same_bar_breakeven_touch_closes_remainder_conservatively(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        for row in data["5m"][60:]:
+            row["low"]=100.0
+            row["high"]=103.0
+        signal={"signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]}
+        with patch("walk_forward.analyze_market",return_value=signal):
+            result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
+                                    initial_equity=10000,risk_fraction=.01,max_holding_bars=2)
+        trade=result["trades"][0]
+        self.assertEqual(trade["targets_hit"],["TP1"])
+        self.assertEqual(trade["exit_reason"],"stop_after_tp1")
+        self.assertAlmostEqual(trade["exit"],trade["entry"])
 
     def test_position_size_accounts_for_round_trip_fees_and_slippage(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
@@ -72,6 +98,23 @@ class WalkForwardTests(unittest.TestCase):
         self.assertAlmostEqual(costly_trade["estimated_risk_cash_including_costs"],100.0,places=6)
         self.assertEqual(costly["position_sizing"],
                          "risk_budget_includes_estimated_round_trip_fees_and_slippage")
+
+    def test_funding_is_not_silently_dropped_on_same_bar_exit(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        data["5m"][360]["low"]=98.0
+        data["5m"][360]["high"]=101.0
+        data["5m"][360]["funding_rate"]=0.001
+        data["5m"][360]["funding_settle_time"]=360*DURATION_MS["5m"]+60_000
+        with patch("walk_forward.analyze_market",return_value={
+            "signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]
+        }):
+            result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
+                                    initial_equity=10000,max_holding_bars=2)
+        trade=result["trades"][0]
+        self.assertEqual(trade["exit_reason"],"stop")
+        self.assertAlmostEqual(
+            trade["funding_cash"],trade["entry"]*trade["position_quantity"]*0.001,places=6
+        )
 
     def test_distinct_entry_exit_fees_and_funding_settlement_once(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}

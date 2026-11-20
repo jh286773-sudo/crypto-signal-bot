@@ -10,6 +10,23 @@ def candles(n=100, trend=1.0):
     return rows
 
 class EngineTests(unittest.TestCase):
+    def test_optimized_macd_and_stoch_rsi_match_reference_calculation(self):
+        from signal_engine import _macd, _stoch_rsi, _ema, _rsi
+        values = [100.0 + math.sin(i/4.0)*2.0 + i*0.03 for i in range(120)]
+        old_values = []
+        for end in range(26, len(values)+1):
+            old_values.append(_ema(values[:end],12)-_ema(values[:end],26))
+        old_line = _ema(values,12)-_ema(values,26)
+        old_signal = _ema(old_values,9)
+        actual = _macd(values)
+        self.assertAlmostEqual(actual["line"], old_line, places=12)
+        self.assertAlmostEqual(actual["signal"], old_signal, places=12)
+        old_rsis = [_rsi(values[:end],14) for end in range(15,len(values)+1)]
+        old_rsis = [value for value in old_rsis if value is not None]
+        window = old_rsis[-14:]
+        expected = 0.0 if max(window)==min(window) else 100*(window[-1]-min(window))/(max(window)-min(window))
+        self.assertAlmostEqual(_stoch_rsi(values), expected, places=12)
+
     def test_indicator_report(self):
         r=analyze_timeframe(candles())
         self.assertTrue(r["valid"])
@@ -37,6 +54,13 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["signal"],"LONG")
     def test_bad_input_safe(self):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])
+
+    def test_invalid_old_candle_is_rejected_before_recursive_indicators(self):
+        rows = candles(100)
+        rows[0]["open"] = float("nan")
+        result = analyze_timeframe(rows)
+        self.assertFalse(result["valid"])
+        self.assertIn("invalid OHLCV", result["reason"])
 
     def test_high_volatility_filter_blocks_signal(self):
         bullish={"valid":True,"score":60.0,"bias":"bullish","high_volatility":True,"indicators":{"atr":1.0},"close":100.0}
@@ -86,6 +110,24 @@ class EngineTests(unittest.TestCase):
             row["close"] = 100.0 + (i if i < 12 else 12 - (i - 12))
             row["volume"] = 100.0
         self.assertEqual(_obv_trend(rows), -1)
+
+    def test_taker_flow_uses_exchange_buy_volume_when_available(self):
+        from signal_engine import _taker_strength
+        rows = candles(70)
+        for row in rows:
+            row["volume"] = 100.0
+            row["taker_buy_volume"] = 60.0
+        flow = _taker_strength(rows)
+        self.assertTrue(flow["available"])
+        self.assertEqual(flow["buy_percent"], 60.0)
+        self.assertEqual(flow["sell_percent"], 40.0)
+
+    def test_invalid_taker_buy_volume_rejects_entire_candle_history(self):
+        rows = candles(80)
+        rows[0]["taker_buy_volume"] = rows[0]["volume"] + 10.0
+        result = analyze_timeframe(rows)
+        self.assertFalse(result["valid"])
+        self.assertIn("order-flow", result["reason"])
 
     def test_volume_impulse_requires_expansion_and_directional_close(self):
         from signal_engine import _volume_impulse
