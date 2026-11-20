@@ -20,9 +20,13 @@ class TradingStrategyParityTest {
         assertEquals("bearish",TradingStrategy.indicatorBias(mapOf(
             "EMA" to -1,"RSI" to -1,"MACD" to -1,"ADX_DMI" to -1,
             "VWAP" to -1,"OBV_Trend" to 0,"Bollinger" to -1)))
-        assertEquals("neutral",TradingStrategy.indicatorBias(mapOf(
+        assertEquals("bullish",TradingStrategy.indicatorBias(mapOf(
             "EMA" to 1,"RSI" to 1,"MACD" to 1,"ADX_DMI" to 1,
-            "VWAP" to -1,"OBV_Trend" to 0,"Bollinger" to 1)))
+            "VWAP" to -1,"OBV_Trend" to -1,"Bollinger" to -1)))
+        assertEquals("bearish",TradingStrategy.indicatorBias(mapOf(
+            "EMA" to -1,"RSI" to 0,"MACD" to -1,"ADX_DMI" to -1)))
+        assertEquals("neutral",TradingStrategy.indicatorBias(mapOf(
+            "EMA" to 1,"RSI" to 0,"MACD" to 0,"ADX_DMI" to 1)))
     }
 
     @Test fun oneSelectedTimeframeIsAnalyzedWithoutRequiringOtherTimeframes() {
