@@ -35,7 +35,7 @@ def main():
         raise SystemExit("--slippage-bps cannot be negative")
     api = ToobitAPI()
     server_ms = int(api.server_time()["serverTime"])
-    end_ms = (server_ms // DURATION_MS["5m"]) * DURATION_MS["5m"]
+    end_ms = int(os.environ["END_MS"]) if os.environ.get("END_MS") else (server_ms // DURATION_MS["5m"]) * DURATION_MS["5m"]
     start_ms = ((end_ms - args.days * 86_400_000) // DURATION_MS["30m"]) * DURATION_MS["30m"]
 
     # Account-specific open/close taker rates, returned as decimals by Toobit.
@@ -78,6 +78,8 @@ def main():
         "net_return_pct": result["net_return_pct"],
         "win_rate_pct": result["win_rate_pct"],
         "max_drawdown_pct": result["max_drawdown_pct"],
+        "risk_fraction": result["risk_fraction"],
+        "loss_guard": result["loss_guard"],
         "commission_rates": commission,
         "funding_mode": result["funding_mode"],
         "output": args.output,
