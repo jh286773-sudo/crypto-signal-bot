@@ -61,6 +61,7 @@ class ShadowLedger:
         return result
 
     def process(self, symbol: str, bar: dict[str, Any], candidate: dict[str, Any]) -> None:
+        """Keep a shadow position until an opposite directional signal is confirmed."""
         stamp = self._bar_time(bar)
         with self._db() as db:
             cursor = db.execute("SELECT last_bar FROM shadow_cursor WHERE symbol=?", (symbol,)).fetchone()
@@ -71,105 +72,38 @@ class ShadowLedger:
                 "ON CONFLICT(symbol) DO UPDATE SET last_bar=excluded.last_bar",
                 (symbol, stamp),
             )
+            side = candidate.get("signal")
+            try:
+                entry = float(candidate.get("entry"))
+            except (TypeError, ValueError):
+                entry = 0.0
+            if side not in ("LONG", "SHORT") or entry <= 0:
+                return
+
             row = db.execute("SELECT state FROM shadow_open WHERE symbol=?", (symbol,)).fetchone()
-            closed_this_bar = False
             if row:
                 state = json.loads(row[0])
-                closed_this_bar = self._manage(db, symbol, state, bar, stamp)
-            if not row or closed_this_bar:
-                if closed_this_bar:
+                old_side = state.get("side")
+                if side == old_side:
                     return
-                side = candidate.get("signal")
-                entry = candidate.get("entry")
-                stop = candidate.get("stop_loss")
-                targets = candidate.get("take_profits") or []
-                try:
-                    entry, stop = float(entry), float(stop)
-                    targets = [float(x) for x in targets[:3]]
-                except (TypeError, ValueError):
-                    return
-                if side not in ("LONG", "SHORT") or len(targets) != 3:
-                    return
-                ordered = stop < entry < targets[0] < targets[1] < targets[2] if side == "LONG" else stop > entry > targets[0] > targets[1] > targets[2]
-                if not ordered or entry <= 0:
-                    return
-                risk = abs(entry - stop)
-                if risk <= 0:
-                    return
-                state = {
-                    "side": side, "entry": entry, "initial_risk": risk, "stop": stop,
-                    "targets": targets, "remaining": 1.0, "gross_r": 0.0,
-                    "entry_cost_r": entry * self.cost / risk, "exit_cost_r": 0.0,
-                    "tp1_done": False, "tp2_done": False, "opened_at": stamp,
-                }
-                db.execute("INSERT OR REPLACE INTO shadow_open(symbol,state,last_bar) VALUES(?,?,?)",
-                           (symbol, json.dumps(state, separators=(",", ":")), stamp))
+                old_entry = float(state.get("entry", 0.0))
+                if old_side in ("LONG", "SHORT") and old_entry > 0:
+                    direction = 1.0 if old_side == "LONG" else -1.0
+                    net_return = direction * (entry - old_entry) / old_entry - 2.0 * self.cost
+                    if net_return == net_return and abs(net_return) != float("inf"):
+                        db.execute(
+                            "INSERT INTO shadow_closed(symbol,side,net_r,closed_at) VALUES(?,?,?,?)",
+                            (symbol, old_side, net_return, stamp),
+                        )
+                        db.execute(
+                            "DELETE FROM shadow_closed WHERE symbol=? AND side=? AND id NOT IN "
+                            "(SELECT id FROM shadow_closed WHERE symbol=? AND side=? ORDER BY id DESC LIMIT 200)",
+                            (symbol, old_side, symbol, old_side),
+                        )
+                db.execute("DELETE FROM shadow_open WHERE symbol=?", (symbol,))
 
-    def _manage(self, db, symbol: str, state: dict[str, Any], bar: dict[str, Any], stamp: int) -> bool:
-        side = state["side"]
-        long = side == "LONG"
-        op, high, low = (float(bar[k]) for k in ("open", "high", "low"))
-        stop = float(state["stop"])
-        stop_hit = low <= stop if long else high >= stop
-        if stop_hit:
-            fill = min(op, stop) if long else max(op, stop)
-            self._fill(db, symbol, state, fill, float(state["remaining"]), stamp)
-            return True
-        for index, target in enumerate(state["targets"]):
-            if index == 0 and state["tp1_done"] or index == 1 and state["tp2_done"]:
-                continue
-            hit = high >= target if long else low <= target
-            if not hit:
-                break
-            remaining = float(state["remaining"])
-            fraction = remaining if index == 2 else min(remaining, 1.0 / 3.0)
-            fill = max(op, target) if long else min(op, target)
-            if index == 0:
-                state["tp1_done"] = True
-                state["stop"] = float(state["entry"])
-            elif index == 1:
-                state["tp2_done"] = True
-                state["stop"] = float(state["targets"][0])
-            self._fill(db, symbol, state, fill, fraction, stamp, persist=False)
-            if state["remaining"] <= 1e-9:
-                return True
-            # If TP1/TP2 and the newly protected stop are both touched in this
-            # OHLC candle, assume target first then stop: conservative for the remainder.
-            protected_stop = float(state["stop"])
-            protected_stop_hit = low <= protected_stop if long else high >= protected_stop
-            if index < 2 and protected_stop_hit:
-                protected_fill = min(op, protected_stop) if long else max(op, protected_stop)
-                self._fill(db, symbol, state, protected_fill, float(state["remaining"]), stamp, persist=False)
-                return True
-            if index < 2:
-                break
-        if stamp - int(state.get("opened_at", stamp)) >= 72 * 300000:
-            self._fill(db, symbol, state, float(bar["close"]), float(state["remaining"]), stamp)
-            return True
-        db.execute("UPDATE shadow_open SET state=?, last_bar=? WHERE symbol=?",
-                   (json.dumps(state, separators=(",", ":")), stamp, symbol))
-        return False
-
-    def _fill(self, db, symbol, state, price: float, fraction: float, stamp: int, persist: bool = True):
-        direction = 1.0 if state["side"] == "LONG" else -1.0
-        risk = float(state["initial_risk"])
-        state["gross_r"] += direction * (price - float(state["entry"])) / risk * fraction
-        state["exit_cost_r"] += price * self.cost / risk * fraction
-        state["remaining"] = max(0.0, float(state["remaining"]) - fraction)
-        if state["remaining"] <= 1e-9:
-            self._save_closed(db, symbol, state, stamp)
-        elif persist:
-            db.execute("UPDATE shadow_open SET state=?, last_bar=? WHERE symbol=?",
-                       (json.dumps(state, separators=(",", ":")), stamp, symbol))
-
-    def _save_closed(self, db, symbol, state, stamp):
-        net_r = float(state["gross_r"]) - float(state["entry_cost_r"]) - float(state["exit_cost_r"])
-        if net_r == net_r and abs(net_r) != float("inf"):
-            db.execute("INSERT INTO shadow_closed(symbol,side,net_r,closed_at) VALUES(?,?,?,?)",
-                       (symbol, state["side"], net_r, stamp))
-        db.execute(
-            "DELETE FROM shadow_closed WHERE symbol=? AND side=? AND id NOT IN "
-            "(SELECT id FROM shadow_closed WHERE symbol=? AND side=? ORDER BY id DESC LIMIT 200)",
-            (symbol, state["side"], symbol, state["side"]),
-        )
-        db.execute("DELETE FROM shadow_open WHERE symbol=?", (symbol,))
+            state = {"side": side, "entry": entry, "opened_at": stamp}
+            db.execute(
+                "INSERT OR REPLACE INTO shadow_open(symbol,state,last_bar) VALUES(?,?,?)",
+                (symbol, json.dumps(state, separators=(",", ":")), stamp),
+            )
