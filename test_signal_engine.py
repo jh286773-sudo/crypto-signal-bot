@@ -124,6 +124,19 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["signal"],"NO_SIGNAL")
         self.assertIn("Non-contiguous",result["reason"])
 
+    def test_partially_timestamped_series_is_rejected_instead_of_bypassing_candle_alignment(self):
+        duration = 300_000
+        start = 1_800_000_000_000
+        rows = candles(220)
+        for index, row in enumerate(rows):
+            row["open_time"] = start + index * duration
+        del rows[100]["open_time"]
+        with patch("signal_engine.analyze_timeframe", return_value=report("bullish")) as analyze:
+            result = analyze_market({"5m": rows})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("Incomplete timestamps", result["reason"])
+        analyze.assert_not_called()
+
     def test_invalid_old_candle_is_rejected_before_recursive_indicators(self):
         rows=candles(220)
         rows[0]["open"]=float("nan")
