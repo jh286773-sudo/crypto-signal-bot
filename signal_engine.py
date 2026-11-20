@@ -539,7 +539,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
         if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}
         smc = reports["5m"]["indicators"].get("smc", {})
         # Real candle reports must complete the breakout -> retest -> directional close sequence.
-        # Missing SMC is tolerated only for external/mocked report adapters.
+        # Real directional signals always require explicit, positive retest evidence.
         retest_key = "retest_long" if signal=="LONG" else "retest_short"
         confirmation = (smc.get("structure_event") in (("BOS_up","CHoCH_up") if signal=="LONG" else ("BOS_down","CHoCH_down"))
                         or smc.get("liquidity_sweep") == ("sell_side" if signal=="LONG" else "buy_side"))
