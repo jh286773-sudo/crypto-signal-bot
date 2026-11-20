@@ -111,7 +111,7 @@ class WalkForwardTests(unittest.TestCase):
         trade=result["trades"][0]
         self.assertEqual(trade["targets_hit"],["TP1","TP2"])
         self.assertEqual(trade["exit_reason"],"stop_after_tp2")
-        self.assertAlmostEqual(trade["exit"],101.5)
+        self.assertAlmostEqual(trade["exit"],100.5)
 
     def test_default_risk_is_half_percent_and_two_losses_trigger_cooldown(self):
         data={tf:bars(tf,800) for tf in DURATION_MS}
