@@ -546,7 +546,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
     # If exchange timestamps are present, all three series must be complete, contiguous,
     # and selected at one identical 5m-close decision boundary. Untimestamped unit fixtures
     # remain supported; live Toobit candles always carry open_time.
-    timestamped = [all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in REQUIRED_TFS]
+    timestamped = [bool(timeframes.get(tf, [])) and all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in REQUIRED_TFS]
     if any(timestamped) and not all(timestamped):
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Mixed timestamped/untimestamped timeframe data", "trade_enabled":False}
     if all(timestamped):
