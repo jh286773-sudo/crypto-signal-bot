@@ -143,6 +143,11 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         slippage += abs(entry_fill-entry) * quantity
         for j in range(entry_index, exit_index+1):
             bar = five[j][1]
+            # A funding settlement can share a 5m candle with an intrabar exit.
+            # OHLC cannot establish event order, so record exposure at bar open;
+            # this conservatively avoids silently omitting a possible settlement.
+            if remaining > quantity*1e-10:
+                funding_exposure.append((j, remaining))
             o, h, low = float(bar["open"]), float(bar["high"]), float(bar["low"])
             stop_hit = low <= stop if side == "LONG" else h >= stop
             if stop_hit:
@@ -199,8 +204,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                     remaining = 0.0
                     exit_index, exit_price, exit_reason = j, fill, "all_targets"
                     break
-            if remaining > quantity*1e-10:
-                funding_exposure.append((j, remaining))
             if remaining <= quantity*1e-10:
                 break
         if remaining > quantity*1e-10:
