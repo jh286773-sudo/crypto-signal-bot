@@ -6,5 +6,6 @@
     "15m": 120,
     "30m": 60
   },
-  "expected_signal": "NO_SIGNAL"
+  "expected_signal": "NO_SIGNAL",
+  "expected_score": 36
 }
