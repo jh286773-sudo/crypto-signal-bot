@@ -50,6 +50,7 @@ class TradingStrategyParityTest {
         )
         val normalized = if (result.signal == "WAIT") "NO_SIGNAL" else result.signal
         assertEquals(expected("expected_signal"), normalized)
+        assertEquals(number("expected_score").toInt(), result.score)
     }
 
     @Test fun returnsWaitWhenHigherTimeframeHistoryIsInsufficientAfterAsOfTrim() {
