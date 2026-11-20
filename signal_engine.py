@@ -280,10 +280,10 @@ def _market_structure(c, lookback=60):
     prior_down = any(float(x["close"]) < sl - break_buffer for x in recent)
     bull_candle = close > op and close_pos >= 0.60
     bear_candle = close < op and close_pos <= 0.40
-    retest_long = bool((prior_up and low <= sh+tolerance and close > sh and bull_candle)
-                       or (sweep == "sell_side" and bull_candle))
-    retest_short = bool((prior_down and high >= sl-tolerance and close < sl and bear_candle)
-                        or (sweep == "buy_side" and bear_candle))
+    # A sweep alone is not an entry trigger. Require a prior close-confirmed
+    # structural break followed by a directional retest; this rejects wick-only traps.
+    retest_long = bool(prior_up and low <= sh+tolerance and close > sh and bull_candle)
+    retest_short = bool(prior_down and high >= sl-tolerance and close < sl and bear_candle)
 
     # A close back through the broken level invalidates the breakout; a wick-only sweep
     # is separately reported and may become a reversal setup after a directional close.
@@ -504,6 +504,20 @@ def _levels(side, price, volatility, structure=None):
             "risk_per_unit":risk,"risk_reward":[1.5,2.5,3.5]}
 
 
+def _directional_quality(report: Dict[str, Any], side: str) -> bool:
+    """Require broad same-direction evidence and reject material family conflicts."""
+    families = report.get("family_scores")
+    if not isinstance(families, dict) or not families:
+        return False
+    direction = 1.0 if side == "LONG" else -1.0
+    aligned = sum(1 for value in families.values() if float(value) * direction >= 0.20)
+    opposing = sum(1 for value in families.values() if float(value) * direction <= -0.20)
+    # Trend, momentum and directional strength may not actively oppose the setup.
+    core = ("trend", "momentum", "strength")
+    core_clear = all(float(families.get(name, 0.0)) * direction >= 0.0 for name in core)
+    return aligned >= 5 and opposing <= 1 and core_clear
+
+
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
     """Final decision is based on all indicator families and 5m/15m/30m alignment."""
     reports={tf:analyze_timeframe(timeframes.get(tf,[]),tf) for tf in REQUIRED_TFS}
@@ -521,11 +535,17 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
     # independently strong. These are conservative candidate thresholds;
     # only out-of-sample backtests can establish whether they improve expectancy.
     higher_long = (reports["15m"]["bias"]=="bullish" and reports["30m"]["bias"]=="bullish"
-                   and reports["15m"]["score"]>=26 and reports["30m"]["score"]>=26)
+                   and reports["15m"]["score"]>=26 and reports["30m"]["score"]>=26
+                   and _directional_quality(reports["15m"], "LONG")
+                   and _directional_quality(reports["30m"], "LONG"))
     higher_short = (reports["15m"]["bias"]=="bearish" and reports["30m"]["bias"]=="bearish"
-                    and reports["15m"]["score"]<=-26 and reports["30m"]["score"]<=-26)
-    trigger_long = reports["5m"]["bias"]=="bullish" and reports["5m"]["score"]>=24
-    trigger_short = reports["5m"]["bias"]=="bearish" and reports["5m"]["score"]<=-24
+                    and reports["15m"]["score"]<=-26 and reports["30m"]["score"]<=-26
+                    and _directional_quality(reports["15m"], "SHORT")
+                    and _directional_quality(reports["30m"], "SHORT"))
+    trigger_long = (reports["5m"]["bias"]=="bullish" and reports["5m"]["score"]>=24
+                    and _directional_quality(reports["5m"], "LONG"))
+    trigger_short = (reports["5m"]["bias"]=="bearish" and reports["5m"]["score"]<=-24
+                     and _directional_quality(reports["5m"], "SHORT"))
     if combined>=34 and higher_long and trigger_long and longs==3: signal="LONG"
     elif combined<=-34 and higher_short and trigger_short and shorts==3: signal="SHORT"
     else: signal="NO_SIGNAL"
@@ -566,10 +586,10 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
                     "reason":"Setup is not entry-ready: wait for confirmed retest; do not chase the breakout.",
                     "trade_enabled":False}
         distance = smc.get("entry_distance_atr")
-        if distance is not None and distance > 0.80:
+        if distance is None or distance > 0.50:
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT",
-                    "reason":"Retest is overextended (>0.80 ATR); skip late entry.",
+                    "reason":"Retest is missing or overextended (>0.50 ATR); skip late entry.",
                     "trade_enabled":False}
         result.update(_levels(signal,p,a,smc))
         result["entry_stage"] = "ENTRY"
