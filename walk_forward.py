@@ -116,7 +116,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         # only subsequent entries are gated by their strictly prior closed outcomes.
         history_ready = sum(len(values) for values in closed_net_r.values()) >= 30
         signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()},
-                                expectancy_stats={side: list(values) for side, values in closed_net_r.items()} if history_ready else None)
+                                expectancy_stats={side: list(values) for side, values in closed_net_r.items()} if history_ready else {},
+                                research_warmup=True)
         decision_diagnostics["evaluated"] += 1
         side = signal.get("signal")
         if side not in ("LONG", "SHORT"):
