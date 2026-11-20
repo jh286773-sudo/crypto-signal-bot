@@ -51,7 +51,7 @@ jobs:
           SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
         run: |
           test -n "$TOOBIT_API_KEY" && test -n "$TOOBIT_API_SECRET"
-          python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --output toobit_walk_forward_result.json
+          python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --risk 0.005 --output toobit_walk_forward_result.json
       - name: Run with published VIP-0 commission schedule
         if: inputs.fee_source == 'public-vip0'
         env:
