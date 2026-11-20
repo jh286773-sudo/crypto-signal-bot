@@ -141,9 +141,9 @@ class ToobitAPI:
 
     def get_multi_timeframe(self, symbol):
         server_now = int(self.server_time()["serverTime"])
-        five = self.get_klines(symbol, "5m", 200, as_of_ms=server_now)
-        fifteen = self.get_klines(symbol, "15m", 200, as_of_ms=server_now)
-        thirty = self.get_klines(symbol, "30m", 200, as_of_ms=server_now)
+        five = self.get_klines(symbol, "5m", 260, as_of_ms=server_now)
+        fifteen = self.get_klines(symbol, "15m", 260, as_of_ms=server_now)
+        thirty = self.get_klines(symbol, "30m", 260, as_of_ms=server_now)
         if not five:
             return {"5m": [], "15m": [], "30m": []}
         # Freeze all series to the same 5m decision close. A higher-timeframe
