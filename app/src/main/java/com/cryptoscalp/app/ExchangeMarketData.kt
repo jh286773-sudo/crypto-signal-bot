@@ -36,8 +36,15 @@ object ExchangeMarketData {
         val out = mutableListOf<String>()
         for (i in 0 until rows.length()) {
             val item = rows.optJSONObject(i) ?: continue
-            val symbol = item.optString("symbol")
-            if (item.optString("status") == "TRADING" && symbol.endsWith("-SWAP-USDT")) {
+            val rawSymbol = item.optString("symbol").trim()
+            // Toobit exchangeInfo lists USDT-M contracts as BTC-SWAP,
+            // while quote endpoints use the canonical BTC-SWAP-USDT form.
+            val symbol = when {
+                rawSymbol.endsWith("-SWAP-USDT") -> rawSymbol
+                rawSymbol.endsWith("-SWAP") -> "$rawSymbol-USDT"
+                else -> ""
+            }
+            if (item.optString("status") == "TRADING" && symbol.isNotEmpty()) {
                 out.add(symbol)
             }
         }
