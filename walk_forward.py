@@ -56,7 +56,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                      fee_bps_open: float = None, fee_bps_close: float = None,
                      slippage_bps_per_side: float, initial_equity: float = 10_000.0,
                      risk_fraction: float = 0.005, max_holding_bars: int = 72,
-                     loss_streak_limit: int = 2, loss_cooldown_bars: int = 288,
                      allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3)) -> Dict[str, Any]:
     """Long-only reversal backtest: enter on LONG and exit only on SHORT.
 
@@ -72,8 +71,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         raise ValueError("explicit opening and closing exchange fee rates are required")
     if min(fee_bps_open, fee_bps_close, slippage_bps_per_side) < 0:
         raise ValueError("exchange fee and slippage assumptions cannot be negative")
-    if (initial_equity <= 0 or not 0 < risk_fraction <= 0.05 or max_holding_bars < 1
-            or loss_streak_limit < 1 or loss_cooldown_bars < 1):
+    if initial_equity <= 0 or not 0 < risk_fraction <= 0.05 or max_holding_bars < 1:
         raise ValueError("invalid equity, risk fraction, or holding horizon")
     indexed = _validate(timeframes)
     five = indexed["5m"]
@@ -85,15 +83,11 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     max_dd = 0.0
     trades: List[dict] = []
     position = None
-    loss_streak_indices: List[int] = []
     entry_gap_skips = 0
     invalid_level_skips = 0
     decision_diagnostics = {"evaluated": 0, "no_signal": 0, "long_candidates": 0,
                             "short_candidates": 0, "invalid_market_data": 0,
                             "rejection_reason_counts": {}, "rejected_decision_samples": []}
-    cooldown_until_index = -1
-    cooldown_events = 0
-    cooldown_skipped_bars = 0
 
     def apply_funding(pos, end_index):
         cash = 0.0
@@ -114,7 +108,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         return (cash if events else None, bps_total if events else None, events)
 
     def finish_position(pos, exit_index, raw_exit, reason):
-        nonlocal equity, peak, max_dd, cooldown_until_index, cooldown_events, loss_streak_indices
+        nonlocal equity, peak, max_dd
         exit_fill = raw_exit * (1 - slippage_bps_per_side / 10000)
         exit_slippage = abs(exit_fill - raw_exit) * pos["quantity"]
         close_fee = abs(exit_fill * pos["quantity"]) * fee_bps_close / 10000
@@ -124,16 +118,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         net_pnl = realized - fees - (funding_cash or 0.0)
         start_equity = equity
         equity += net_pnl
-        if net_pnl < 0:
-            loss_streak_indices = [x for x in loss_streak_indices
-                                   if exit_index - x <= loss_cooldown_bars]
-            loss_streak_indices.append(exit_index)
-            if len(loss_streak_indices) >= loss_streak_limit:
-                cooldown_until_index = max(cooldown_until_index, exit_index + loss_cooldown_bars)
-                cooldown_events += 1
-                loss_streak_indices = []
-        else:
-            loss_streak_indices = []
         peak = max(peak, equity)
         max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else 0.0)
         trades.append({
@@ -165,11 +149,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
 
     i = 59
     while i + 1 < len(five):
-        if position is None and i < cooldown_until_index:
-            cooldown_skipped_bars += 1
-            i += 1
-            continue
-
         decision_open, decision_candle = five[i]
         decision_time = decision_open + DURATION_MS["5m"]
         histories = {tf: _closed_history(indexed[tf], tf, decision_time) for tf in REQUIRED_TFS}
@@ -325,13 +304,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         "side_stats": side_stats,
         "max_consecutive_losses": max_consecutive_losses,
         "decision_diagnostics": decision_diagnostics,
-        "loss_guard": {
-            "loss_streak_limit": loss_streak_limit,
-            "cooldown_bars": loss_cooldown_bars,
-            "cooldown_events": cooldown_events,
-            "cooldown_skipped_bars": cooldown_skipped_bars,
-            "counted_losses": "net losing LONG positions closed by SHORT or end of data",
-        },
         "entry_filter": {
             "max_entry_gap_atr": MAX_ENTRY_GAP_ATR,
             "entry_gap_skips": entry_gap_skips,
