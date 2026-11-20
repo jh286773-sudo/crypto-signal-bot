@@ -99,11 +99,11 @@ def main():
         "initial_capital_sum": total_start,
         "final_capital_sum": total_final,
         "net_pnl_sum": total_final - total_start,
-        "net_return_pct_equal_capital_per_symbol": 100.0 * (total_final / total_start - 1.0),
+        "net_return_pct_equal_capital_per_symbol": 100.0 * (total_final / total_start - 1.0) if total_start > 0 else 0.0,
         "gross_profit_sum": gross_profit,
         "gross_loss_sum": gross_loss,
         "profit_factor": gross_profit / abs(gross_loss) if gross_loss else (math.inf if gross_profit else 0.0),
-        "max_symbol_drawdown_pct": max(item["max_drawdown_pct"] for item in results),
+        "max_symbol_drawdown_pct": max((item["max_drawdown_pct"] for item in results), default=0.0),
         "warning": "Pooled equal-capital summary of independent per-symbol simulations, not a single shared-margin portfolio. Max drawdown is the worst individual symbol drawdown. Failed symbols are listed separately and are not silently treated as zero-return symbols.",
     }
     report = {
