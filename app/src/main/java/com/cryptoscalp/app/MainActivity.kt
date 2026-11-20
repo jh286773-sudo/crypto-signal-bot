@@ -40,10 +40,14 @@ class MainActivity : Activity() {
     private val diagnosticsHandler = Handler(Looper.getMainLooper())
     private val diagnosticsRefresh = object:Runnable { override fun run() {
         if (::diagnostics.isInitialized) {
-            val message=getSharedPreferences("crypto_monitor",Context.MODE_PRIVATE)
-                .getString("latest_signal_diagnostic",null)
+            val prefs=getSharedPreferences("crypto_monitor",Context.MODE_PRIVATE)
+            val liveStatus=prefs.getString("latest_monitor_status",null)
+            if (::status.isInitialized && !liveStatus.isNullOrBlank()) {
+                status.text=liveStatus.substringBefore("\\n")
+            }
+            val message=prefs.getString("latest_signal_diagnostic",null)
             diagnostics.text=message?.let { "آخرین عیب‌یابی سیگنال:\n"+it }
-                ?: "جزئیات تحلیل پس از بسته‌شدن کندل بعدی نمایش داده می‌شود."
+                ?: "جزئیات تحلیل پس از اولین دریافت کندل‌ها نمایش داده می‌شود."
             diagnosticsHandler.postDelayed(this,10_000L)
         }
     } }
