@@ -32,5 +32,7 @@ Use Actions -> Toobit Real Historical Walk-Forward -> Run workflow. For account 
 - Kline pagination respects Toobit's 1000-bar page cap and verifies contiguous timestamps in the simulator.
 - Funding is charged once per historical settlement event, not once per 5m bar. If the position exits before the settlement candle closes, that settlement is not charged.
 - Open and close taker rates are distinct and come from the account endpoint.
+- Position quantity is sized against the configured equity-risk budget after estimated round-trip opening/closing fees and adverse slippage at the modeled stop. Gaps and market impact can still exceed the estimate.
 - Historical OHLCV still cannot reconstruct queue position, exact intrabar execution order, market impact, liquidation, or actual historical per-trade VIP fee changes. Current account rates are applied consistently across the selected historical period and this is stated in the output.
+- Android monitors TP1/TP2/TP3 as staged exit reminders. The current app does not submit exchange orders or automatically execute partial closes.
 - This is a backtest, not a profitability guarantee or live execution engine.
