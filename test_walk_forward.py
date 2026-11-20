@@ -127,6 +127,18 @@ class WalkForwardTests(unittest.TestCase):
         self.assertGreater(result["loss_guard"]["cooldown_skipped_bars"],200)
         self.assertLess(result["trade_count"],100)
 
+    def test_full_stops_more_than_24_hours_apart_do_not_trigger_cooldown(self):
+        data={tf:bars(tf,800) for tf in DURATION_MS}
+        signal={"signal":"LONG","stop_loss":99.0,"take_profits":[102.0,103.0,104.0]}
+        def sparse_signals(history):
+            index=history["5m"][-1]["timestamp"] // DURATION_MS["5m"]
+            return signal if index in (359,649) else {"signal":"NO_SIGNAL"}
+        with patch("walk_forward.analyze_market",side_effect=sparse_signals):
+            result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
+                                    initial_equity=10000,max_holding_bars=1)
+        self.assertEqual(result["trade_count"],2)
+        self.assertEqual(result["loss_guard"]["cooldown_events"],0)
+
     def test_walk_forward_reports_directional_quality_and_loss_streak(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         with patch("walk_forward.analyze_market",return_value={"signal":"NO_SIGNAL"}):
