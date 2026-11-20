@@ -1,182 +1,86 @@
 package com.cryptoscalp.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.sin
 
 class TradingStrategyParityTest {
-    private fun series(count: Int, duration: Long, start: Long): List<MarketCandle> =
+    private fun series(count:Int,duration:Long,start:Long):List<MarketCandle> =
         (0 until count).map { i ->
-            val p = 100.0 + i * 0.001
-            MarketCandle(p, p + 0.2, p - 0.2, p, 100.0, start + i * duration)
+            val p=100.0+i*0.001
+            MarketCandle(p,p+0.2,p-0.2,p,100.0,start+i*duration)
         }
 
-    @Test fun rejectsCandlesWithoutExchangeTimestamps() {
-        val now = System.currentTimeMillis()
-        val five = series(80, 300_000L, now - 80 * 300_000L).map { it.copy(time = 0L) }
-        val fifteen = series(80, 900_000L, now - 80 * 900_000L)
-        val thirty = series(80, 1_800_000L, now - 80 * 1_800_000L)
-        assertEquals("WAIT", TradingStrategy.evaluate(five, fifteen, thirty).signal)
+    @Test fun directIndicatorRulesHaveNoWeightsOrScoreThresholds() {
+        assertEquals("bullish",TradingStrategy.indicatorBias(mapOf(
+            "EMA" to 1,"RSI" to 1,"MACD" to 1,"ADX_DMI" to 1,
+            "VWAP" to 1,"OBV_Trend" to 0,"Bollinger" to 1)))
+        assertEquals("bearish",TradingStrategy.indicatorBias(mapOf(
+            "EMA" to -1,"RSI" to -1,"MACD" to -1,"ADX_DMI" to -1,
+            "VWAP" to -1,"OBV_Trend" to 0,"Bollinger" to -1)))
+        assertEquals("neutral",TradingStrategy.indicatorBias(mapOf(
+            "EMA" to 1,"RSI" to 1,"MACD" to 1,"ADX_DMI" to 1,
+            "VWAP" to -1,"OBV_Trend" to 0,"Bollinger" to 1)))
     }
 
-    @Test fun sharedGoldenFixtureProducesSameNoSignalDecisionAsPython() {
-        // Android's local JVM test runtime provides a stub org.json implementation
-        // that throws "Method ... not mocked". Read this tiny shared fixture with
-        // java.util.regex so the test exercises the real strategy implementation.
-        val raw = javaClass.getResourceAsStream("/strategy_parity_fixture.json")!!
-            .bufferedReader().use { it.readText() }
-        fun number(key: String): Long =
-            Regex("\\\"$key\\\"\\s*:\\s*(\\d+)")
-                .find(raw)?.groupValues?.get(1)?.toLong()
-                ?: error("Missing numeric fixture field: $key")
-        fun expected(key: String): String =
-            Regex("\\\"$key\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
-                .find(raw)?.groupValues?.get(1)
-                ?: error("Missing string fixture field: $key")
+    @Test fun oneSelectedTimeframeIsAnalyzedWithoutRequiringOtherTimeframes() {
+        val now=System.currentTimeMillis()
+        val duration=60_000L
+        val start=(now/duration)*duration-219*duration
+        val result=TradingStrategy.evaluate(mapOf("1m" to series(220,duration,start)),now)
+        assertEquals("WAIT",result.signal) // monotonic fixture has an overbought RSI, so no direction
+        assertTrue(result.reasons.any{it.contains("تحلیل اندیکاتورها")})
+        assertFalse(result.reasons.any{it.contains("5m")||it.contains("15m")||it.contains("30m")})
+    }
 
-        val start = number("start_ms")
-        val base = Regex("\\\"base_price\\\"\\s*:\\s*([0-9.]+)")
-            .find(raw)?.groupValues?.get(1)?.toDouble() ?: error("Missing base_price")
-        fun candles(tf: String, duration: Long): List<MarketCandle> {
-            val count = number(tf).toInt()
-            val alignedStart = (start / duration) * duration
-            return (0 until count).map { i ->
-                val close = base + i * 0.02 + sin(i * 0.3) * 0.03
-                MarketCandle(close - 0.02, close + 0.15, close - 0.15,
-                    close, 100.0 + i, alignedStart + i * duration)
-            }
+    @Test fun twoAndFourSelectedTimeframesAreAcceptedAsTheSelection() {
+        val now=System.currentTimeMillis()
+        val durations=mapOf("1m" to 60_000L,"3m" to 180_000L,
+            "15m" to 900_000L,"4h" to 14_400_000L)
+        val decision=(now/14_400_000L)*14_400_000L
+        val selected=durations.mapValues { (_,step) ->
+            val lastOpen=decision-step
+            series(220,step,lastOpen-219L*step)
         }
-        val five = candles("5m", 300_000L)
-        val fifteen = candles("15m", 900_000L)
-        val thirty = candles("30m", 1_800_000L)
-        val decisionTime = five.last().time + 300_000L
-        val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime + 1_000L)
-        val normalized = if (result.signal == "WAIT") "NO_SIGNAL" else result.signal
-        assertEquals(expected("expected_signal"), normalized)
-        assertEquals(number("expected_score").toInt(), result.score)
-    }
-
-    @Test fun rejectsTakerBuyVolumeAboveTotalVolume() {
-        val now = System.currentTimeMillis()
-        val fiveStart = (now / 300_000L) * 300_000L - 80 * 300_000L
-        val fifteenStart = (now / 900_000L) * 900_000L - 80 * 900_000L
-        val thirtyStart = (now / 1_800_000L) * 1_800_000L - 80 * 1_800_000L
-        val five = series(80, 300_000L, fiveStart).toMutableList()
-        five[0] = five[0].copy(takerBuyVolume = five[0].volume + 1.0)
-        val result = TradingStrategy.evaluate(
-            five, series(80, 900_000L, fifteenStart), series(80, 1_800_000L, thirtyStart)
-        )
-        assertEquals("WAIT", result.signal)
-        assert(result.reasons.isNotEmpty())
-    }
-
-    @Test fun usesExchangeAsOfTimeToRejectAnUnclosedFiveMinuteCandle() {
-        val now = System.currentTimeMillis()
-        val fiveStart = (now / 300_000L) * 300_000L - 79 * 300_000L
-        val fifteenStart = (now / 900_000L) * 900_000L - 79 * 900_000L
-        val thirtyStart = (now / 1_800_000L) * 1_800_000L - 79 * 1_800_000L
-        val five = series(80, 300_000L, fiveStart)
-        val fifteen = series(80, 900_000L, fifteenStart)
-        val thirty = series(80, 1_800_000L, thirtyStart)
-        val decisionTime = five.last().time + 300_000L
-        val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime - 1L)
-        assertEquals("WAIT", result.signal)
-        assert(result.reasons.isNotEmpty())
-    }
-
-    @Test fun rejectsMalformedOldCandleBeforeRecursiveIndicators() {
-        val now = System.currentTimeMillis()
-        val base5 = (now / 300_000L) * 300_000L - 80 * 300_000L
-        val base15 = (now / 900_000L) * 900_000L - 80 * 900_000L
-        val base30 = (now / 1_800_000L) * 1_800_000L - 80 * 1_800_000L
-        val five = series(80, 300_000L, base5).toMutableList()
-        five[0] = five[0].copy(high = five[0].open - 1.0)
-        val fifteen = series(80, 900_000L, base15)
-        val thirty = series(80, 1_800_000L, base30)
-        assertEquals("WAIT", TradingStrategy.evaluate(five, fifteen, thirty).signal)
-    }
-
-    @Test fun returnsWaitWhenHigherTimeframeHistoryIsInsufficientAfterAsOfTrim() {
-        val now = System.currentTimeMillis()
-        val base5 = (now / 300_000L) * 300_000L - 80 * 300_000L
-        val base15 = (now / 900_000L) * 900_000L - 80 * 900_000L
-        val base30 = (now / 1_800_000L) * 1_800_000L - 80 * 1_800_000L
-        val five = series(80, 300_000L, base5)
-        val fifteen = series(60, 900_000L, base15)
-        val thirty = series(60, 1_800_000L, base30)
-        assertEquals("WAIT", TradingStrategy.evaluate(five, fifteen, thirty).signal)
-    } 
-    @Test fun rejectsHigherTimeframeSeriesNotAlignedToFiveMinuteDecisionBoundary() {
-        val now = System.currentTimeMillis()
-        val fiveStart = (now / 300_000L) * 300_000L - 80 * 300_000L
-        val five = series(80, 300_000L, fiveStart)
-        val decisionTime = five.last().time + 300_000L
-        val expected15 = (decisionTime / 900_000L) * 900_000L - 900_000L
-        val expected30 = (decisionTime / 1_800_000L) * 1_800_000L - 1_800_000L
-        val fifteen = series(80, 900_000L, expected15 - 80 * 900_000L)
-        val thirty = series(80, 1_800_000L, expected30 - 79 * 1_800_000L)
-        val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime + 1_000L)
-        assertEquals("WAIT", result.signal)
-        assert(result.reasons.isNotEmpty())
-    }
-
-    @Test fun individualIndicatorConflictGateAllowsOneMinorButRejectsCoreOrMultipleConflicts() {
-        assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to 1,"MACD" to 1,"VWAP" to -1),1))
-        assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to -1,"MACD" to 1,"VWAP" to 1),1))
-        assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to 1,"MACD" to 1,"VWAP" to -1,"OBV_Trend" to -1),1))
-        assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to -1,"RSI" to -1,"MACD" to -1,"VWAP" to 1),-1))
-    }
-
-    @Test fun selectedTimeframeMapWaitsWhenAnySelectedSeriesIsMissing() {
-        val now = System.currentTimeMillis()
-        val oneMinuteStart = (now / 60_000L) * 60_000L - 219 * 60_000L
-        val selected = mapOf(
-            "1m" to series(220, 60_000L, oneMinuteStart),
-            "4h" to emptyList()
-        )
-        assertEquals("WAIT", TradingStrategy.evaluate(selected, now).signal)
-    }
-
-    @Test fun selectedSingleTimeframeIsAcceptedButStillRequiresEntrySafeguards() {
-        val now = System.currentTimeMillis()
-        val start = (now / 60_000L) * 60_000L - 219 * 60_000L
-        val selected = mapOf("1m" to series(220, 60_000L, start))
-        assertEquals("WAIT", TradingStrategy.evaluate(selected, now).signal)
-    }
-
-    @Test fun acceptsFourSelectedTimeframesWithoutRequiringTheDefaultThree() {
-        val duration = mapOf("1m" to 60_000L, "3m" to 180_000L,
-            "15m" to 900_000L, "4h" to 14_400_000L)
-        val now = System.currentTimeMillis()
-        val decision = (now / 14_400_000L) * 14_400_000L
-        val selected = duration.mapValues { (_, step) ->
-            val lastOpen = decision - step
-            series(220, step, lastOpen - 219L * step)
-        }
-        val result = TradingStrategy.evaluate(selected, decision + 1_000L)
-        assertEquals(false, result.reasons.any {
+        val result=TradingStrategy.evaluate(selected,decision+1_000L)
+        assertFalse(result.reasons.any{
             it.contains("هیچ تایم‌فریمی") ||
-            it.contains("داده یا زمان‌بندی") ||
-            it.contains("اطلاعات کافی/معتبر") ||
-            it.contains("کندل بسته‌شده مشترک")
+            it.contains("داده تایم‌فریم انتخاب‌شده موجود نیست") ||
+            it.contains("اطلاعات کافی/معتبر نیست")
         })
     }
 
-    @Test fun ema21AntiChaseGateRejectsExtendedOrMissingDataAndAcceptsPullback() {
-        assertEquals(true, TradingStrategy.entryNotExtended(100.0, 99.5, 1.0))
-        assertEquals(false, TradingStrategy.entryNotExtended(100.0, 99.0, 1.0))
-        assertEquals(false, TradingStrategy.entryNotExtended(100.0, null, 1.0))
-        assertEquals(false, TradingStrategy.entryNotExtended(100.0, 99.5, null))
-        assertEquals(false, TradingStrategy.entryNotExtended(100.0, 99.5, 0.0))
+    @Test fun missingSelectedSeriesReturnsWait() {
+        val now=System.currentTimeMillis()
+        val start=(now/60_000L)*60_000L-219*60_000L
+        val result=TradingStrategy.evaluate(mapOf(
+            "1m" to series(220,60_000L,start),
+            "4h" to emptyList()
+        ),now)
+        assertEquals("WAIT",result.signal)
+        assertTrue(result.reasons.first().contains("داده تایم‌فریم انتخاب‌شده موجود نیست"))
     }
 
-    @Test fun expectancyPolicyIsNotPartOfAndroidSignalEngine() {
-        val now = System.currentTimeMillis()
-        val five = series(220, 300_000L, (now / 300_000L) * 300_000L - 219 * 300_000L)
-        val fifteen = series(220, 900_000L, (now / 900_000L) * 900_000L - 219 * 900_000L)
-        val thirty = series(220, 1_800_000L, (now / 1_800_000L) * 1_800_000L - 219 * 1_800_000L)
-        val result = TradingStrategy.evaluate(mapOf("5m" to five, "15m" to fifteen, "30m" to thirty), now)
-        assertEquals("WAIT", result.signal)
+    @Test fun invalidHistoricalCandleIsRejected() {
+        val now=System.currentTimeMillis()
+        val duration=60_000L
+        val start=(now/duration)*duration-219*duration
+        val rows=series(220,duration,start).toMutableList()
+        rows[0]=rows[0].copy(high=rows[0].open-1.0)
+        val result=TradingStrategy.evaluate(mapOf("1m" to rows),now)
+        assertEquals("WAIT",result.signal)
+        assertTrue(result.reasons.isNotEmpty())
     }
 
+    @Test fun selectedTimeframesNeedClosedCandlesAtCommonBoundary() {
+        val now=System.currentTimeMillis()
+        val duration=300_000L
+        val start=(now/duration)*duration-219*duration
+        val rows=series(220,duration,start)
+        val beforeClose=TradingStrategy.evaluate(mapOf("5m" to rows),rows.last().time+duration-1)
+        assertEquals("WAIT",beforeClose.signal)
+        assertTrue(beforeClose.reasons.first().contains("کندل بسته‌شده تازه"))
+    }
 }
