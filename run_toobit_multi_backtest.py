@@ -41,8 +41,20 @@ def main():
         raise SystemExit("--slippage-bps cannot be negative")
 
     api = ToobitAPI()
-    end_ms = int(api.server_time()["serverTime"])
-    end_ms = (end_ms // 300000) * 300000
+    if args.end_datetime:
+        try:
+            raw_end = args.end_datetime.replace("Z", "+00:00")
+            parsed_end = datetime.fromisoformat(raw_end)
+            if parsed_end.tzinfo is None:
+                raise ValueError("timezone is required")
+            end_ms = int(parsed_end.astimezone(timezone.utc).timestamp() * 1000)
+        except ValueError as exc:
+            raise SystemExit("--end-datetime must be ISO-8601 with timezone") from exc
+        if end_ms % 300000:
+            raise SystemExit("End datetime must align to a 5-minute boundary")
+    else:
+        end_ms = int(api.server_time()["serverTime"])
+        end_ms = (end_ms // 300000) * 300000
     requested_start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000 if args.days else 0
     if args.start_date and args.start_datetime:
         raise SystemExit("Use only one of --start-date or --start-datetime")
@@ -103,6 +115,7 @@ def main():
             result.update({
                 "symbol": symbol,
                 "adx_policy": args.adx_policy,
+            "fixed_end_datetime_utc": args.end_datetime,
                 "commission_source": commission["source"],
                 "commission_rates": commission,
                 "candle_counts": {tf: len(rows) for tf, rows in market.items()},
