@@ -253,13 +253,13 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         funding = funding_bps_total if funding_events_applied else None
         funding_cash = funding_cash if funding_events_applied else None
         net_pnl = realized - fees - (funding_cash or 0.0)
-        if net_pnl < 0:
+        if exit_reason == "stop" and net_pnl < 0:
             loss_streak += 1
             if loss_streak >= loss_streak_limit:
                 cooldown_until_index = max(cooldown_until_index, exit_index + loss_cooldown_bars)
                 cooldown_events += 1
                 loss_streak = 0
-        else:
+        elif net_pnl > 0:
             loss_streak = 0
         start_equity = equity
         equity += net_pnl
