@@ -1019,7 +1019,11 @@ class MainActivity : Activity() {
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(12), dp(7), dp(10), dp(7))
                     minimumHeight = dp(62)
-                    isFocusable = true
+                    // Let ListView receive row taps; a focusable child row can swallow item clicks.
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    isClickable = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                     clipToOutline = true
                     elevation = dp(3).toFloat()
                     stateListAnimator = null
