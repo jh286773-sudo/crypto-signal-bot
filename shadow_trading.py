@@ -61,7 +61,7 @@ class ShadowLedger:
         return result
 
     def process(self, symbol: str, bar: dict[str, Any], candidate: dict[str, Any]) -> None:
-        """Keep a shadow position until an opposite directional signal is confirmed."""
+        """Open LONG while flat; a SHORT signal only closes that LONG."""
         stamp = self._bar_time(bar)
         with self._db() as db:
             cursor = db.execute("SELECT last_bar FROM shadow_cursor WHERE symbol=?", (symbol,)).fetchone()
@@ -84,7 +84,10 @@ class ShadowLedger:
             if row:
                 state = json.loads(row[0])
                 old_side = state.get("side")
-                if side == old_side:
+                if old_side == "LONG" and side == "LONG":
+                    return
+                if old_side == "SHORT" and side == "SHORT":
+                    db.execute("DELETE FROM shadow_open WHERE symbol=?", (symbol,))
                     return
                 old_entry = float(state.get("entry", 0.0))
                 if old_side in ("LONG", "SHORT") and old_entry > 0:
@@ -101,8 +104,14 @@ class ShadowLedger:
                             (symbol, old_side, symbol, old_side),
                         )
                 db.execute("DELETE FROM shadow_open WHERE symbol=?", (symbol,))
+                # SHORT is an exit instruction only. Never reverse into a short.
+                if old_side == "LONG" and side == "SHORT":
+                    return
 
-            state = {"side": side, "entry": entry, "opened_at": stamp}
+            # Ignore SHORT when flat; only a LONG can establish a position.
+            if side != "LONG":
+                return
+            state = {"side": "LONG", "entry": entry, "opened_at": stamp}
             db.execute(
                 "INSERT OR REPLACE INTO shadow_open(symbol,state,last_bar) VALUES(?,?,?)",
                 (symbol, json.dumps(state, separators=(",", ":")), stamp),

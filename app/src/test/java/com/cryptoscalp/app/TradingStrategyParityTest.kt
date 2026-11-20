@@ -57,6 +57,19 @@ class TradingStrategyParityTest {
         })
     }
 
+    @Test fun exceptionalVolatilityBlocksAndroidEntry() {
+        val now=System.currentTimeMillis()
+        val duration=60_000L
+        val start=(now/duration)*duration-219*duration
+        val rows=series(220,duration,start).toMutableList()
+        // Large final range expands ATR sharply relative to the preceding baseline.
+        val last=rows.last()
+        rows[rows.lastIndex]=last.copy(high=last.close+30.0,low=last.close-30.0)
+        val result=TradingStrategy.evaluate(mapOf("1m" to rows),rows.last().time+duration+1_000L)
+        assertEquals("WAIT",result.signal)
+        assertTrue(result.reasons.any{it.contains("نوسان غیرعادی")})
+    }
+
     @Test fun missingSelectedSeriesReturnsWait() {
         val now=System.currentTimeMillis()
         val start=(now/60_000L)*60_000L-219*60_000L

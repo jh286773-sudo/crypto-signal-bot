@@ -363,6 +363,9 @@ object TradingStrategy {
         if(invalid.isNotEmpty())return StrategyResult("WAIT",price,
             listOf("اطلاعات کافی/معتبر نیست؛ سیگنالی صادر نمی‌شود")+
                 invalid.map { tf -> "$tf: "+(reports[tf]?.reason?: "داده نامعتبر") })
+        val volatileTimeframes=reports.filterValues{it.highVolatility}.keys
+        if(volatileTimeframes.isNotEmpty())return StrategyResult("WAIT",price,
+            listOf("نوسان غیرعادی بازار؛ ورود تا آرام‌شدن نوسان متوقف شد: "+volatileTimeframes.joinToString("، ")))
         val allBullish=reports.values.all{it.bias=="bullish"}
         val allBearish=reports.values.all{it.bias=="bearish"}
         val direction=when { allBullish->"LONG"; allBearish->"SHORT"; else->"WAIT" }

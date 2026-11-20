@@ -104,26 +104,20 @@ class CryptoMonitorService : Service() {
                     recordSuccessfulAnalysis()
                     lastDiagnostic=symbol+" • تحلیل کندل جدید • تایم‌فریم‌ها: "+selectedTimeframes.joinToString("، ")+" • "+r.reasons.joinToString(" ؛ ")
                     closeShadowOnReversal(symbol,r.signal,r.entry)
-                    if(isDirectionalSignal(r.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,r,latestClosedCandleTime)
+                    if(r.signal=="LONG" && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,r,latestClosedCandleTime)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
-                    when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,false)) {
+                    when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,isLossCooldownActive(symbol))) {
                         SignalDecision.OPEN -> {
                             saveOpen(symbol,r,latestClosedCandleTime)
                             notifySignal(symbol,r)
                         }
-                        SignalDecision.REVERSE -> {
-                            recordVirtualClose(symbol,r.entry)
-                            clearOpen(symbol)
-                            saveOpen(symbol,r,latestClosedCandleTime)
-                            notifyReversal(symbol,r)
-                        }
                         SignalDecision.CLOSE_ONLY -> {
                             recordVirtualClose(symbol,r.entry)
                             clearOpen(symbol)
-                            notifyExit(symbol,"بستن موقعیت قبلی • $symbol",
-                                "سیگنال مخالف $r.signal تأیید شد؛ موقعیت $openSide بسته شد. به‌دلیل دوره توقف ریسک، موقعیت جدید باز نشد.")
+                            // SHORT is an exit signal only. Keep the agreed compact alert format.
+                            notifySignal(symbol,r)
                         }
                         SignalDecision.NONE -> Unit
                     }
@@ -161,6 +155,10 @@ class CryptoMonitorService : Service() {
     }
     // WAIT is an internal no-trade state only; user-facing entry alerts are LONG or SHORT.
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
+    private fun isLossCooldownActive(symbol:String):Boolean {
+        val until=prefs.getLong("loss_cooldown_until_$symbol",0L)
+        return LossCooldownPolicy.isActive(until,System.currentTimeMillis())
+    }
 
     private fun saveOpen(symbol:String,r:StrategyResult,barTime:Long){
         val o=JSONObject().put("side",r.signal).put("entry",r.entry)
@@ -189,12 +187,20 @@ class CryptoMonitorService : Service() {
         val o=try{JSONObject(raw)}catch(_:Exception){return}
         val side=o.optString("side")
         val entry=o.optDouble("entry",0.0)
-        if((side!="LONG"&&side!="SHORT")||entry<=0.0||exit<=0.0)return
-        val direction=if(side=="LONG")1.0 else -1.0
-        val net=direction*(exit-entry)/entry-0.001
-        val key="closed_net_return_"+symbol+"_"+side
+        if(side!="LONG"||entry<=0.0||exit<=0.0)return
+        val net=(exit-entry)/entry-0.001
+        val key="closed_net_return_"+symbol+"_LONG"
         val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
-        prefs.edit().putString(key,(prior+net).joinToString(",")).apply()
+        val edit=prefs.edit().putString(key,(prior+net).joinToString(","))
+        if(net<0.0){
+            val now=System.currentTimeMillis()
+            val lossKey="recent_net_losses_$symbol"
+            val losses=prefs.getString(lossKey,"").orEmpty().split(",").mapNotNull{it.toLongOrNull()}
+            val update=LossCooldownPolicy.recordLoss(losses,now)
+            edit.putString(lossKey,update.recentLosses.joinToString(","))
+            if(update.cooldownUntilMs>now) edit.putLong("loss_cooldown_until_$symbol",update.cooldownUntilMs)
+        }
+        edit.apply()
     }
     // Positions persist through all price movements and are closed only by an opposite confirmed signal.
     private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}

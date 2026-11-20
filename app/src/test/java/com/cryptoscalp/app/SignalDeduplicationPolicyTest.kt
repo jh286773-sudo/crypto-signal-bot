@@ -4,38 +4,30 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SignalDeduplicationPolicyTest {
-    @Test fun opensNewSignalOnceWhenNoPositionExists() {
+    @Test fun opensLongOnlyWhenFlatAndNotCoolingDown() {
         assertEquals(SignalDecision.OPEN, SignalDeduplicationPolicy.decide(null, "LONG", "WAIT", false))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "LONG", "LONG", false))
+        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "SHORT", "WAIT", false))
+        assertEquals(SignalDecision.OPEN, SignalDeduplicationPolicy.decide(null, "LONG", "LONG", false))
+        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "LONG", "WAIT", true))
     }
 
-    @Test fun doesNotRepeatSignalWhileSameSidePositionIsOpen() {
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("LONG", "LONG", "LONG", false))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("SHORT", "SHORT", "SHORT", false))
-    }
-
-    @Test fun reversesOnlyOnceAfterOppositeConfirmedSignal() {
-        assertEquals(SignalDecision.REVERSE, SignalDeduplicationPolicy.decide("LONG", "SHORT", "LONG", false))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("SHORT", "SHORT", "SHORT", false))
-    }
-
-    @Test fun cooldownClosesOldSideWithoutOpeningNewSide() {
+    @Test fun shortOnlyClosesAnExistingLong() {
+        assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide("LONG", "SHORT", "LONG", false))
         assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide("LONG", "SHORT", "LONG", true))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "SHORT", "WAIT", true))
+        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "SHORT", "WAIT", false))
     }
 
-    @Test fun waitNeverCreatesAnEntryOrReversal() {
+    @Test fun sameSideLongDoesNotDuplicateOrResetPosition() {
+        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("LONG", "LONG", "LONG", false))
+    }
+
+    @Test fun legacyShortPositionIsNeverReversedIntoAnotherShort() {
+        assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide("SHORT", "LONG", "SHORT", false))
+        assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide("SHORT", "SHORT", "SHORT", false))
+    }
+
+    @Test fun waitNeverCreatesAnEntryOrExit() {
         assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "WAIT", null, false))
         assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("LONG", "WAIT", "LONG", false))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("SHORT", "WAIT", "SHORT", false))
-    }
-
-    @Test fun reversesSymmetricallyFromShortToLong() {
-        assertEquals(SignalDecision.REVERSE, SignalDeduplicationPolicy.decide("SHORT", "LONG", "SHORT", false))
-    }
-
-    @Test fun sameSideSignalsNeverDuplicateOpenPositions() {
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("LONG", "LONG", "LONG", false))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("SHORT", "SHORT", "SHORT", false))
     }
 }

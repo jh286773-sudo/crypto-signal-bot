@@ -579,6 +579,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
                 "reason":"Insufficient/invalid candles: "+detail,
                 "timeframes":reports,"diagnostics":{tf: reports[tf].get("reason", "invalid candle data") for tf in invalid},
                 "trade_enabled":False}
+    volatile = [tf for tf in selected_tfs if reports[tf].get("high_volatility", False)]
+    if volatile:
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                "reason":"Exceptional volatility blocks new entries on: "+", ".join(volatile),
+                "timeframes":reports,"trade_enabled":False,
+                "rejection_reasons":["exceptional_volatility"]}
     all_bullish=all(reports[tf]["bias"]=="bullish" for tf in selected_tfs)
     all_bearish=all(reports[tf]["bias"]=="bearish" for tf in selected_tfs)
     side="LONG" if all_bullish else "SHORT" if all_bearish else None
