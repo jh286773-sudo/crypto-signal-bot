@@ -111,13 +111,13 @@ class CryptoMonitorService : Service() {
                     when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,false)) {
                         SignalDecision.OPEN -> {
                             saveOpen(symbol,r,latestClosedCandleTime)
-                            notifySignal(symbol,r)
+                            notifySignal(symbol,r,selectedTimeframes)
                         }
                         SignalDecision.REVERSE -> {
                             recordVirtualClose(symbol,r.entry)
                             clearOpen(symbol)
                             saveOpen(symbol,r,latestClosedCandleTime)
-                            notifyReversal(symbol,openSide.orEmpty(),r)
+                            notifyReversal(symbol,openSide.orEmpty(),r,selectedTimeframes)
                         }
                         SignalDecision.CLOSE_ONLY -> {
                             recordVirtualClose(symbol,r.entry)
@@ -147,8 +147,8 @@ class CryptoMonitorService : Service() {
                 val lastAnalysisAt=prefs.getLong("last_successful_analysis_at",0L)
                 val detail=if(failed>0) " • خطا $failed: $firstError" else ""
                 val waiting=if(analyzed==0 && failed==0) " • هنوز کندل بسته‌شده مشترک جدید نرسیده" else ""
-                val lastAt=if(lastAnalysisAt>0L) " • آخرین تحلیل: $lastAnalysisAt" else ""
-                val statusLine="توبیت • پایش $ok از ${list.size} نماد • تحلیل موفق این چرخه: $analyzed • کل تحلیل‌ها: $totalAnalyses • پایش هر ۶۰ ثانیه$detail$waiting$lastAt"
+                val lastAt=if(lastAnalysisAt>0L) " • آخرین تحلیل موفق: "+android.text.format.DateFormat.format("HH:mm:ss",lastAnalysisAt) else " • هنوز تحلیل موفقی ثبت نشده"
+                val statusLine="توبیت • دریافت داده: $ok از ${list.size} نماد • تحلیل موفق در همین چرخه: $analyzed • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه$detail$waiting$lastAt"
                 if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
                 updateStatus(statusLine+(if(lastDiagnostic.isNotBlank()) "\n"+lastDiagnostic else ""))
             }
@@ -200,26 +200,27 @@ class CryptoMonitorService : Service() {
     private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}
     private fun closeOpen(symbol:String,reason:String){ val px=Regex("قیمت ([0-9.eE+-]+)").find(reason)?.groupValues?.getOrNull(1)?.toDoubleOrNull(); if(px!=null)recordVirtualClose(symbol,px); clearOpen(symbol); notifyExit(symbol,"خروج از موقعیت • $symbol",reason) }
     private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
-    private fun notifySignal(symbol:String,r:StrategyResult){
-        val body=buildString{
-            append("اقدام: بازکردن موقعیت ${r.signal} • ${if(r.signal=="LONG")"لانگ" else "شورت"}\\n")
-            append("تا زمان دریافت سیگنال مخالف معتبر، موقعیت باز نگه داشته می‌شود.\\n")
-            append("این اعلان راهنمای دستی است؛ برنامه سفارش صرافی را ثبت یا اجرا نمی‌کند.\\n")
-            append("دلایل: ${r.reasons.joinToString("، ")}")
-        }
-        val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("بازکردن ${r.signal} • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
+    private fun notifySignal(symbol:String,r:StrategyResult,timeframes:List<String>){
+        val body="جهت تأییدشده: ${r.signal}\n"+
+            "تایم‌فریم‌های تأییدشده: ${timeframes.joinToString("، ")}\n"+
+            "قانون ورود: EMA و DMI هم‌جهت؛ RSI یا MACD تأییدکننده\n"+
+            "این اعلان راهنمای دستی است؛ سفارش خودکار در صرافی ثبت نمی‌شود."
+        val b=notificationBuilder(alertChannel)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("${r.signal} • $symbol")
+            .setContentText("تأیید در ${timeframes.joinToString("، ")}")
+            .setStyle(Notification.BigTextStyle().bigText(body))
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
     }
-    private fun notifyReversal(symbol:String,oldSide:String,r:StrategyResult){
-        val body=buildString{
-            append("۱) بستن موقعیت قبلی: $oldSide\\n")
-            append("۲) بازکردن موقعیت جدید: ${r.signal}\\n")
-            append("سیگنال مخالف پس از بسته‌شدن کندل و تأیید تایم‌فریم‌ها صادر شد.\\n")
-            append("این اعلان راهنمای دستی است؛ برنامه سفارش صرافی را ثبت یا اجرا نمی‌کند.\\n")
-            append("دلایل: ${r.reasons.joinToString("، ")}")
-        }
+    private fun notifyReversal(symbol:String,oldSide:String,r:StrategyResult,timeframes:List<String>){
+        val body="بستن موقعیت قبلی: $oldSide\n"+
+            "جهت جدید تأییدشده: ${r.signal}\n"+
+            "تایم‌فریم‌ها: ${timeframes.joinToString("، ")}\n"+
+            "قانون ورود: EMA و DMI هم‌جهت؛ RSI یا MACD تأییدکننده\n"+
+            "این اعلان راهنمای دستی است؛ سفارش خودکار در صرافی ثبت نمی‌شود."
         val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("تغییر جهت • $symbol").setContentText("بستن $oldSide ← بازکردن ${r.signal}")
+            .setContentTitle("تغییر جهت • $symbol")
+            .setContentText("بستن $oldSide ← بازکردن ${r.signal}")
             .setStyle(Notification.BigTextStyle().bigText(body))
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
     }
