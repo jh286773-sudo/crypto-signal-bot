@@ -217,8 +217,8 @@ class EngineTests(unittest.TestCase):
 
     def test_indicator_family_conflict_blocks_directional_signal(self):
         conflicted = {"valid": True, "score": 60.0, "bias": "bullish",
-                      "family_scores": {"trend":0.8,"momentum":0.7,"strength":0.6,
-                                        "volume":0.7,"structure":0.6,"orderflow":-0.8,
+                      "family_scores": {"trend":-0.8,"momentum":0.7,"strength":0.6,
+                                        "volume":0.7,"structure":0.6,"orderflow":0.8,
                                         "volatility":0.0,"divergence":0.0},
                       "indicators": {"atr":1.0,"smc":{"retest_long":True,"entry_distance_atr":0.2}},
                       "close":100.0}
@@ -236,6 +236,17 @@ class EngineTests(unittest.TestCase):
             result = analyze_market({tf:candles() for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
         self.assertIn("missing or overextended", result["reason"])
+
+
+    def test_liquidity_sweep_without_breakout_retest_is_not_an_entry(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,
+                                     "volume":0.8,"structure":0.8,"orderflow":0.8},
+                   "indicators": {"atr":1.0,"smc":{"liquidity_sweep":"sell_side",
+                       "retest_long":False,"structure_event":"none"}}, "close":100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result = analyze_market({tf:candles() for tf in ("5m","15m","30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
 
 
 if __name__=="__main__": unittest.main()
