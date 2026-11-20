@@ -59,9 +59,10 @@ jobs:
       - name: Run with published VIP-0 commission schedule
         if: github.event_name == 'push' || inputs.fee_source == 'public-vip0'
         env:
-          SYMBOL: ${{ inputs.symbol }}
-          DAYS: ${{ inputs.days }}
-          SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
+          SYMBOL: ${{ inputs.symbol || 'BTC-SWAP-USDT' }}
+          DAYS: ${{ inputs.days || '10' }}
+          SLIPPAGE_BPS: ${{ inputs.slippage_bps || '1.0' }}
+          END_MS: ${{ github.event_name == 'push' && '1795172400000' || '' }}
         run: |
           python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --risk 0.005 --public-vip0-fees --output toobit_walk_forward_result.json
       - uses: actions/upload-artifact@v4
