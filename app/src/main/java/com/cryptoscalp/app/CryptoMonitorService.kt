@@ -128,7 +128,9 @@ class CryptoMonitorService : Service() {
                 ok++
             }catch(e:Exception){
                 failed++
-                if(firstError.isBlank()) firstError="$symbol: ${e.message ?: e.javaClass.simpleName}"
+                val errorText="$symbol: ${e.message ?: e.javaClass.simpleName}"
+                if(firstError.isBlank()) firstError=errorText
+                if(lastDiagnostic.isBlank()) lastDiagnostic="خطای دریافت/تحلیل $errorText"
             }
             scanning=false
             handler.post{
