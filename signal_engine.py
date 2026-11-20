@@ -440,7 +440,8 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         vote("OBV_Trend",obv)
         vote("Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
         bias=_indicator_bias(details)
-        return {"valid":True,"close":price,"bias":bias,
+        smc=_market_structure(c)
+        return {"valid":True,"close":price,"bias":bias,"smc":smc,
                 "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
                 "market_regime":regime,"ema21":e20,
                 "indicators":{
@@ -488,6 +489,26 @@ def _indicator_bias(indicator_directions: Dict[str, int]) -> str:
     if core_short and support_short:
         return "bearish"
     return "neutral"
+
+
+def _smc_confirms(structure: Dict[str, Any], side: str) -> bool:
+    """Independent SMC entry filter; no weights or scores are involved."""
+    if not structure or structure.get("false_breakout", False):
+        return False
+    blocks = structure.get("order_blocks") or []
+    if side == "LONG":
+        if blocks and blocks[0].get("type") == "bearish":
+            return False
+        return (structure.get("structure_event") in ("BOS_up", "CHoCH_up")
+                or structure.get("retest_long", False)
+                or structure.get("liquidity_sweep") == "sell_side")
+    if side == "SHORT":
+        if blocks and blocks[0].get("type") == "bullish":
+            return False
+        return (structure.get("structure_event") in ("BOS_down", "CHoCH_down")
+                or structure.get("retest_short", False)
+                or structure.get("liquidity_sweep") == "buy_side")
+    return False
 
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
@@ -542,6 +563,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
                 "reason":"Indicator analysis must agree across every selected timeframe; disagreement or neutral analysis means no signal.",
                 "timeframes":reports,"trade_enabled":False,
                 "rejection_reasons":["selected_timeframe_unanimity_required"]}
+    smc_rejected = [tf for tf in selected_tfs if not _smc_confirms(reports[tf].get("smc", {}), side)]
+    if smc_rejected:
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                "reason":"SMC confirmation is missing, opposing, or invalidated by a false breakout.",
+                "timeframes":reports,"trade_enabled":False,
+                "rejection_reasons":["smc_confirmation_required"],"smc_rejected_timeframes":smc_rejected}
     entry_tf=min(selected_tfs,key=lambda tf:SUPPORTED_TFS.index(tf))
     return {"signal":side,"status":side,"timeframes":reports,"entry":reports[entry_tf]["close"],
             "entry_timeframe":entry_tf,"entry_stage":"ENTRY",
