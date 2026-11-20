@@ -176,7 +176,8 @@ class CryptoMonitorService : Service() {
             if(i==0){o.put("tp1Done",true);o.put("stop",o.optDouble("entry"))}
             if(i==1){o.put("tp2Done",true);o.put("stop",o.optDouble("tp1"))}
             recordShadowClose(symbol,o,fill,fraction)
-            if(prefs.getString("shadow_setup_$symbol",null)==null||i<2)return
+            if(prefs.getString("shadow_setup_$symbol",null)==null)return
+            if(i<2)break
         }
         if(bar.time-o.optLong("openedBar",bar.time)>=72L*300_000L){
             recordShadowClose(symbol,o,bar.close,o.optDouble("remaining",1.0))
