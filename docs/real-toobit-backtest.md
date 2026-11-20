@@ -58,3 +58,8 @@ priority, market impact, partial fills, and exact intrabar event order are not
 recoverable from OHLCV alone. A real performance report still requires a
 measured adverse slippage input and either authenticated account commission
 rates or the explicitly labeled public VIP-0 fee schedule.
+
+Funding settlement timestamps are charged once. If a settlement and an intrabar
+exit fall in the same 5m OHLC candle, exposure at that candle's open is used
+because OHLC cannot establish the order of the settlement and exit; this avoids
+optimistically omitting a potentially payable funding event.
