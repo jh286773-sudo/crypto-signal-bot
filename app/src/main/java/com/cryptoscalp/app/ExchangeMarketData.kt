@@ -12,6 +12,24 @@ import java.net.URL
  */
 object ExchangeMarketData {
     val supported = listOf("Toobit")
+    @Volatile private var serverOffsetMs: Long? = null
+    @Volatile private var serverTimeSyncLocalMs: Long = 0L
+
+    /** Exchange-clock estimate, synchronized periodically and shared by all market requests. */
+    @Synchronized
+    fun exchangeTimeMs(): Long {
+        val before = System.currentTimeMillis()
+        val offset = serverOffsetMs
+        if (offset == null || before - serverTimeSyncLocalMs > 30_000L || before < serverTimeSyncLocalMs) {
+            val response = JSONObject(get("https://api.toobit.com/api/v1/time"))
+            val serverTime = response.optLong("serverTime", 0L)
+            val after = System.currentTimeMillis()
+            if (serverTime <= 0L) throw IllegalStateException("زمان سرور توبیت معتبر نیست.")
+            serverOffsetMs = serverTime - ((before + after) / 2L)
+            serverTimeSyncLocalMs = after
+        }
+        return System.currentTimeMillis() + (serverOffsetMs ?: 0L)
+    }
 
     private fun get(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -58,7 +76,7 @@ object ExchangeMarketData {
         }
         require(symbol.endsWith("-SWAP-USDT")) { "نماد قرارداد توبیت نامعتبر است: $symbol" }
 
-        val now = System.currentTimeMillis()
+        val now = exchangeTimeMs()
         val duration = when (interval) {
             "5m" -> 300_000L
             "15m" -> 900_000L
