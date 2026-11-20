@@ -22,6 +22,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=0, help="0 = all available history unless --start-date is set; otherwise cap lookback")
     parser.add_argument("--start-date", help="Inclusive UTC start date (YYYY-MM-DD), e.g. 2026-11-09")
+    parser.add_argument("--start-datetime", help="Inclusive UTC start datetime (ISO-8601), e.g. 2026-11-09T01:00:00Z")
     parser.add_argument("--symbols", required=True, help="Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT")
     
     parser.add_argument("--slippage-bps", type=float, default=1.0,
@@ -42,11 +43,23 @@ def main():
     end_ms = int(api.server_time()["serverTime"])
     end_ms = (end_ms // 300000) * 300000
     requested_start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000 if args.days else 0
-    if args.start_date:
+    if args.start_date and args.start_datetime:
+        raise SystemExit("Use only one of --start-date or --start-datetime")
+    if args.start_date or args.start_datetime:
         try:
-            requested_start_ms = int(datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
+            if args.start_datetime:
+                raw_start = args.start_datetime.replace("Z", "+00:00")
+                parsed_start = datetime.fromisoformat(raw_start)
+                if parsed_start.tzinfo is None:
+                    raise ValueError("timezone is required")
+                parsed_start = parsed_start.astimezone(timezone.utc)
+            else:
+                parsed_start = datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            requested_start_ms = int(parsed_start.timestamp() * 1000)
         except ValueError as exc:
-            raise SystemExit("--start-date must use YYYY-MM-DD") from exc
+            raise SystemExit("--start-date must use YYYY-MM-DD; --start-datetime must be ISO-8601 with timezone") from exc
+        if requested_start_ms % 300000:
+            raise SystemExit("Start datetime must align to a 5-minute candle boundary")
         if requested_start_ms >= end_ms:
             raise SystemExit("--start-date must be earlier than the current backtest end")
     # Only selected symbols are tested. Each timeframe starts at its own first real candle.
@@ -58,10 +71,10 @@ def main():
         symbol: {tf: api.get_first_available_candle_open(symbol, tf, end_ms)
                  for tf in ("5m", "15m", "30m")}
         for symbol in selected_symbols
-    } if not args.start_date else {})
+    } if not (args.start_date or args.start_datetime) else {})
     starts_by_symbol = {
         symbol: ({tf: requested_start_ms for tf in ("5m", "15m", "30m")}
-                 if args.start_date else
+                 if (args.start_date or args.start_datetime) else
                  {tf: max(requested_start_ms, start) for tf, start in available_starts[symbol].items()})
         for symbol in selected_symbols
     }
@@ -131,8 +144,9 @@ def main():
         "period_utc": {
             "end": datetime.fromtimestamp(end_ms / 1000, timezone.utc).isoformat(),
             "days_requested_max": args.days or "all_available",
-            "window_basis": ("fixed inclusive UTC start date" if args.start_date else "each timeframe begins at its own earliest available closed candle, optionally capped by lookback"),
+            "window_basis": ("fixed inclusive UTC start datetime" if args.start_datetime else ("fixed inclusive UTC start date" if args.start_date else "each timeframe begins at its own earliest available closed candle, optionally capped by lookback")),
             "requested_start_date_utc": args.start_date or None,
+            "requested_start_datetime_utc": parsed_start.isoformat() if args.start_datetime else (datetime.fromtimestamp(requested_start_ms / 1000, timezone.utc).isoformat() if args.start_date else None),
             "timeframe_start_by_symbol_utc": {
                 symbol: {tf: datetime.fromtimestamp(start / 1000, timezone.utc).isoformat()
                          for tf, start in starts.items()}
