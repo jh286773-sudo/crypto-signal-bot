@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       start_datetime:
@@ -41,11 +44,14 @@ jobs:
           START_DATETIME: ${{ inputs.start_datetime || '2026-11-09T01:00:00Z' }}
           SYMBOLS: ${{ inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
         run: |
-          python run_toobit_multi_backtest.py --days 0 --start-datetime "$START_DATETIME" --symbols "$SYMBOLS" --slippage-bps 1.0 --output toobit_selected_from_2026-11-09_0100_utc.json
+          END_DATETIME=$(date -u -d "@$(( $(date +%s) / 300 * 300 ))" +%Y-%m-%dT%H:%M:%SZ)
+          python run_toobit_multi_backtest.py --days 0 --start-datetime "$START_DATETIME" --end-datetime "$END_DATETIME" --symbols "$SYMBOLS" --slippage-bps 1.0 --adx-policy strict --output toobit_selected_strict.json
+          python run_toobit_multi_backtest.py --days 0 --start-datetime "$START_DATETIME" --end-datetime "$END_DATETIME" --symbols "$SYMBOLS" --slippage-bps 1.0 --adx-policy balanced --output toobit_selected_balanced.json
+          python run_toobit_multi_backtest.py --days 0 --start-datetime "$START_DATETIME" --end-datetime "$END_DATETIME" --symbols "$SYMBOLS" --slippage-bps 1.0 --adx-policy confirm_only --output toobit_selected_confirm_only.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: aurum-x-selected-backtest-from-2026-11-09-0100-utc
-          path: toobit_selected_from_2026-11-09_0100_utc.json
+          path: toobit_selected_*.json
           if-no-files-found: warn
           retention-days: 30

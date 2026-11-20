@@ -23,12 +23,14 @@ def main():
     parser.add_argument("--days", type=int, default=0, help="0 = all available history unless --start-date is set; otherwise cap lookback")
     parser.add_argument("--start-date", help="Inclusive UTC start date (YYYY-MM-DD), e.g. 2026-11-09")
     parser.add_argument("--start-datetime", help="Inclusive UTC start datetime (ISO-8601), e.g. 2026-11-09T01:00:00Z")
+    parser.add_argument("--end-datetime", help="Exclusive UTC data-end boundary (ISO-8601), pinned across policy comparisons")
     parser.add_argument("--symbols", required=True, help="Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT")
     
     parser.add_argument("--slippage-bps", type=float, default=1.0,
                         help="Assumed adverse slippage per fill; not measured")
     parser.add_argument("--equity-per-symbol", type=float, default=10000.0)
     parser.add_argument("--risk", type=float, default=0.005)
+    parser.add_argument("--adx-policy", choices=("strict", "balanced", "confirm_only"), default="strict")
     parser.add_argument("--output", default="toobit_multi_crypto_30day.json")
     args = parser.parse_args()
     if not 0 <= args.days <= 3650:
@@ -40,8 +42,20 @@ def main():
         raise SystemExit("--slippage-bps cannot be negative")
 
     api = ToobitAPI()
-    end_ms = int(api.server_time()["serverTime"])
-    end_ms = (end_ms // 300000) * 300000
+    if args.end_datetime:
+        try:
+            raw_end = args.end_datetime.replace("Z", "+00:00")
+            parsed_end = datetime.fromisoformat(raw_end)
+            if parsed_end.tzinfo is None:
+                raise ValueError("timezone is required")
+            end_ms = int(parsed_end.astimezone(timezone.utc).timestamp() * 1000)
+        except ValueError as exc:
+            raise SystemExit("--end-datetime must be ISO-8601 with timezone") from exc
+        if end_ms % 300000:
+            raise SystemExit("End datetime must align to a 5-minute boundary")
+    else:
+        end_ms = int(api.server_time()["serverTime"])
+        end_ms = (end_ms // 300000) * 300000
     requested_start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000 if args.days else 0
     if args.start_date and args.start_datetime:
         raise SystemExit("Use only one of --start-date or --start-datetime")
@@ -97,9 +111,11 @@ def main():
                 slippage_bps=args.slippage_bps,
                 initial_equity=args.equity_per_symbol,
                 risk_fraction=args.risk,
+                adx_policy=args.adx_policy,
             )
             result.update({
                 "symbol": symbol,
+                "adx_policy": args.adx_policy,
                 "commission_source": commission["source"],
                 "commission_rates": commission,
                 "candle_counts": {tf: len(rows) for tf, rows in market.items()},
@@ -154,6 +170,8 @@ def main():
             },
         },
         "methodology": {
+            "adx_policy": args.adx_policy,
+            "fixed_end_datetime_utc": args.end_datetime,
             "strategy": "same 5m/15m/30m closed-candle strategy on every eligible contract",
             "symbol_selection": "only user-selected active Toobit USDT-margined linear perpetual contracts",
             "earliest_available_candle_by_symbol_and_timeframe_utc": {

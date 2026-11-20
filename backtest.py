@@ -15,7 +15,8 @@ def run_backtest(timeframes: Dict[str, list], *, fee_bps: float = None,
                  funding_bps_per_8h: float = 0.0,
                  initial_equity: float = 10_000.0,
                  risk_fraction: float = 0.005,
-                 allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3)) -> Dict[str, Any]:
+                 allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3),
+                 adx_policy: str = "strict") -> Dict[str, Any]:
     """Run causal 5m/15m/30m walk-forward using explicit per-side costs.
 
     Funding fallback is intentionally disabled: callers must provide real
@@ -35,4 +36,5 @@ def run_backtest(timeframes: Dict[str, list], *, fee_bps: float = None,
         risk_fraction=risk_fraction,
         max_holding_bars=holding_bars,
         allocation=allocation,
+        adx_policy=adx_policy,
     )
