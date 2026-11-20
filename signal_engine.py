@@ -9,6 +9,9 @@ from typing import Any, Dict, List, Optional, Sequence
 from math import isfinite, sqrt
 
 SUPPORTED_TFS = ("1m", "3m", "5m", "15m", "30m", "1h", "4h")
+# Kept only for legacy fixed-window research/backtest modules; live signal selection
+# uses the user's actual selected timeframe keys and never requires this tuple.
+REQUIRED_TFS = ("5m", "15m", "30m")
 MIN_INDICATOR_CANDLES = 200
 
 
