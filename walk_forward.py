@@ -171,7 +171,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                 fees += abs(fill*remaining)*fee_bps_close/10000
                 slippage += abs(fill-(min(o,stop) if side=="LONG" else max(o,stop)))*remaining
                 remaining = 0.0
-                exit_index, exit_price, exit_reason = j, fill, "stop_after_tp1" if hit_targets else "stop"
+                exit_index, exit_price, exit_reason = j, fill, ("stop_after_tp2" if 1 in hit_targets else "stop_after_tp1") if hit_targets else "stop"
                 break
             for k, target in enumerate(targets):
                 if k in hit_targets:
