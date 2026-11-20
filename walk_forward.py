@@ -174,7 +174,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             raw_fill = float(five[exit_index][1]["close"])
             fill = raw_fill * (1-slippage_bps_per_side/10000 if side=="LONG" else 1+slippage_bps_per_side/10000)
             realized += (fill-entry_fill)*remaining*(1 if side=="LONG" else -1)
-            fees += abs(fill*remaining)*fee_bps_per_side/10000
+            fees += abs(fill*remaining)*fee_bps_close/10000
             slippage += abs(fill-raw_fill)*remaining
             exit_price = fill
         funding_cash = 0.0
@@ -225,9 +225,9 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         "net_return_pct": (equity/initial_equity-1)*100,
         "win_rate_pct": wins/len(trades)*100 if trades else 0.0,
         "max_drawdown_pct": max_dd*100, "risk_fraction": risk_fraction,
-        "fee_bps_per_side": fee_bps_per_side,
+        "fee_bps_open": fee_bps_open, "fee_bps_close": fee_bps_close,
         "slippage_bps_per_side": slippage_bps_per_side,
         "timestamp_alignment": "asof_closed_only",
         "funding_mode": "historical_settlement_events" if any(t["funding_mode"]=="historical_settlement_events" for t in trades) else "not_supplied",
-        "note": "Requires real exchange OHLCV timestamps and explicit fee/slippage inputs. Funding is included only when historical funding_rate values are present; no missing exchange data is synthesized. Liquidation, queue priority and partial fill uncertainty remain outside this OHLCV model."
+        "note": "Requires real exchange OHLCV timestamps and explicit fee/slippage inputs. Funding is charged only on supplied historical settlement events; no missing exchange data is synthesized. Liquidation, queue priority and partial fill uncertainty remain outside this OHLCV model."
     }
