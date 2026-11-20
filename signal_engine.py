@@ -227,8 +227,10 @@ def _market_structure(c, lookback=60):
         prior_break_down = any(float(x["close"]) < pl for x in recent)
         prior_sell_sweep = any(float(x["low"]) < pl and float(x["close"]) > pl for x in recent)
         prior_buy_sweep = any(float(x["high"]) > ph and float(x["close"]) < ph for x in recent)
-        retest_long = (prior_break_up or prior_sell_sweep) and low <= ph+tolerance and close > ph and close > float(last["open"])
-        retest_short = (prior_break_down or prior_buy_sweep) and high >= pl-tolerance and close < pl and close < float(last["open"])
+        retest_long = ((prior_break_up and low <= ph+tolerance and close > ph)
+                       or (prior_sell_sweep and low <= pl+tolerance and close > pl)) and close > float(last["open"])
+        retest_short = ((prior_break_down and high >= pl-tolerance and close < pl)
+                        or (prior_buy_sweep and high >= ph-tolerance and close < ph)) and close < float(last["open"])
         return {"previous_swing_high":ph,"previous_swing_low":pl,
                 "structure_event":event,"market_structure":"range",
                 "liquidity_sweep":sweep,"equal_high_liquidity":False,
@@ -276,18 +278,18 @@ def _market_structure(c, lookback=60):
             break
     tolerance = max((atr or close*0.001)*0.25, close*0.0005)
     prior_bars = w[-7:-1]
-    retest_long = any(
-        (any(float(x["close"]) > level + (atr or 0)*0.10 for x in prior_bars)
-         or any(float(x["low"]) < level and float(x["close"]) > level for x in prior_bars))
-        and low <= level+tolerance and close > level and close > float(last["open"])
-        for _, level in reversed(swing_lows)
-    )
-    retest_short = any(
-        (any(float(x["close"]) < level - (atr or 0)*0.10 for x in prior_bars)
-         or any(float(x["high"]) > level and float(x["close"]) < level for x in prior_bars))
-        and high >= level-tolerance and close < level and close < float(last["open"])
-        for _, level in reversed(swing_highs)
-    )
+    retest_long = (
+        any(any(float(x["close"]) > level + (atr or 0)*0.10 for x in prior_bars)
+            and low <= level+tolerance and close > level for _, level in reversed(swing_highs))
+        or any(any(float(x["low"]) < level and float(x["close"]) > level for x in prior_bars)
+               and low <= level+tolerance and close > level for _, level in reversed(swing_lows))
+    ) and close > float(last["open"])
+    retest_short = (
+        any(any(float(x["close"]) < level - (atr or 0)*0.10 for x in prior_bars)
+            and high >= level-tolerance and close < level for _, level in reversed(swing_lows))
+        or any(any(float(x["high"]) > level and float(x["close"]) < level for x in prior_bars)
+               and high >= level-tolerance and close < level for _, level in reversed(swing_highs))
+    ) and close < float(last["open"])
     false_breakout = sweep != "none" and not (retest_long or retest_short)
     return {
         "previous_swing_high": last_high, "previous_swing_low": last_low,
