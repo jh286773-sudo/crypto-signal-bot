@@ -56,5 +56,23 @@ class WalkForwardTests(unittest.TestCase):
         self.assertIn("TP3",trade["targets_hit"])
 
 
+    def test_distinct_entry_exit_fees_and_funding_settlement_once(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        for row in data["5m"][360:364]:
+            row["low"]=100.0; row["high"]=100.5
+        data["5m"][361]["funding_rate"]=0.001
+        data["5m"][361]["funding_settle_time"]=362*DURATION_MS["5m"]
+        with patch("walk_forward.analyze_market",return_value={
+            "signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]
+        }):
+            result=run_walk_forward(data,fee_bps_open=2,fee_bps_close=4,
+                                    slippage_bps_per_side=0,initial_equity=10000,
+                                    max_holding_bars=2)
+        trade=result["trades"][0]
+        self.assertAlmostEqual(trade["funding_cash"],10.0,places=6)
+        self.assertEqual(trade["funding_mode"],"historical_settlement_events")
+        self.assertAlmostEqual(trade["fees_cash"],6.04,places=2)
+
+
 if __name__ == "__main__":
     unittest.main()

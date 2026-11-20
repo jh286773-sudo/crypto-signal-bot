@@ -1,0 +1,68 @@
+name: Toobit Real Historical Walk-Forward
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: Toobit USDT perpetual symbol
+        required: true
+        default: BTC-SWAP-USDT
+        type: string
+      days:
+        description: Historical period (2 to 180 days)
+        required: true
+        default: "30"
+        type: string
+      slippage_bps:
+        description: Measured adverse slippage per fill in basis points
+        required: true
+        type: string
+      fee_source:
+        description: Account-specific signed API or published VIP-0 schedule
+        required: true
+        default: account
+        type: choice
+        options:
+          - account
+          - public-vip0
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run with account-specific commission rates
+        if: inputs.fee_source == 'account'
+        env:
+          TOOBIT_API_KEY: ${{ secrets.TOOBIT_API_KEY }}
+          TOOBIT_API_SECRET: ${{ secrets.TOOBIT_API_SECRET }}
+          SYMBOL: ${{ inputs.symbol }}
+          DAYS: ${{ inputs.days }}
+          SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
+        run: |
+          test -n "$TOOBIT_API_KEY" && test -n "$TOOBIT_API_SECRET"
+          python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --output toobit_walk_forward_result.json
+      - name: Run with published VIP-0 commission schedule
+        if: inputs.fee_source == 'public-vip0'
+        env:
+          SYMBOL: ${{ inputs.symbol }}
+          DAYS: ${{ inputs.days }}
+          SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
+        run: |
+          python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --public-vip0-fees --output toobit_walk_forward_result.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aurum-x-toobit-walk-forward-result
+          path: toobit_walk_forward_result.json
+          if-no-files-found: error
+          retention-days: 30
