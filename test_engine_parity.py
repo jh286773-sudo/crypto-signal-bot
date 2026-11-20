@@ -23,7 +23,7 @@ class CrossEngineContractTests(unittest.TestCase):
         policy=(root/"app/src/main/java/com/cryptoscalp/app/ExpectancyPolicy.kt").read_text()
         for token in ("MIN_TRADES=30","MIN_PROFIT_FACTOR=1.10","ONE_SIDED_Z=1.645"):
             self.assertIn(token,policy)
-        self.assertIn("expectancyStats?.get(rawSignal)",kt)
+        self.assertIn("ExpectancyPolicy.evaluate(expectancyStats?.get(direction).orEmpty())",kt)
         self.assertIn("entryDistanceAtr",kt)
         self.assertIn(">.50",kt)
         self.assertIn("0.50",py)
@@ -53,10 +53,11 @@ class CrossEngineContractTests(unittest.TestCase):
         root=pathlib.Path(__file__).parent
         py=(root/"signal_engine.py").read_text()
         kt=(root/"app/src/main/java/com/cryptoscalp/app/TradingStrategy.kt").read_text()
-        self.assertIn('if longs == 3 and major_conflicts_clear: signal="LONG"',py)
-        self.assertIn('elif shorts == 3 and major_conflicts_clear: signal="SHORT"',py)
-        self.assertIn('allBullish&&sm5?.retestLong==true->"LONG"',kt)
-        self.assertIn('allBearish&&sm5?.retestShort==true->"SHORT"',kt)
+        self.assertIn('len(long_tfs)==len(selected_tfs)',py)
+        self.assertIn('len(short_tfs)==len(selected_tfs)',py)
+        self.assertIn('reports.values.all{it.bias=="bullish"',kt)
+        self.assertIn('reports.values.all{it.bias=="bearish"',kt)
+        self.assertIn('fun evaluate(timeframes:Map<String,List<MarketCandle>>',kt)
         for obsolete in ("combined>=34", "combined<=-34", 'score"]>=26', 'score"]<=-26',
                          'score"]>=24', 'score"]<=-24', "score>=22", "score<=-22",
                          "bullish>=4", "bearish>=4", "directionalQuality"):

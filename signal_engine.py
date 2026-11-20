@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Optional, Sequence
 from math import isfinite, sqrt
 from expectancy import expectancy_allows
 
-REQUIRED_TFS = ("5m", "15m", "30m")
+SUPPORTED_TFS = ("1m", "3m", "5m", "15m", "30m", "1h", "4h")
+REQUIRED_TFS = ("5m", "15m", "30m")  # backward-compatible default
 MIN_INDICATOR_CANDLES = 200
 
 
@@ -482,7 +483,7 @@ def _no_major_indicator_conflict(report: Dict[str, Any], side: str) -> bool:
     if not isinstance(votes, dict) or not votes:
         return True  # Compatibility for synthetic/legacy reports; live analysis always supplies votes.
     direction = 1 if side == "LONG" else -1
-    core = {"EMA", "Ichimoku", "RSI", "MACD", "StochRSI", "ADX_DMI", "VWAP", "OBV_Trend", "Bollinger"}
+    core = {"EMA", "Ichimoku", "RSI", "MACD", "StochRSI", "ADX_DMI", "OBV_Trend", "Bollinger"}
     opposing_core = sum(1 for name in core if int(votes.get(name, 0)) * direction < 0)
     opposing_minor = sum(1 for name, value in votes.items()
                          if name not in core and int(value) * direction < 0)
@@ -497,88 +498,106 @@ def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float
     return abs(float(price) - float(ema21)) / float(atr) <= max_distance_atr
 
 
-def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None, research_warmup: bool = False) -> Dict[str,Any]:
-    """Final decision is based on all indicator families and 5m/15m/30m alignment."""
-    # If exchange timestamps are present, all three series must be complete, contiguous,
-    # and selected at one identical 5m-close decision boundary. Untimestamped unit fixtures
-    # remain supported; live Toobit candles always carry open_time.
-    timestamped = [bool(timeframes.get(tf, [])) and all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in REQUIRED_TFS]
+def _levels(side, entry, atr, structure=None):
+    """Compatibility helper for research reports; levels are descriptive, not order instructions."""
+    if side not in ("LONG", "SHORT") or atr is None or float(atr) <= 0:
+        raise ValueError("side must be LONG/SHORT and ATR must be positive")
+    entry, atr = float(entry), float(atr)
+    structure = structure or {}
+    swing = structure.get("previous_swing_low" if side == "LONG" else "previous_swing_high")
+    buffer = atr * 0.15
+    if side == "LONG":
+        stop = min(entry - atr * 1.5, float(swing) - buffer) if swing is not None else entry - atr * 1.5
+        risk = entry - stop
+        targets = [entry + risk * multiple for multiple in (1.5, 2.5, 3.5)]
+    else:
+        stop = max(entry + atr * 1.5, float(swing) + buffer) if swing is not None else entry + atr * 1.5
+        risk = stop - entry
+        targets = [entry - risk * multiple for multiple in (1.5, 2.5, 3.5)]
+    return {"stop_loss": stop, "take_profits": targets, "risk_reward": [1.5, 2.5, 3.5]}
+
+def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None, research_warmup: bool = False, selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
+    """Analyze only selected timeframes; every selected timeframe must agree."""
+    selected_tfs = tuple(dict.fromkeys(REQUIRED_TFS if selected_timeframes is None else selected_timeframes))
+    if not selected_tfs or any(tf not in SUPPORTED_TFS for tf in selected_tfs):
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Invalid or empty selected timeframe list","trade_enabled":False}
+    missing = [tf for tf in selected_tfs if tf not in timeframes]
+    if missing:
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Missing selected timeframe data: "+", ".join(missing),"trade_enabled":False}
+    # Timestamped live data is frozen to one common close boundary to prevent look-ahead.
+    timestamped = [bool(timeframes.get(tf, [])) and all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in selected_tfs]
     if any(timestamped) and not all(timestamped):
-        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Mixed timestamped/untimestamped timeframe data", "trade_enabled":False}
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Mixed timestamped/untimestamped selected timeframe data","trade_enabled":False}
+    analysis_timeframes = {tf:list(timeframes.get(tf,[])) for tf in selected_tfs}
     if all(timestamped):
-        durations = {"5m":300000,"15m":900000,"30m":1800000}
+        durations = {"1m":60000,"3m":180000,"5m":300000,"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000}
         opens = {}
-        for tf in REQUIRED_TFS:
+        latest_closes = []
+        for tf in selected_tfs:
             rows = timeframes.get(tf, [])
             try:
                 stamps = [int(next(row[k] for k in ("timestamp","open_time","time") if k in row)) for row in rows]
             except (TypeError, ValueError, StopIteration):
-                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Invalid {tf} timestamps", "trade_enabled":False}
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Invalid {tf} timestamps","trade_enabled":False}
             d = durations[tf]
-            if len(stamps) < 60 or any(t < 0 or t % d for t in stamps) or any(b-a != d for a,b in zip(stamps,stamps[1:])):
-                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Non-contiguous or misaligned {tf} candles", "trade_enabled":False}
+            if len(stamps) < 200 or any(t < 0 or t % d for t in stamps) or any(b-a != d for a,b in zip(stamps,stamps[1:])):
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Non-contiguous or insufficient {tf} candles","trade_enabled":False}
             opens[tf] = stamps
-        decision_time = opens["5m"][-1] + durations["5m"]
-        expected = {tf: (decision_time // durations[tf]) * durations[tf] - durations[tf] for tf in ("15m","30m")}
-        analysis_timeframes = {tf:list(timeframes.get(tf,[])) for tf in REQUIRED_TFS}
-        for tf in ("15m","30m"):
-            if expected[tf] not in opens[tf]:
-                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"{tf} has no candle closed exactly at the 5m decision boundary", "trade_enabled":False}
+            latest_closes.append(stamps[-1] + d)
+        decision_time = min(latest_closes)
+        for tf in selected_tfs:
+            d = durations[tf]
+            expected_open = (decision_time // d) * d - d
+            if expected_open not in opens[tf]:
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"{tf} has no fully closed candle at the common decision boundary","trade_enabled":False}
             analysis_timeframes[tf] = [row for row in analysis_timeframes[tf]
-                                       if int(next(row[k] for k in ("timestamp","open_time","time") if k in row)) <= expected[tf]]
-    else:
-        analysis_timeframes = timeframes
-    reports={tf:analyze_timeframe(analysis_timeframes.get(tf,[]),tf) for tf in REQUIRED_TFS}
+                if int(next(row[k] for k in ("timestamp","open_time","time") if k in row)) <= expected_open]
+    reports={tf:analyze_timeframe(analysis_timeframes.get(tf,[]),tf) for tf in selected_tfs}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Insufficient/invalid candles: "+", ".join(invalid),
                 "timeframes":reports,"trade_enabled":False}
-    weights={"5m":0.25,"15m":0.35,"30m":0.40}
-    combined=sum(reports[tf]["score"]*weights[tf] for tf in REQUIRED_TFS)
-    long_tfs=[tf for tf in REQUIRED_TFS if reports[tf]["bias"]=="bullish"]
-    short_tfs=[tf for tf in REQUIRED_TFS if reports[tf]["bias"]=="bearish"]
-    longs, shorts = len(long_tfs), len(short_tfs)
-    # Majority consensus: any two independently aligned timeframes can establish direction.
-    # A neutral or dissenting third timeframe no longer vetoes the majority.
-    side = "LONG" if longs >= 2 else "SHORT" if shorts >= 2 else None
-    aligned_tfs = long_tfs if side == "LONG" else short_tfs if side == "SHORT" else []
-    major_conflicts_clear = bool(side) and all(
-        _no_major_indicator_conflict(reports[tf], side) for tf in aligned_tfs
-    )
-    if longs >= 2 and major_conflicts_clear: signal="LONG"
-    elif shorts >= 2 and major_conflicts_clear: signal="SHORT"
-    else: signal="NO_SIGNAL"
-    confidence=min(99,round(abs(combined)*0.75+max(longs,shorts)*8,1))
+    base_weights={"1m":0.15,"3m":0.20,"5m":0.25,"15m":0.35,"30m":0.40,"1h":0.45,"4h":0.50}
+    weight_total=sum(base_weights[tf] for tf in selected_tfs)
+    weights={tf:base_weights[tf]/weight_total for tf in selected_tfs}
+    combined=sum(reports[tf]["score"]*weights[tf] for tf in selected_tfs)
+    long_tfs=[tf for tf in selected_tfs if reports[tf]["bias"]=="bullish"]
+    short_tfs=[tf for tf in selected_tfs if reports[tf]["bias"]=="bearish"]
+    # Strict unanimity: one opposing or neutral timeframe vetoes the signal.
+    side = "LONG" if len(long_tfs)==len(selected_tfs) else "SHORT" if len(short_tfs)==len(selected_tfs) else None
+    aligned_tfs = list(selected_tfs) if side else []
+    major_conflicts_clear = bool(side) and all(_no_major_indicator_conflict(reports[tf], side) for tf in selected_tfs)
+    signal = side if major_conflicts_clear else "NO_SIGNAL"
+    confidence=min(99,round(abs(combined)*0.75+max(len(long_tfs),len(short_tfs))*8,1))
     result={"signal":signal,"status":signal,"confidence_score":confidence,
             "combined_score":round(combined,2),"timeframes":reports,
             "timeframe_weights":weights,"trade_enabled":False,
             "note":"Read-only analysis; confidence is a model score, not a probability or guarantee."}
     rejection_reasons = []
     if signal == "NO_SIGNAL":
-        if longs < 2 and shorts < 2:
-            rejection_reasons.append("two_of_three_timeframe_directional_alignment")
-        if not major_conflicts_clear and (longs >= 2 or shorts >= 2):
+        if side is None:
+            rejection_reasons.append("selected_timeframe_unanimity_required")
+        if not major_conflicts_clear and side is not None:
             rejection_reasons.append("major_indicator_conflict")
         if not rejection_reasons:
             rejection_reasons.append("directional_candidate_not_formed")
     result["rejection_reasons"] = rejection_reasons
-    blocked=[tf for tf in REQUIRED_TFS if reports[tf].get("high_volatility")]
+    blocked=[tf for tf in selected_tfs if reports[tf].get("high_volatility")]
     if blocked:
         result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                        "reason":"Abnormal volatility filter blocked: "+", ".join(blocked),
                        "rejection_reasons":["high_volatility:"+tf for tf in blocked],
                        "high_volatility_block":blocked})
         return result
-    # ADX is a market-strength context filter, not a three-timeframe hard gate.
-    # Only suppress entries when BOTH higher timeframes independently show a range.
-    higher_timeframe_range = [
-        tf for tf in ("15m", "30m")
-        if (reports[tf].get("market_regime") or {}).get("state") == "ranging"
-    ]
-    if len(higher_timeframe_range) == 2:
+    # Range suppression considers only selected higher timeframes; unselected TFs never gate.
+    entry_tf = min(selected_tfs, key=lambda tf: SUPPORTED_TFS.index(tf))
+    higher_selected = [tf for tf in selected_tfs if SUPPORTED_TFS.index(tf) > SUPPORTED_TFS.index(entry_tf)]
+    higher_timeframe_range = [tf for tf in higher_selected
+        if (reports[tf].get("market_regime") or {}).get("state") == "ranging"]
+    if len(higher_selected) >= 2 and len(higher_timeframe_range) == len(higher_selected):
         result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                       "reason":"Both higher timeframes indicate a low-trend-strength market",
-                       "rejection_reasons":["adx_higher_timeframes_both_ranging"],
+                       "reason":"All selected higher timeframes indicate a low-trend-strength market",
+                       "rejection_reasons":["adx_selected_higher_timeframes_all_ranging"],
                        "blocked_market_regime":higher_timeframe_range})
         return result
     if signal in ("LONG","SHORT"):
@@ -591,9 +610,9 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT","reason":"Closed-trade net expectancy is not statistically established for this symbol and direction.",
                     "rejection_reasons":["net_expectancy_gate"],"trade_enabled":False}
-        a=reports["5m"]["indicators"]["atr"]; p=reports["5m"]["close"]
+        a=reports[entry_tf]["indicators"]["atr"]; p=reports[entry_tf]["close"]
         if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}
-        smc = reports["5m"]["indicators"].get("smc", {})
+        smc = reports[entry_tf]["indicators"].get("smc", {})
         # Real candle reports must complete the breakout -> retest -> directional close sequence.
         # Real directional signals always require explicit, positive retest evidence.
         retest_key = "retest_long" if signal=="LONG" else "retest_short"
@@ -601,7 +620,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                         or smc.get("liquidity_sweep") == ("sell_side" if signal=="LONG" else "buy_side"))
         result["entry_stage"] = "ENTRY" if smc and smc.get(retest_key) else "CONFIRMATION" if confirmation else "PREPARATION"
         result["entry_context"] = {
-            "preparation": reports["15m"]["bias"] == reports["30m"]["bias"] and reports["15m"]["bias"] in ("bullish","bearish"),
+            "preparation": all(reports[tf]["bias"] == side for tf in selected_tfs),
             "confirmation": confirmation,
             "retest_confirmed": bool(smc.get(retest_key)),
             "false_breakout": bool(smc.get("false_breakout"))
@@ -621,7 +640,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                     "entry_stage":"WAIT",
                     "reason":"Retest is missing or overextended (>0.50 ATR); skip late entry.",
                     "rejection_reasons":["smc_retest_distance_over_0_50_atr"],"trade_enabled":False}
-        ema21 = reports["5m"].get("ema21")
+        ema21 = reports[entry_tf].get("ema21")
         if not _entry_not_chasing(p, ema21, a):
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT",
@@ -630,8 +649,8 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
         result["entry"] = p
         result["entry_stage"] = "ENTRY"
     else:
-        smc = reports["5m"]["indicators"].get("smc", {})
-        direction = "LONG" if longs >= 2 and major_conflicts_clear else "SHORT" if shorts >= 2 and major_conflicts_clear else None
+        smc = reports[entry_tf]["indicators"].get("smc", {})
+        direction = side if major_conflicts_clear else None
         confirmation = bool(direction and (
             smc.get("structure_event") in (("BOS_up","CHoCH_up") if direction=="LONG" else ("BOS_down","CHoCH_down"))
             or smc.get("liquidity_sweep") == ("sell_side" if direction=="LONG" else "buy_side")
@@ -639,12 +658,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
         retest_key = "retest_long" if direction=="LONG" else "retest_short"
         retest_ready = bool(direction and smc.get(retest_key))
         result["entry_stage"] = "ENTRY" if retest_ready else "CONFIRMATION" if confirmation else "PREPARATION" if direction else "WAIT"
-        result["reason"]="Retest confirmed; waiting for entry safeguards" if retest_ready else "Two-of-three timeframe consensus or confirmed retest not complete"
+        result["reason"]="Retest confirmed; waiting for entry safeguards" if retest_ready else "All selected timeframes must agree and entry retest must be confirmed"
     return result
 
 
-def generate_signal(timeframes, mode="auto"):
-    """Compatibility alias. This engine always uses the required 5m/15m/30m model."""
+def generate_signal(timeframes, mode="auto", selected_timeframes=None):
+    """Compatibility alias; defaults to the legacy 5m/15m/30m selection."""
     if mode not in ("auto","trend","scalp"):
         raise ValueError("mode must be auto, scalp or trend")
-    return analyze_market(timeframes)
+    return analyze_market(timeframes, selected_timeframes=selected_timeframes)

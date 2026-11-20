@@ -12,6 +12,17 @@ import java.net.URL
  */
 object ExchangeMarketData {
     val supported = listOf("Toobit")
+    val supportedTimeframes = listOf("1m", "3m", "5m", "15m", "30m", "1h", "4h")
+    fun durationMs(interval: String): Long = when (interval) {
+        "1m" -> 60_000L
+        "3m" -> 180_000L
+        "5m" -> 300_000L
+        "15m" -> 900_000L
+        "30m" -> 1_800_000L
+        "1h" -> 3_600_000L
+        "4h" -> 14_400_000L
+        else -> throw IllegalArgumentException("تایم‌فریم نامعتبر است: $interval")
+    }
     @Volatile private var serverOffsetMs: Long? = null
     @Volatile private var serverTimeSyncLocalMs: Long = 0L
 
@@ -71,17 +82,11 @@ object ExchangeMarketData {
 
     fun markPriceCandles(exchange: String, symbol: String, interval: String): List<MarketCandle> {
         require(exchange == "Toobit") { "فقط صرافی توبیت پشتیبانی می‌شود." }
-        require(interval == "5m" || interval == "15m" || interval == "30m") {
-            "تایم‌فریم نامعتبر است: $interval"
-        }
+        require(interval in supportedTimeframes) { "تایم‌فریم نامعتبر است: $interval" }
         require(symbol.endsWith("-SWAP-USDT")) { "نماد قرارداد توبیت نامعتبر است: $symbol" }
 
         val now = exchangeTimeMs()
-        val duration = when (interval) {
-            "5m" -> 300_000L
-            "15m" -> 900_000L
-            else -> 1_800_000L
-        }
+        val duration = durationMs(interval)
         val url = "https://api.toobit.com/quote/v1/markPrice/klines" +
             "?symbol=$symbol&interval=$interval&from=${now - duration * 260}&to=$now&limit=260"
         val root = JSONObject(get(url))
@@ -119,21 +124,16 @@ object ExchangeMarketData {
         candles(exchange, symbol, interval, exchangeTimeMs())
 
     /** Fetch a timeframe against one caller-supplied exchange-clock snapshot. */
-    fun candles(exchange: String, symbol: String, interval: String, asOfMs: Long): List<MarketCandle> {
+    fun candles(exchange: String, symbol: String, interval: String, asOfMs: Long, limit: Int = 260): List<MarketCandle> {
         require(asOfMs > 0L) { "زمان مرجع صرافی نامعتبر است." }
         require(exchange == "Toobit") { "فقط صرافی توبیت پشتیبانی می‌شود." }
-        require(interval == "5m" || interval == "15m" || interval == "30m") {
-            "تایم‌فریم نامعتبر است: $interval"
-        }
+        require(interval in supportedTimeframes) { "تایم‌فریم نامعتبر است: $interval" }
         require(symbol.endsWith("-SWAP-USDT")) { "نماد قرارداد توبیت نامعتبر است: $symbol" }
         val now = asOfMs
-        val duration = when (interval) {
-            "5m" -> 300_000L
-            "15m" -> 900_000L
-            else -> 1_800_000L
-        }
+        val duration = durationMs(interval)
+        val safeLimit = limit.coerceIn(200, 1000)
         val url = "https://api.toobit.com/quote/v1/klines" +
-            "?symbol=$symbol&interval=$interval&startTime=${now - duration * 260}&endTime=$now&limit=260"
+            "?symbol=$symbol&interval=$interval&startTime=${now - duration * safeLimit}&endTime=$now&limit=$safeLimit"
         val rows = JSONArray(get(url))
         val result = mutableListOf<MarketCandle>()
         for (i in 0 until rows.length()) {

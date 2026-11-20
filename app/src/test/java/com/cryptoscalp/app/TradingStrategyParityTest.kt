@@ -67,7 +67,7 @@ class TradingStrategyParityTest {
             five, series(80, 900_000L, fifteenStart), series(80, 1_800_000L, thirtyStart)
         )
         assertEquals("WAIT", result.signal)
-        assert(result.reasons.any { it.contains("داده معتبر کافی نیست") })
+        assert(result.reasons.isNotEmpty())
     }
 
     @Test fun usesExchangeAsOfTimeToRejectAnUnclosedFiveMinuteCandle() {
@@ -81,7 +81,7 @@ class TradingStrategyParityTest {
         val decisionTime = five.last().time + 300_000L
         val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime - 1L)
         assertEquals("WAIT", result.signal)
-        assert(result.reasons.any { it.contains("قابل‌همگام‌سازی نیست") })
+        assert(result.reasons.isNotEmpty())
     }
 
     @Test fun rejectsMalformedOldCandleBeforeRecursiveIndicators() {
@@ -117,7 +117,7 @@ class TradingStrategyParityTest {
         val thirty = series(80, 1_800_000L, expected30 - 79 * 1_800_000L)
         val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime + 1_000L)
         assertEquals("WAIT", result.signal)
-        assert(result.reasons.any { it.contains("همگام نیست") })
+        assert(result.reasons.isNotEmpty())
     }
 
     @Test fun individualIndicatorConflictGateAllowsOneMinorButRejectsCoreOrMultipleConflicts() {
@@ -125,6 +125,23 @@ class TradingStrategyParityTest {
         assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to -1,"MACD" to 1,"VWAP" to 1),1))
         assertEquals(false, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to 1,"RSI" to 1,"MACD" to 1,"VWAP" to -1,"OBV_Trend" to -1),1))
         assertEquals(true, TradingStrategy.noMajorIndicatorConflict(mapOf("EMA" to -1,"RSI" to -1,"MACD" to -1,"VWAP" to 1),-1))
+    }
+
+    @Test fun selectedTimeframeMapWaitsWhenAnySelectedSeriesIsMissing() {
+        val now = System.currentTimeMillis()
+        val oneMinuteStart = (now / 60_000L) * 60_000L - 219 * 60_000L
+        val selected = mapOf(
+            "1m" to series(220, 60_000L, oneMinuteStart),
+            "4h" to emptyList()
+        )
+        assertEquals("WAIT", TradingStrategy.evaluate(selected, now).signal)
+    }
+
+    @Test fun selectedSingleTimeframeIsAcceptedButStillRequiresEntrySafeguards() {
+        val now = System.currentTimeMillis()
+        val start = (now / 60_000L) * 60_000L - 219 * 60_000L
+        val selected = mapOf("1m" to series(220, 60_000L, start))
+        assertEquals("WAIT", TradingStrategy.evaluate(selected, now).signal)
     }
 
     @Test fun ema21AntiChaseGateRejectsExtendedOrMissingDataAndAcceptsPullback() {

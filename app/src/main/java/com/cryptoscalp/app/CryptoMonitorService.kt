@@ -70,26 +70,30 @@ class CryptoMonitorService : Service() {
                 // Keep a tracked position open until an opposite confirmed signal arrives.
                 // No price-based SL/TP exit is used in signal-reversal hold mode.
 
-                // Strategy runs only when a newer fully closed 5m candle is available.
-                // Capture one exchange-clock boundary and use it for all three HTTP candle requests.
+                // Only the user's selected timeframes are fetched and analyzed.
                 val marketAsOfMs=ExchangeMarketData.exchangeTimeMs()
-                val five=ExchangeMarketData.candles(exchange,symbol,"5m",marketAsOfMs)
-                val latestBar=five.last()
-                // Open positions are not evaluated against price exits; only opposite signals close them.
-                // Shadow positions also follow signal-reversal exits only.
-                val latestClosedCandleTime=latestBar.time
+                val selectedTimeframes=prefs.getStringSet("selected_timeframes",setOf("5m","15m","30m"))
+                    ?.filter { it in ExchangeMarketData.supportedTimeframes }.orEmpty()
+                if(selectedTimeframes.isEmpty()) throw IllegalStateException("هیچ تایم‌فریمی انتخاب نشده است.")
+                val slowestDuration=selectedTimeframes.maxOf { ExchangeMarketData.durationMs(it) }
+                val candleMap=selectedTimeframes.associateWith { tf ->
+                    val duration=ExchangeMarketData.durationMs(tf)
+                    val historyLimit=(slowestDuration/duration+220L).coerceAtLeast(260L).coerceAtMost(1000L).toInt()
+                    ExchangeMarketData.candles(exchange,symbol,tf,marketAsOfMs,historyLimit)
+                }
+                val latestClosedCandleTime=selectedTimeframes.minOf { tf ->
+                    candleMap.getValue(tf).last().time + ExchangeMarketData.durationMs(tf)
+                }
                 val key="last_analysis_candle_$symbol"
                 val previousCandleTime=prefs.getLong(key,-1L)
                 if(previousCandleTime<0L){
                     // First launch establishes a baseline instead of issuing a delayed historical signal.
                     prefs.edit().putLong(key,latestClosedCandleTime).apply()
                 } else if(latestClosedCandleTime>previousCandleTime){
-                    val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m",marketAsOfMs)
-                    val thirty=ExchangeMarketData.candles(exchange,symbol,"30m",marketAsOfMs)
-                    val candidate=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,emptyMap(),false)
+                    val candidate=TradingStrategy.evaluate(candleMap,marketAsOfMs,emptyMap(),false)
                     closeShadowOnReversal(symbol,candidate.signal,candidate.entry)
                     if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
-                    val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol),true)
+                    val r=TradingStrategy.evaluate(candleMap,marketAsOfMs,loadExpectancyStats(symbol),true)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
