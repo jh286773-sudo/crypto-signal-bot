@@ -1,20 +1,19 @@
 package com.cryptoscalp.app
 
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
 data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L, val takerBuyVolume: Double? = null)
-data class StrategyResult(val signal: String, val entry: Double, val reasons: List<String>, val smc: List<String>)
+data class StrategyResult(val signal: String, val entry: Double, val reasons: List<String>)
 
-/** AURUM X 0.3.0 read-only engine: seven-indicator suite and 5m/15m/30m consensus. */
+/** AURUM X 0.3.0 read-only engine: direct seven-indicator rules on user-selected timeframes. */
 object TradingStrategy {
     private const val MIN_CANDLES = 200
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
     private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null, val previousSwingHigh: Double? = null, val previousSwingLow: Double? = null, val retestLong: Boolean = false, val retestShort: Boolean = false, val falseBreakout: Boolean = false, val retestLevel: Double? = null, val entryDistanceAtr: Double? = null, val equalHighLevel: Double? = null, val equalLowLevel: Double? = null)
-    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val ema21: Double? = null, val indicatorVotes: Map<String,Int> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null, val structure: Structure? = null)
+    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val ema21: Double? = null, val indicatorVotes: Map<String,Int> = emptyMap(), val notes: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null)
 
     private fun ema(v: List<Double>, n: Int): Double? {
         if (v.size < n) return null
@@ -262,8 +261,7 @@ object TradingStrategy {
         val e20=ema(v,20)!!;val e50=ema(v,50)!!;val e200=ema(v,200)!!
         val r=rsi(v);val mc=macd(v);val bands=bb(v)
         val dx=adx(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obvTrend(c)
-        val sm=structure(c)
-        val regime=when{dx==null->"unknown";dx.value>=25->"trending";dx.value<18->"ranging";else->"transition"}
+                val regime=when{dx==null->"unknown";dx.value>=25->"trending";dx.value<18->"ranging";else->"transition"}
         val notes=mutableListOf<String>();val indicatorVotes=linkedMapOf<String,Int>()
         fun vote(name:String,value:Int){
             indicatorVotes[name]=value
@@ -278,26 +276,7 @@ object TradingStrategy {
         vote("OBV_Trend",ov)
         vote("Bollinger",if(bands!=null&&price>bands.second)1 else if(bands!=null&&price<bands.second)-1 else 0)
         val bias=indicatorBias(indicatorVotes)
-        val obTolerance=(a?:price*.001)*.25
-        val inBullOb=sm.orderBlockType=="bullish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
-        val inBearOb=sm.orderBlockType=="bearish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
-        val smcBull=sm.event=="BOS_up"||sm.event=="CHoCH_up"||sm.sweep=="sell_side"||inBullOb
-        val smcBear=sm.event=="BOS_down"||sm.event=="CHoCH_down"||sm.sweep=="buy_side"||inBearOb
-        // SMC remains an independent entry-structure safeguard, not an extra indicator vote.
-        val smc=mutableListOf<String>()
-        if(sm.event=="BOS_up")smc.add("BOS صعودی")
-        if(sm.event=="BOS_down")smc.add("BOS نزولی")
-        if(sm.event=="CHoCH_up")smc.add("تغییر کاراکتر صعودی CHoCH")
-        if(sm.event=="CHoCH_down")smc.add("تغییر کاراکتر نزولی CHoCH")
-        if(sm.sweep=="sell_side")smc.add("جمع‌آوری نقدینگی کف")
-        if(sm.sweep=="buy_side")smc.add("جمع‌آوری نقدینگی سقف")
-        if(sm.equalHighs)smc.add("استخر نقدینگی سقف‌های برابر")
-        if(sm.equalLows)smc.add("استخر نقدینگی کف‌های برابر")
-        if(sm.falseBreakout)smc.add("شکست جعلی/جمع‌آوری نقدینگی؛ ورود ممنوع")
-        if(sm.retestLong)smc.add("بازگشت و تثبیت صعودی روی سطح شکست")
-        if(sm.retestShort)smc.add("بازگشت و تثبیت نزولی زیر سطح شکست")
-        if(sm.orderBlockType!="none")smc.add("Order Block "+sm.orderBlockType)
-        return Report(true,price=price,bias=bias,atr=a,ema21=e20,indicatorVotes=indicatorVotes,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
+        return Report(true,price=price,bias=bias,atr=a,ema21=e20,indicatorVotes=indicatorVotes,notes=notes,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value)
     }
 
     internal fun indicatorBias(votes:Map<String,Int>):String {
@@ -308,16 +287,11 @@ object TradingStrategy {
         return when{coreLong&&supportLong->"bullish";coreShort&&supportShort->"bearish";else->"neutral"}
     }
 
-    internal fun entryNotExtended(price:Double,ema21:Double?,atr:Double?,maxDistanceAtr:Double=.80):Boolean {
-        if(ema21==null||atr==null||!price.isFinite()||!ema21.isFinite()||!atr.isFinite()||atr<=0.0)return false
-        return abs(price-ema21)/atr<=maxDistanceAtr
-    }
-
     /** Each selected timeframe is analyzed independently; multi-timeframe signals require unanimity. */
     fun evaluate(timeframes:Map<String,List<MarketCandle>>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
         val supported = listOf("1m","3m","5m","15m","30m","1h","4h")
         val selected = supported.filter { timeframes.containsKey(it) }
-        if(selected.isEmpty()) return StrategyResult("WAIT",0.0,listOf("هیچ تایم‌فریمی انتخاب نشده؛ سیگنالی صادر نمی‌شود"),emptyList())
+        if(selected.isEmpty()) return StrategyResult("WAIT",0.0,listOf("هیچ تایم‌فریمی انتخاب نشده؛ سیگنالی صادر نمی‌شود"))
         val durations = mapOf("1m" to 60_000L,"3m" to 180_000L,"5m" to 300_000L,
             "15m" to 900_000L,"30m" to 1_800_000L,"1h" to 3_600_000L,"4h" to 14_400_000L)
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
@@ -327,17 +301,17 @@ object TradingStrategy {
         }
         val missing = selected.filter { timeframes[it].isNullOrEmpty() }
         if(missing.isNotEmpty()) return StrategyResult("WAIT",0.0,
-            listOf("داده تایم‌فریم انتخاب‌شده موجود نیست: "+missing.joinToString("، ")),emptyList())
+            listOf("داده تایم‌فریم انتخاب‌شده موجود نیست: "+missing.joinToString("، ")))
         val raw = selected.associateWith { timeframes[it].orEmpty() }
         if(selected.any { !validSeries(raw.getValue(it),durations.getValue(it)) }) {
             return StrategyResult("WAIT",raw[selected.first()]?.lastOrNull()?.close?:0.0,
-                listOf("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود"),emptyList())
+                listOf("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود"))
         }
         val latestCommonClose = selected.minOf { tf -> raw.getValue(tf).last().time + durations.getValue(tf) }
         val freshnessWindow = selected.maxOf { durations.getValue(it) }
         if(latestCommonClose>asOfMs || asOfMs-latestCommonClose>=freshnessWindow) {
             return StrategyResult("WAIT",raw[selected.first()]!!.last().close,
-                listOf("کندل بسته‌شده تازه برای تایم‌فریم‌های انتخاب‌شده در دسترس نیست؛ سیگنالی صادر نمی‌شود"),emptyList())
+                listOf("کندل بسته‌شده تازه برای تایم‌فریم‌های انتخاب‌شده در دسترس نیست؛ سیگنالی صادر نمی‌شود"))
         }
         val aligned = linkedMapOf<String,List<MarketCandle>>()
         for(tf in selected) {
@@ -346,7 +320,7 @@ object TradingStrategy {
             val rows=raw.getValue(tf).filter{it.time+duration<=latestCommonClose}
             if(rows.size<MIN_CANDLES||rows.lastOrNull()?.time!=expected) {
                 return StrategyResult("WAIT",raw.getValue(tf).last().close,
-                    listOf("کندل بسته‌شده تایم‌فریم $tf با مرز تصمیم مشترک هماهنگ نیست؛ سیگنالی صادر نمی‌شود"),emptyList())
+                    listOf("کندل بسته‌شده تایم‌فریم $tf با مرز تصمیم مشترک هماهنگ نیست؛ سیگنالی صادر نمی‌شود"))
             }
             aligned[tf]=rows
         }
@@ -355,18 +329,16 @@ object TradingStrategy {
         val invalid=reports.filterValues{!it.valid}.keys
         val price=reports[selected.first()]?.price?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",price,
-            listOf("اطلاعات کافی/معتبر نیست: "+invalid.joinToString("، ")+"؛ سیگنالی صادر نمی‌شود"),emptyList())
+            listOf("اطلاعات کافی/معتبر نیست: "+invalid.joinToString("، ")+"؛ سیگنالی صادر نمی‌شود"))
         val allBullish=reports.values.all{it.bias=="bullish"}
         val allBearish=reports.values.all{it.bias=="bearish"}
         val direction=when { allBullish->"LONG"; allBearish->"SHORT"; else->"WAIT" }
         if(direction=="WAIT") return StrategyResult("WAIT",price,
-            listOf("تحلیل اندیکاتورها در تمام تایم‌فریم‌های انتخاب‌شده باید هم‌جهت باشد؛ اختلاف یا حالت خنثی، سیگنال را متوقف می‌کند"),
-            reports.values.flatMap{it.smc}.distinct())
+            listOf("تحلیل اندیکاتورها در تمام تایم‌فریم‌های انتخاب‌شده باید هم‌جهت باشد؛ اختلاف یا حالت خنثی، سیگنال را متوقف می‌کند"))
         val reasons=mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "))
         if(selected.size==1) reasons.add("سیگنال مستقل تایم‌فریم ${selected.first()}")
         else reasons.add("اجماع کامل "+selected.size+" تایم‌فریم انتخاب‌شده")
         reasons.add(if(direction=="LONG")"تمام تایم‌فریم‌ها LONG؛ سیگنال لانگ" else "تمام تایم‌فریم‌ها SHORT؛ سیگنال شورت")
-        return StrategyResult(direction,price,reasons,
-            reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct())
+        return StrategyResult(direction,price,reasons)
     }
 }
