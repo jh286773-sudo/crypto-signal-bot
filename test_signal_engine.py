@@ -1,6 +1,6 @@
 import unittest, math
 from unittest.mock import patch
-from signal_engine import analyze_timeframe, analyze_market, _indicator_bias, _adx_regime, _confirmed_pivots, _market_structure
+from signal_engine import analyze_timeframe, analyze_market, _indicator_bias, _adx_regime, _confirmed_pivots, _market_structure, _smc_confirms
 
 
 def candles(n=220, trend=1.0):
@@ -20,6 +20,21 @@ def report(bias, close=100.0):
 
 
 class EngineTests(unittest.TestCase):
+    def test_smc_is_an_independent_directional_entry_filter(self):
+        base = {"false_breakout": False, "order_blocks": [],
+                "structure_event": "BOS_up", "retest_long": False,
+                "retest_short": False, "liquidity_sweep": "none"}
+        self.assertTrue(_smc_confirms(base, "LONG"))
+        self.assertFalse(_smc_confirms(base, "SHORT"))
+        false_break = dict(base, false_breakout=True)
+        self.assertFalse(_smc_confirms(false_break, "LONG"))
+        opposing_ob = dict(base, order_blocks=[{"type": "bearish"}])
+        self.assertFalse(_smc_confirms(opposing_ob, "LONG"))
+        sweep = dict(base, structure_event="none", liquidity_sweep="sell_side")
+        self.assertTrue(_smc_confirms(sweep, "LONG"))
+        retest = dict(base, structure_event="none", retest_short=True)
+        self.assertFalse(_smc_confirms(retest, "LONG"))
+
     def test_optimized_macd_and_stoch_rsi_match_reference_calculation(self):
         from signal_engine import _macd, _stoch_rsi, _ema, _rsi
         values=[100.0+math.sin(i/4.0)*2.0+i*0.03 for i in range(120)]
