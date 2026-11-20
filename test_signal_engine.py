@@ -75,6 +75,14 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn("combined_score",result)
         self.assertNotIn("timeframe_weights",result)
 
+    def test_exceptional_volatility_blocks_entries(self):
+        volatile = dict(report("bullish"), high_volatility=True)
+        with patch("signal_engine.analyze_timeframe",return_value=volatile):
+            result = analyze_market({"5m": candles()})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("Exceptional volatility", result["reason"])
+        self.assertIn("exceptional_volatility", result["rejection_reasons"])
+
     def test_all_selected_timeframes_must_agree(self):
         with patch("signal_engine.analyze_timeframe",side_effect=[report("bullish"),report("bullish")]):
             aligned=analyze_market({"5m":candles(),"15m":candles()})
