@@ -83,12 +83,6 @@ def main():
             failures.append({"symbol": symbol, "error": str(exc)})
             print(f"SKIP {symbol}: {exc}", flush=True)
 
-    if len(results) < args.min_symbols:
-        raise RuntimeError(
-            f"Only {len(results)} perpetual contracts completed; at least {args.min_symbols} required. "
-            f"Failures: {failures}"
-        )
-
     total_start = sum(item["initial_equity"] for item in results)
     total_final = sum(item["final_equity"] for item in results)
     trades = [trade for item in results for trade in item["trades"]]
@@ -134,6 +128,8 @@ def main():
             "same_utc_window_for_all_symbols": True,
             "production_symbol_universe_changed": False,
             "full_candidate_scan_completed": len(results) + len(failures) == len(candidates),
+            "full_universe_data_complete": len(results) == len(candidates) and not failures,
+            "failed_contract_count": len(failures),
         },
         "pooled_summary": pooled,
         "per_symbol": results,
@@ -144,7 +140,14 @@ def main():
     print(json.dumps(finite_json({"period_utc": report["period_utc"],
                                   "pooled_summary": pooled,
                                   "symbols": [x["symbol"] for x in results],
+                                  "failed_symbols": failures,
+                                  "full_universe_data_complete": report["methodology"]["full_universe_data_complete"],
                                   "output": args.output}), indent=2), flush=True)
+    if len(results) < args.min_symbols or failures:
+        raise RuntimeError(
+            f"Full-universe {args.days}-day backtest is incomplete: {len(results)}/{len(candidates)} "
+            f"contracts completed, {len(failures)} failed. Detailed report saved to {args.output}."
+        )
 
 
 if __name__ == "__main__":
