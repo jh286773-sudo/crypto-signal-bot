@@ -87,6 +87,7 @@ class ShadowLedger:
                 if old_side == "LONG" and side == "LONG":
                     return
                 if old_side == "SHORT" and side == "SHORT":
+                    db.execute("DELETE FROM shadow_open WHERE symbol=?", (symbol,))
                     return
                 old_entry = float(state.get("entry", 0.0))
                 if old_side in ("LONG", "SHORT") and old_entry > 0:
