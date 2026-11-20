@@ -17,7 +17,7 @@ object TradingStrategy {
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
     private data class Structure(val event: String, val sweep: String)
-    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val families: Map<String,Double> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList())
+    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val families: Map<String,Double> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null)
 
     private fun ema(v: List<Double>, n: Int): Double? {
         if (v.size < n) return null
@@ -119,14 +119,31 @@ object TradingStrategy {
         return Structure(event,sweep)
     }
 
-    private fun analyze(c:List<MarketCandle>):Report {
+    private data class Volatility(val atrPct:Double,val baselinePct:Double,val ratio:Double,val blocked:Boolean)
+    private fun volatility(c:List<MarketCandle>,timeframe:String,currentAtr:Double?):Volatility? {
+        if(currentAtr==null||currentAtr<=0.0||c.isEmpty()||c.last().close<=0.0)return null
+        val pct=100.0*currentAtr/c.last().close
+        val start=max(15,c.size-30)
+        val baseline=(start until c.size-1).mapNotNull{end->
+            val a=atr(c.take(end+1));val close=c[end].close
+            if(a!=null&&close>0.0)100.0*a/close else null
+        }.sorted()
+        if(baseline.isEmpty())return Volatility(pct,0.0,0.0,false)
+        val mid=baseline.size/2
+        val median=if(baseline.size%2==0)(baseline[mid-1]+baseline[mid])/2.0 else baseline[mid]
+        val ratio=if(median>0.0)pct/median else 0.0
+        val floor=when(timeframe){"5m"->0.8;"15m"->1.2;"30m"->1.8;else->0.8}
+        return Volatility(pct,median,ratio,pct>=floor&&ratio>=2.5)
+    }
+
+    private fun analyze(c:List<MarketCandle>,timeframe:String):Report {
         if(c.size<MIN_CANDLES)return Report(false,"حداقل ۶۰ کندل لازم است")
         if(c.takeLast(MIN_CANDLES).any{!it.open.isFinite()||!it.high.isFinite()||!it.low.isFinite()||!it.close.isFinite()||!it.volume.isFinite()||it.open<=0||it.high<=0||it.low<=0||it.close<=0||it.high<it.low})
             return Report(false,"داده کندل نامعتبر است")
         val v=c.map{it.close};val price=v.last()
         val e9=ema(v,9)!!;val e21=ema(v,21)!!;val e50=ema(v,50)!!
         val s20=sma(v,20);val s50=sma(v,50);val r=rsi(v);val mc=macd(v);val bands=bb(v)
-        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vw=vwap(c);val ov=obv(c);val mf=mfi(c)
+        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obv(c);val mf=mfi(c)
         val sm=structure(c);val div=divergence(c)
         val groups=linkedMapOf<String,MutableList<Pair<Double,Double>>>();val notes=mutableListOf<String>()
         fun vote(group:String,name:String,value:Int,weight:Double=1.0){
@@ -158,15 +175,17 @@ object TradingStrategy {
         if(sm.event=="BOS_down")smc.add("BOS نزولی")
         if(sm.sweep=="sell_side")smc.add("جمع‌آوری نقدینگی کف")
         if(sm.sweep=="buy_side")smc.add("جمع‌آوری نقدینگی سقف")
-        return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc)
+        return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio)
     }
 
     fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>):StrategyResult {
-        val reports=linkedMapOf("5m" to analyze(five),"15m" to analyze(fifteen),"30m" to analyze(thirty))
+        val reports=linkedMapOf("5m" to analyze(five,"5m"),"15m" to analyze(fifteen,"15m"),"30m" to analyze(thirty,"30m"))
         val invalid=reports.filterValues{!it.valid}.keys
         val price=reports["5m"]?.price?:five.lastOrNull()?.close?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,price,price,price,listOf("داده معتبر کافی نیست: "+invalid.joinToString("، ")),emptyList())
         val combined=reports.entries.sumOf{it.value.score*(tfWeights[it.key]?:0.0)}
+        val volatilityBlocked=reports.filterValues{it.highVolatility}.keys
+        if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,listOf("فیلتر نوسان غیرعادی فعال شد؛ سیگنال متوقف شد: "+volatilityBlocked.joinToString("، ")),emptyList())
         val longs=reports.values.count{it.bias=="bullish"};val shorts=reports.values.count{it.bias=="bearish"}
         val signal=when{combined>=28&&longs==3->"LONG";combined<=-28&&shorts==3->"SHORT";else->"WAIT"}
         val a=reports["5m"]?.atr?:0.0
