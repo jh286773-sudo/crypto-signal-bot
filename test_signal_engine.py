@@ -215,9 +215,6 @@ class EngineTests(unittest.TestCase):
         self.assertIn("overextended", result["reason"])
 
 
-if __name__=="__main__": unittest.main()
-
-
     def test_indicator_family_conflict_blocks_directional_signal(self):
         conflicted = {"valid": True, "score": 60.0, "bias": "bullish",
                       "family_scores": {"trend":0.8,"momentum":0.7,"strength":0.6,
@@ -239,3 +236,6 @@ if __name__=="__main__": unittest.main()
             result = analyze_market({tf:candles() for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
         self.assertIn("missing or overextended", result["reason"])
+
+
+if __name__=="__main__": unittest.main()
