@@ -211,73 +211,30 @@ class CryptoMonitorService : Service() {
         val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
         prefs.edit().putString(key,(prior+netR).joinToString(",")).apply()
     }
+    // A tracked manual position remains open until an opposite confirmed signal arrives.
+    // The initial stop-loss remains an emergency risk exit; take-profit levels do not close
+    // this position because the requested lifecycle is signal-reversal based.
     private fun manageOpen(symbol:String,bar:MarketCandle){
-        val price=bar.close
         val raw=prefs.getString("open_setup_$symbol",null)?:return
         val s=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("open_setup_$symbol").apply();return}
-        val long=s.optString("side")=="LONG"
         if(bar.time<=s.optLong("openedBar",0L))return
-        s.put("openedBar",bar.time)
-        // Migrate setups saved by older app versions, which tracked only TP1/TP2.
-        if(!s.has("tp3"))s.put("tp3",s.optDouble("tp2"))
-        if(!s.has("tp2Done"))s.put("tp2Done",false)
-        val stop=if(long)bar.low<=s.optDouble("stop") else bar.high>=s.optDouble("stop")
-        if(stop){
-            val protectedByTarget = s.optBoolean("tp1Done")
-            val cooldownStarted = if(protectedByTarget) {
-                clearLossHistory(symbol)
-                false
-            } else {
-                registerFullStop(symbol,System.currentTimeMillis())
-            }
-            val detail = if(cooldownStarted)
+        val long=s.optString("side")=="LONG"
+        val stopLevel=s.optDouble("stop",0.0)
+        if(stopLevel<=0.0)return
+        val stopHit=if(long)bar.low<=stopLevel else bar.high>=stopLevel
+        if(stopHit){
+            val cooldownStarted=registerFullStop(symbol,System.currentTimeMillis())
+            val detail=if(cooldownStarted)
                 " • پس از دو حدضرر کامل در ۲۴ ساعت، سیگنال‌های جدید این نماد تا ۲۴ ساعت متوقف شدند"
-            else if(protectedByTarget)
-                " • خروج پس از فعال‌شدن حد سود اول؛ در شمارش ضرر کامل لحاظ نشد"
             else ""
-            val stopLevel=s.optDouble("stop")
-            val stopFill=if(long)minOf(bar.open,stopLevel) else maxOf(bar.open,stopLevel)
-            closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(stopFill)}$detail")
+            val fill=if(long)minOf(bar.open,stopLevel) else maxOf(bar.open,stopLevel)
+            closeOpen(symbol,"حد ضرر حفاظتی فعال شد • قیمت ${fmt(fill)}$detail")
             return
         }
-        val tp1=if(long)bar.high>=s.optDouble("tp1") else bar.low<=s.optDouble("tp1")
-        if(tp1&&!s.optBoolean("tp1Done")){
-            // After TP1, protect the remaining setup at breakeven. This is an
-            // app-side alert level only; no stop/partial-close order is sent.
-            s.put("tp1Done",true)
-            val entryPrice=s.optDouble("entry",0.0)
-            if(entryPrice>0.0)s.put("stop",entryPrice)
-            prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
-            notifyExit(symbol,"مرحله اول حد سود لمس شد • حد ضرر به نقطه ورود منتقل شد",
-                "قیمت فعلی: ${fmt(price)} • حد ضرر جدید: ${fmt(s.optDouble("stop"))} • هدف دوم: ${fmt(s.optDouble("tp2"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
-            val protectedStop=s.optDouble("stop")
-            if(if(long)bar.low<=protectedStop else bar.high>=protectedStop){
-                val fill=if(long)minOf(bar.open,protectedStop) else maxOf(bar.open,protectedStop)
-                closeOpen(symbol,"حد ضرر سربه‌سر پس از حد سود اول فعال شد • قیمت ${fmt(fill)}")
-                return
-            }
-        }
-        val tp2=if(long)bar.high>=s.optDouble("tp2") else bar.low<=s.optDouble("tp2")
-        if(tp2&&!s.optBoolean("tp2Done")){
-            s.put("tp2Done",true)
-            // Lock TP1 for the remaining setup after TP2; this is notification state only.
-            val lockedStop=s.optDouble("tp1",s.optDouble("entry"))
-            s.put("stop",lockedStop)
-            prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
-            notifyExit(symbol,"مرحله دوم حد سود لمس شد • سود مرحله اول محافظت شد",
-                "قیمت فعلی: ${fmt(price)} • حد ضرر حفاظتی جدید: ${fmt(lockedStop)} • هدف سوم: ${fmt(s.optDouble("tp3"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
-            if(if(long)bar.low<=lockedStop else bar.high>=lockedStop){
-                val fill=if(long)minOf(bar.open,lockedStop) else maxOf(bar.open,lockedStop)
-                closeOpen(symbol,"حد ضرر سود قفل‌شده پس از حد سود دوم فعال شد • قیمت ${fmt(fill)}")
-                return
-            }
-        }
-        val tp3=if(long)bar.high>=s.optDouble("tp3") else bar.low<=s.optDouble("tp3")
-        if(tp3){
-            clearLossHistory(symbol)
-            val targetFill=if(long)maxOf(bar.open,s.optDouble("tp3")) else minOf(bar.open,s.optDouble("tp3"))
-            closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(targetFill)}")
-        }
+        // Persist the latest processed candle to prevent duplicate processing.
+        // TP1/TP2/TP3 are informational levels only in reversal-hold mode.
+        s.put("lastManagedBar",bar.time)
+        prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
     }
     private fun lossTimesKey(symbol:String)="full_stop_times_$symbol"
     private fun lossCooldownKey(symbol:String)="loss_cooldown_until_$symbol"
