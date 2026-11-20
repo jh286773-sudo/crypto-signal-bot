@@ -52,6 +52,12 @@ class EngineTests(unittest.TestCase):
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")}, expectancy_stats={"LONG":[0.5]*30})
         self.assertEqual(result["signal"],"LONG")
+    def test_ranging_market_blocks_otherwise_aligned_directional_candidate(self):
+        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores":{"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},"indicators":{"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up","entry_distance_atr":0.2,"previous_swing_low":98.0}},"ema21":99.5,"close":100.0,"market_regime":{"state":"ranging"}}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result=analyze_market({tf:[] for tf in ("5m","15m","30m")}, expectancy_stats={"LONG":[0.5]*30})
+        self.assertEqual(result["signal"],"NO_SIGNAL")
+        self.assertIn("blocked_market_regime",result)
     def test_anti_chase_filter_rejects_extended_entry_and_accepts_pullback(self):
         from signal_engine import _entry_not_chasing
         self.assertFalse(_entry_not_chasing(102.0, 100.0, 2.0))
