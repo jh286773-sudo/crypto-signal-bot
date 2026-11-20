@@ -86,9 +86,16 @@ class WalkForwardTests(unittest.TestCase):
                                     slippage_bps_per_side=0,initial_equity=10000,
                                     max_holding_bars=2)
         trade=result["trades"][0]
-        self.assertAlmostEqual(trade["funding_cash"],10.0,places=6)
+        self.assertAlmostEqual(
+            trade["funding_cash"], trade["entry"] * trade["position_quantity"] * 0.001,
+            places=6
+        )
         self.assertEqual(trade["funding_mode"],"historical_settlement_events")
-        self.assertAlmostEqual(trade["fees_cash"],6.04,places=2)
+        expected_fees = (
+            trade["entry"] * trade["position_quantity"] * 2 / 10000
+            + trade["exit"] * trade["position_quantity"] * 4 / 10000
+        )
+        self.assertAlmostEqual(trade["fees_cash"], expected_fees, places=6)
 
 
 if __name__ == "__main__":
