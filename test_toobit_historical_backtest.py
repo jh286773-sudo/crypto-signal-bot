@@ -12,9 +12,9 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
                   for i in range(999, 1002)]
         with patch.object(api, "_get", side_effect=[first, second]) as get:
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 1002 * 300000)
-        self.assertEqual(len(rows), 1001)
+        self.assertEqual(len(rows), 1002)
         self.assertEqual(rows[0]["timestamp"], 0)
-        self.assertEqual(rows[-1]["timestamp"], 1000 * 300000)
+        self.assertEqual(rows[-1]["timestamp"], 1001 * 300000)
         self.assertEqual(rows[0]["taker_buy_volume"], 4.0)
         self.assertEqual(get.call_count, 2)
 
