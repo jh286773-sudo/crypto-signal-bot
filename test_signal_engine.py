@@ -94,6 +94,24 @@ class EngineTests(unittest.TestCase):
             row["volume"] = 100.0
         self.assertEqual(_obv_trend(rows), -1)
 
+    def test_taker_flow_uses_exchange_buy_volume_when_available(self):
+        from signal_engine import _taker_strength
+        rows = candles(70)
+        for row in rows:
+            row["volume"] = 100.0
+            row["taker_buy_volume"] = 60.0
+        flow = _taker_strength(rows)
+        self.assertTrue(flow["available"])
+        self.assertEqual(flow["buy_percent"], 60.0)
+        self.assertEqual(flow["sell_percent"], 40.0)
+
+    def test_invalid_taker_buy_volume_rejects_entire_candle_history(self):
+        rows = candles(80)
+        rows[0]["taker_buy_volume"] = rows[0]["volume"] + 10.0
+        result = analyze_timeframe(rows)
+        self.assertFalse(result["valid"])
+        self.assertIn("order-flow", result["reason"])
+
     def test_volume_impulse_requires_expansion_and_directional_close(self):
         from signal_engine import _volume_impulse
         rows = candles(30)
