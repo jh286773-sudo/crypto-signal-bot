@@ -193,7 +193,7 @@ class CryptoMonitorService : Service() {
             append("۲) بازکردن موقعیت جدید: ${r.signal}\\n")
             append("سیگنال مخالف پس از بسته‌شدن کندل و تأیید تایم‌فریم‌ها صادر شد.\\n")
             append("این اعلان راهنمای دستی است؛ برنامه سفارش صرافی را ثبت یا اجرا نمی‌کند.\\n")
-            append("دلایل: ${(r.reasons+r.smc).joinToString("، ")}")
+            append("دلایل: ${r.reasons.joinToString("، ")}")
         }
         val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("تغییر جهت • $symbol").setContentText("بستن $oldSide ← بازکردن ${r.signal}")
