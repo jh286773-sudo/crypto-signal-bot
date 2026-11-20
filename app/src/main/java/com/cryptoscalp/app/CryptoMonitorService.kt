@@ -113,7 +113,9 @@ class CryptoMonitorService : Service() {
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
 
     private fun saveOpen(symbol:String,r:StrategyResult){
-        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp1Done",false)
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop)
+            .put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3)
+            .put("tp1Done",false).put("tp2Done",false)
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
     }
     private fun manageOpen(symbol:String,price:Double){
@@ -125,17 +127,25 @@ class CryptoMonitorService : Service() {
         val tp1=if(long)price>=s.optDouble("tp1") else price<=s.optDouble("tp1")
         if(tp1&&!s.optBoolean("tp1Done")){
             s.put("tp1Done",true);prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
-            notifyExit(symbol,"حد سود اول فعال شد","قیمت فعلی: ${fmt(price)} • حد سود دوم: ${fmt(s.optDouble("tp2"))}")
+            notifyExit(symbol,"مرحله اول حد سود لمس شد",
+                "قیمت فعلی: ${fmt(price)} • هدف دوم: ${fmt(s.optDouble("tp2"))} • یادآوری خروج پله‌ای؛ سفارش خودکار اجرا نمی‌شود")
         }
         val tp2=if(long)price>=s.optDouble("tp2") else price<=s.optDouble("tp2")
-        if(tp2)closeOpen(symbol,"حد سود دوم فعال شد • قیمت ${fmt(price)}")
+        if(tp2&&!s.optBoolean("tp2Done")){
+            s.put("tp2Done",true);prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
+            notifyExit(symbol,"مرحله دوم حد سود لمس شد",
+                "قیمت فعلی: ${fmt(price)} • هدف سوم: ${fmt(s.optDouble("tp3"))} • یادآوری خروج پله‌ای؛ سفارش خودکار اجرا نمی‌شود")
+        }
+        val tp3=if(long)price>=s.optDouble("tp3") else price<=s.optDouble("tp3")
+        if(tp3)closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(price)}")
     }
     private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}
     private fun closeOpen(symbol:String,reason:String){clearOpen(symbol);notifyExit(symbol,"خروج از موقعیت • $symbol",reason)}
     private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
     private fun notifySignal(symbol:String,r:StrategyResult){
         val body=buildString{
-            append("جهت: ${if(r.signal=="LONG")"لانگ" else "شورت"}\nورود: ${fmt(r.entry)}\nحد ضرر: ${fmt(r.stop)}\nحد سود ۱: ${fmt(r.target1)}\nحد سود ۲: ${fmt(r.target2)}\nامتیاز تأیید: ${r.score}\n")
+            append("جهت: ${if(r.signal=="LONG")"لانگ" else "شورت"}\nورود: ${fmt(r.entry)}\nحد ضرر: ${fmt(r.stop)}\nحد سود ۱: ${fmt(r.target1)}\nحد سود ۲: ${fmt(r.target2)}\nحد سود ۳: ${fmt(r.target3)}\nامتیاز تأیید: ${r.score}\n")
+            append("مدیریت خروج در این نسخه هشدار مرحله‌ای است و سفارش صرافی را خودکار اجرا نمی‌کند.\n")
             append("دلایل: ${(r.reasons+r.smc).joinToString("، ")}")
         }
         val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("سیگنال ${r.signal} • $symbol").setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
