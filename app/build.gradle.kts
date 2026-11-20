@@ -12,11 +12,13 @@ android {
         versionCode = 10
         versionName = "0.3.0"
     }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+dependencies { testImplementation("junit:junit:4.13.2") }
 kotlin {
     jvmToolchain(17)
 }
