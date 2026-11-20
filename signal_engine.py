@@ -583,7 +583,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
     if volatile:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                 "reason":"Exceptional volatility blocks new entries on: "+", ".join(volatile),
-                "timeframes":reports,"diagnostics":diagnostics,"trade_enabled":False,
+                "timeframes":reports,"trade_enabled":False,
                 "rejection_reasons":["exceptional_volatility"]}
     all_bullish=all(reports[tf]["bias"]=="bullish" for tf in selected_tfs)
     all_bearish=all(reports[tf]["bias"]=="bearish" for tf in selected_tfs)
