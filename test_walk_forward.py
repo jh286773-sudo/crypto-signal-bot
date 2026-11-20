@@ -27,7 +27,7 @@ class WalkForwardTests(unittest.TestCase):
             _validate(data)
 
     def test_only_closed_htf_history_is_passed_to_strategy(self):
-        data={tf:bars(tf,120) for tf in DURATION_MS}
+        data={tf:bars(tf,400) for tf in DURATION_MS}
         seen=[]
         def fake(hist):
             seen.append({tf:row[-1]["timestamp"] for tf,row in hist.items()})
@@ -40,10 +40,10 @@ class WalkForwardTests(unittest.TestCase):
             self.assertLessEqual(snap["30m"]+DURATION_MS["30m"],decision_close)
 
     def test_position_sizing_and_partial_targets_are_reported(self):
-        data={tf:bars(tf,120) for tf in DURATION_MS}
+        data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][60:]:
             row["low"]=100.0; row["high"]=105.0
-        signal={"signal":"LONG","stop_loss":99.0,"take_profits":[102.0,103.0,104.0]}
+        signal={"signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]}
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
                                     initial_equity=10000,risk_fraction=.01,max_holding_bars=2)
