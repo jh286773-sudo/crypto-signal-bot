@@ -8,7 +8,7 @@ on:
       days:
         description: Shared historical window in days
         required: true
-        default: "10"
+        default: "30"
         type: string
       min_symbols:
         description: Minimum number of completed symbols (at least 10)
@@ -44,7 +44,7 @@ jobs:
           pip install -r requirements.txt
       - name: Run Toobit multi-symbol historical backtest
         env:
-          DAYS: ${{ github.event.inputs.days || '10' }}
+          DAYS: ${{ github.event.inputs.days || '30' }}
           MIN_SYMBOLS: ${{ github.event.inputs.min_symbols || '10' }}
           SLIPPAGE_BPS: ${{ github.event.inputs.slippage_bps || '1.0' }}
           CANDIDATES: ${{ github.event.inputs.candidates || '10000' }}
