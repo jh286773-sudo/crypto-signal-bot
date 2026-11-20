@@ -7,6 +7,7 @@ on:
       - main
       - strategy-quality-upgrades
       - strategy-quality-upgrades-v2
+      - smc-entry-risk-parity-v3
 
 jobs:
   check:
