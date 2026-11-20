@@ -133,7 +133,7 @@ class CryptoMonitorService : Service() {
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
     }
     private fun expectancyKey(symbol:String,side:String)="closed_net_r_${symbol}_$side"
-    private fun loadExpectancyStats(symbol:String):Map<String,List<Double>> = mapOf("LONG","SHORT").associateWith { side ->
+    private fun loadExpectancyStats(symbol:String):Map<String,List<Double>> = listOf("LONG","SHORT").associateWith { side ->
         prefs.getString(expectancyKey(symbol,side),"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(200)
     }
     private fun recordVirtualClose(symbol:String,exit:Double){
