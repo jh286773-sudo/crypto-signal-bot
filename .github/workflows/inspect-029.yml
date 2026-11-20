@@ -15,12 +15,12 @@ jobs:
           set -euo pipefail
           ZIP="AURUM-X-0.2.9-GitHub-ready.zip"
           echo "=== ARCHIVE FILES ==="
-          unzip -Z1 "$ZIP" | grep -E '(TradingStrategy\\.kt|signal_engine\\.py|indicators\\.py|smart_money\\.py|smc\\.py|CryptoMonitorService\\.kt|app/build.gradle.kts)$' | head -100
+          unzip -Z1 "$ZIP" | grep -E 'TradingStrategy.kt|signal_engine.py|indicators.py|smart_money.py|smc.py|CryptoMonitorService.kt|app/build.gradle.kts' | head -100 || true
           mkdir -p /tmp/aurum029
           unzip -oq "$ZIP" -d /tmp/aurum029
           echo "=== CANDIDATE STRATEGY FILES ==="
-          find /tmp/aurum029 -type f \\( -name 'TradingStrategy.kt' -o -name 'signal_engine.py' -o -name 'indicators.py' -o -name 'smart_money.py' -o -name 'smc.py' \\) -print
-          for f in $(find /tmp/aurum029 -type f \\( -name 'TradingStrategy.kt' -o -name 'signal_engine.py' -o -name 'indicators.py' -o -name 'smart_money.py' -o -name 'smc.py' \\)); do
+          find /tmp/aurum029 -type f | grep -E '/(TradingStrategy.kt|signal_engine.py|indicators.py|smart_money.py|smc.py)$' || true
+          while IFS= read -r f; do
             echo "=== FILE: $f ==="
             cat "$f"
-          done
+          done < <(find /tmp/aurum029 -type f | grep -E '/(TradingStrategy.kt|signal_engine.py|indicators.py|smart_money.py|smc.py)$' || true)
