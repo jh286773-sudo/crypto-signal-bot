@@ -158,7 +158,7 @@ class ToobitAPI:
 
     def get_multi_timeframe(self, symbol, selected_timeframes=None):
         """Fetch only selected intervals and freeze them at one common closed-candle boundary."""
-        selected = tuple(dict.fromkeys(selected_timeframes or self.DEFAULT_TIMEFRAMES))
+        selected = tuple(dict.fromkeys(self.DEFAULT_TIMEFRAMES if selected_timeframes is None else selected_timeframes))
         if not selected or any(tf not in self.INTERVALS for tf in selected):
             raise ValueError("Invalid or empty selected timeframe list")
         server_now = int(self.server_time()["serverTime"])
