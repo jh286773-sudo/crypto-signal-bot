@@ -21,3 +21,11 @@
 ## Runtime behavior
 - Decisions use closed candles only. For multiple selected timeframes, data is aligned to a shared closed-candle decision boundary.
 - Signals are read-only analysis; the application does not place exchange orders.
+
+## Official LuxAlgo SMC source — staged, not yet active in the app
+- The upstream Pine Script source is stored at `third_party/luxalgo_smc/SmartMoneyConcepts_LuxAlgo.pine` with the original LuxAlgo copyright/license header intact.
+- Source identity: TradingView's open-source listing, [Smart Money Concepts (SMC) [LuxAlgo]](https://www.tradingview.com/script/CnB3fSph-Smart-Money-Concepts-SMC-LuxAlgo/). The retrieved source copy was obtained from a public source mirror; it is not represented as a LuxAlgo-maintained GitHub repository.
+- License text is included at `third_party/luxalgo_smc/LICENSE.txt` (CC BY-NC-SA 4.0). Any distributed adaptations must retain attribution, indicate modifications, remain non-commercial, and be shared under the same license.
+- Important: preserving the official Pine source in the repository does not make Pine Script executable inside the current Python/Kotlin engines. The existing `_market_structure` / `structure()` implementation remains an independent approximation and is NOT the official LuxAlgo implementation.
+- No official LuxAlgo-derived signal is enabled by this source-staging commit. The app integration still requires a verified Pine-compatible runtime or TradingView alert/webhook bridge, closed-candle/timeframe mapping, and parity tests before activation.
+- TradingView account setup, chart attachment, alert creation, and a publicly reachable webhook endpoint require the user's own TradingView account and deployment environment; none is silently assumed or configured here.
