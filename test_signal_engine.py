@@ -42,8 +42,8 @@ class EngineTests(unittest.TestCase):
         self.assertIn(r["signal"],("LONG","SHORT","NO_SIGNAL"))
         self.assertIn("combined_score",r)
     def test_two_of_three_alignment_never_signals(self):
-        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "indicators":{"atr":1.0},"close":100.0}
-        bearish={"valid":True,"score":-60.0,"bias":"bearish","indicators":{"atr":1.0},"close":100.0}
+        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "indicators":{"atr":1.0},"close":100.0,"market_regime":{"state":"trending"}}
+        bearish={"valid":True,"score":-60.0,"bias":"bearish","indicators":{"atr":1.0},"close":100.0,"market_regime":{"state":"trending"}}
         with patch("signal_engine.analyze_timeframe", side_effect=[bullish,bullish,bearish]):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"NO_SIGNAL")
@@ -112,7 +112,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("invalid OHLCV", result["reason"])
 
     def test_high_volatility_filter_blocks_signal(self):
-        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "high_volatility":True,"indicators":{"atr":1.0},"close":100.0}
+        bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "high_volatility":True,"indicators":{"atr":1.0},"close":100.0,"market_regime":{"state":"trending"}}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result=analyze_market({tf:candles() for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"NO_SIGNAL")
@@ -146,17 +146,17 @@ class EngineTests(unittest.TestCase):
         self.assertIn(result["market_regime"]["state"], ("trending", "ranging", "transition", "unknown"))
 
     def test_five_minute_trigger_must_confirm_higher_timeframe_bias(self):
-        strong = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},  "indicators": {"atr": 1.0}, "close": 100.0}
-        weak_trigger = {"valid": True, "score": 15.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},  "indicators": {"atr": 1.0}, "close": 100.0}
+        strong = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},  "indicators": {"atr": 1.0}, "close": 100.0,"market_regime":{"state":"trending"}}
+        weak_trigger = {"valid": True, "score": 15.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},  "indicators": {"atr": 1.0}, "close": 100.0,"market_regime":{"state":"trending"}}
         with patch("signal_engine.analyze_timeframe", side_effect=[weak_trigger, strong, strong]):
             result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
 
     def test_higher_timeframes_need_stronger_conviction_than_basic_bias(self):
         strong = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
-                  "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0}
+                  "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0,"market_regime":{"state":"trending"}}
         moderate = {"valid": True, "score": 24.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
-                    "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0}
+                    "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0,"market_regime":{"state":"trending"}}
         with patch("signal_engine.analyze_timeframe", side_effect=[strong, moderate, strong]):
             result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
@@ -277,7 +277,7 @@ class EngineTests(unittest.TestCase):
                                         "volume":0.7,"structure":0.6,"orderflow":0.8,
                                         "volatility":0.0,"divergence":0.0},
                       "indicators": {"atr":1.0,"smc":{"retest_long":True,"entry_distance_atr":0.2}},
-                      "close":100.0}
+                      "close":100.0,"market_regime":{"state":"trending"}}
         with patch("signal_engine.analyze_timeframe", return_value=conflicted):
             result = analyze_market({tf:candles() for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
@@ -299,7 +299,7 @@ class EngineTests(unittest.TestCase):
                    "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,
                                      "volume":0.8,"structure":0.8,"orderflow":0.8},
                    "indicators": {"atr":1.0,"smc":{"liquidity_sweep":"sell_side",
-                       "retest_long":False,"structure_event":"none"}}, "close":100.0}
+                       "retest_long":False,"structure_event":"none"}}, "close":100.0,"market_regime":{"state":"trending"}}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result = analyze_market({tf:candles() for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
