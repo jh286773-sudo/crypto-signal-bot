@@ -34,7 +34,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_only_closed_htf_history_is_passed_to_strategy(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         seen=[]
-        def fake(hist):
+        def fake(hist, **kwargs):
             seen.append({tf:row[-1]["timestamp"] for tf,row in hist.items()})
             return {"signal":"NO_SIGNAL"}
         with patch("walk_forward.analyze_market",side_effect=fake):
