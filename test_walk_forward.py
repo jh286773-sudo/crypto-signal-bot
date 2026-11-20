@@ -39,6 +39,18 @@ class WalkForwardTests(unittest.TestCase):
             self.assertLessEqual(snap["15m"]+DURATION_MS["15m"],decision_close)
             self.assertLessEqual(snap["30m"]+DURATION_MS["30m"],decision_close)
 
+    def test_strategy_receives_only_live_equivalent_260_bar_windows(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        seen=[]
+        def fake(hist):
+            seen.append({tf:len(rows) for tf,rows in hist.items()})
+            return {"signal":"NO_SIGNAL"}
+        with patch("walk_forward.analyze_market",side_effect=fake):
+            run_walk_forward(data,fee_bps_per_side=5,slippage_bps_per_side=1)
+        self.assertTrue(seen)
+        self.assertTrue(all(count<=260 for snap in seen for count in snap.values()))
+        self.assertEqual(seen[0]["5m"],260)
+
     def test_position_sizing_and_partial_targets_are_reported(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][60:]:
