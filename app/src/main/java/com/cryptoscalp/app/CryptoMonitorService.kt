@@ -94,8 +94,7 @@ class CryptoMonitorService : Service() {
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
-                    val lossCooldownActive = isLossCooldownActive(symbol,System.currentTimeMillis())
-                    when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,lossCooldownActive)) {
+                    when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,false)) {
                         SignalDecision.OPEN -> {
                             saveOpen(symbol,r,latestClosedCandleTime)
                             notifySignal(symbol,r)
@@ -115,7 +114,7 @@ class CryptoMonitorService : Service() {
                         SignalDecision.NONE -> Unit
                     }
                     // WAIT remains internal; a cooldown reversal is reconsidered after its expiry.
-                    prefs.edit().putString("last_signal_$symbol",if(lossCooldownActive)"WAIT" else r.signal)
+                    prefs.edit().putString("last_signal_$symbol",r.signal)
                         .putLong(key,latestClosedCandleTime).apply()
                     analyzed++
                 }
@@ -182,7 +181,6 @@ class CryptoMonitorService : Service() {
         prefs.edit().putString(key,(prior+net).joinToString(",")).apply()
     }
     // Positions persist through all price movements and are closed only by an opposite confirmed signal.
-    private fun manageOpen(symbol:String,bar:MarketCandle){ Unit }
     private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}
     private fun closeOpen(symbol:String,reason:String){ val px=Regex("قیمت ([0-9.eE+-]+)").find(reason)?.groupValues?.getOrNull(1)?.toDoubleOrNull(); if(px!=null)recordVirtualClose(symbol,px); clearOpen(symbol); notifyExit(symbol,"خروج از موقعیت • $symbol",reason) }
     private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
