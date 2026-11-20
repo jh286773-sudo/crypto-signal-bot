@@ -81,6 +81,8 @@ class EngineTests(unittest.TestCase):
         with patch("signal_engine.analyze_timeframe",side_effect=[report("bullish"),report("bearish")]):
             conflict=analyze_market({"5m":candles(),"15m":candles()})
         self.assertEqual(conflict["signal"],"NO_SIGNAL")
+        self.assertIn("5m:",conflict["reason"])
+        self.assertIn("diagnostics",conflict)
 
     def test_two_or_four_selected_timeframes_are_supported(self):
         with patch("signal_engine.analyze_timeframe",return_value=report("bearish")):
