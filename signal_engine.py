@@ -668,14 +668,14 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
         result["entry_stage"] = "ENTRY"
     else:
         smc = reports["5m"]["indicators"].get("smc", {})
-        direction = "LONG" if higher_long else "SHORT" if higher_short else None
+        direction = "LONG" if longs == 3 and major_conflicts_clear else "SHORT" if shorts == 3 and major_conflicts_clear else None
         confirmation = bool(direction and (
             smc.get("structure_event") in (("BOS_up","CHoCH_up") if direction=="LONG" else ("BOS_down","CHoCH_down"))
             or smc.get("liquidity_sweep") == ("sell_side" if direction=="LONG" else "buy_side")
         ))
         retest_key = "retest_long" if direction=="LONG" else "retest_short"
         retest_ready = bool(direction and smc.get(retest_key))
-        result["entry_stage"] = "ENTRY" if retest_ready else "CONFIRMATION" if confirmation else "PREPARATION" if higher_long or higher_short else "WAIT"
+        result["entry_stage"] = "ENTRY" if retest_ready else "CONFIRMATION" if confirmation else "PREPARATION" if direction else "WAIT"
         result["reason"]="Retest confirmed; waiting for full indicator consensus" if retest_ready else "Multi-timeframe indicator consensus or confirmed retest not complete"
     return result
 
