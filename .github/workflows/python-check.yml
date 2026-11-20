@@ -33,7 +33,5 @@ jobs:
       - name: Check Python files
         run: python -m compileall -q .
 
-      - name: Run signal, position, backtest, and monitor regression tests
-        run: python -m unittest -v test_signal_engine test_shadow_trading test_walk_forward test_monitor
       - name: Run strategy and backtest tests
         run: python -m unittest -v test_signal_engine.py test_monitor.py test_expectancy.py test_backtest.py test_walk_forward.py test_engine_parity.py test_toobit_api_timestamps.py test_toobit_historical_backtest.py test_shadow_trading.py test_run_toobit_multi_backtest.py
