@@ -30,8 +30,8 @@ class EngineTests(unittest.TestCase):
         with patch("signal_engine.analyze_timeframe", side_effect=[bullish,bullish,bearish]):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"NO_SIGNAL")
-    def test_all_three_aligned_can_signal(self):
-        bullish={"valid":True,"score":60.0,"bias":"bullish","indicators":{"atr":1.0},"close":100.0}
+    def test_all_three_aligned_can_signal_after_confirmed_retest(self):
+        bullish={"valid":True,"score":60.0,"bias":"bullish","indicators":{"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up","previous_swing_low":98.0}},"close":100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"LONG")
