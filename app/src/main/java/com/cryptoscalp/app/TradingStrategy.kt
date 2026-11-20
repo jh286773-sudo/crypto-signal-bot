@@ -321,11 +321,11 @@ object TradingStrategy {
         return opposingCore==0&&opposingMinor<=1
     }
 
-    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null,enforceExpectancy:Boolean=true):StrategyResult =
-        evaluate(mapOf("5m" to five, "15m" to fifteen, "30m" to thirty), asOfMs, expectancyStats, enforceExpectancy)
+    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult =
+        evaluate(mapOf("5m" to five, "15m" to fifteen, "30m" to thirty), asOfMs)
 
     /** Every selected timeframe is independently analyzed; any dissent or missing data returns WAIT. */
-    fun evaluate(timeframes:Map<String,List<MarketCandle>>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null,enforceExpectancy:Boolean=true):StrategyResult {
+    fun evaluate(timeframes:Map<String,List<MarketCandle>>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
         val supported = listOf("1m","3m","5m","15m","30m","1h","4h")
         val selected = supported.filter { timeframes.containsKey(it) }
         if(selected.isEmpty()) return StrategyResult("WAIT",0,0.0,listOf("هیچ تایم‌فریمی انتخاب نشده؛ سیگنالی صادر نمی‌شود"),emptyList())
@@ -397,9 +397,6 @@ object TradingStrategy {
                 listOf("ATR/فاصله Retest/فاصله EMA21 معتبر نیست یا ورود بیش‌ازحد کشیده شده؛ سیگنالی صادر نمی‌شود"),
                 reports.values.flatMap{it.smc}.distinct())
         }
-        val expectancy=if(enforceExpectancy) ExpectancyPolicy.evaluate(expectancyStats?.get(direction).orEmpty()) else null
-        if(enforceExpectancy&&expectancy?.allowed!=true) return StrategyResult("WAIT",combined.roundToInt(),price,
-            listOf("امید ریاضی خالص این جهت هنوز با سابقه کافی تأیید نشده؛ سیگنالی صادر نمی‌شود"),reports.values.flatMap{it.smc}.distinct())
         val reasons=mutableListOf("تحلیل مستقل تمام تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "))
         reasons.add("اجماع کامل "+selected.size+" تایم‌فریم و تأیید ساختار ورود در $entryTf")
         reasons.add(if(isLong)"همه تایم‌فریم‌ها LONG؛ سیگنال لانگ" else "همه تایم‌فریم‌ها SHORT؛ سیگنال شورت")
