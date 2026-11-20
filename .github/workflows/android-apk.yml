@@ -1,5 +1,7 @@
 name: Build Android APK
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main, port-029-brain, strategy-quality-upgrades, strategy-quality-upgrades-v2, smc-entry-risk-parity-v3]
     paths:
