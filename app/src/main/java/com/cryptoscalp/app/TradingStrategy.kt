@@ -347,8 +347,8 @@ object TradingStrategy {
                 listOf("داده یا زمان‌بندی حداقل یکی از تایم‌فریم‌های انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود"),emptyList())
         }
         val latestCommonClose = selected.minOf { tf -> raw.getValue(tf).last().time + durations.getValue(tf) }
-        val fastestDuration = durations.getValue(selected.first())
-        if(latestCommonClose>asOfMs || asOfMs-latestCommonClose>=fastestDuration) {
+        val freshnessWindow = selected.maxOf { durations.getValue(it) }
+        if(latestCommonClose>asOfMs || asOfMs-latestCommonClose>=freshnessWindow) {
             return StrategyResult("WAIT",0,raw[selected.first()]!!.last().close,
                 listOf("کندل بسته‌شده مشترک تازه برای همه تایم‌فریم‌ها در دسترس نیست؛ سیگنالی صادر نمی‌شود"),emptyList())
         }
