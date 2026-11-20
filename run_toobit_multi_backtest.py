@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--days", type=int, default=0, help="0 = all available history unless --start-date is set; otherwise cap lookback")
     parser.add_argument("--start-date", help="Inclusive UTC start date (YYYY-MM-DD), e.g. 2026-11-09")
     parser.add_argument("--start-datetime", help="Inclusive UTC start datetime (ISO-8601), e.g. 2026-11-09T01:00:00Z")
+    parser.add_argument("--end-datetime", help="Exclusive UTC data-end boundary (ISO-8601), pinned across policy comparisons")
     parser.add_argument("--symbols", required=True, help="Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT")
     
     parser.add_argument("--slippage-bps", type=float, default=1.0,
@@ -115,7 +116,6 @@ def main():
             result.update({
                 "symbol": symbol,
                 "adx_policy": args.adx_policy,
-            "fixed_end_datetime_utc": args.end_datetime,
                 "commission_source": commission["source"],
                 "commission_rates": commission,
                 "candle_counts": {tf: len(rows) for tf, rows in market.items()},
@@ -171,6 +171,7 @@ def main():
         },
         "methodology": {
             "adx_policy": args.adx_policy,
+            "fixed_end_datetime_utc": args.end_datetime,
             "strategy": "same 5m/15m/30m closed-candle strategy on every eligible contract",
             "symbol_selection": "only user-selected active Toobit USDT-margined linear perpetual contracts",
             "earliest_available_candle_by_symbol_and_timeframe_utc": {
