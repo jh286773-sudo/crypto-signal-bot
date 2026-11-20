@@ -39,7 +39,8 @@ class CrossEngineContractTests(unittest.TestCase):
             rows=[]
             for i in range(count):
                 close=fixture["base_price"]+i*0.02+math.sin(i*0.3)*0.03
-                rows.append({"timestamp":fixture["start_ms"]+i*durations[tf],
+                aligned_start = (fixture["start_ms"] // durations[tf]) * durations[tf]
+                rows.append({"timestamp":aligned_start+i*durations[tf],
                              "open":close-0.02,"high":close+0.15,"low":close-0.15,
                              "close":close,"volume":100+i})
             data[tf]=rows
