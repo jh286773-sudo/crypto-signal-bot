@@ -1,4 +1,4 @@
-name: AURUM X Selected-Symbol Backtest From 2026-11-09
+name: AURUM X Selected-Symbol Backtest From 2026-11-09 01:00 UTC
 
 on:
   push:
@@ -6,10 +6,10 @@ on:
       - main
   workflow_dispatch:
     inputs:
-      start_date:
-        description: Inclusive UTC start date (YYYY-MM-DD)
+      start_datetime:
+        description: Inclusive UTC start datetime (ISO-8601)
         required: true
-        default: "2026-11-09"
+        default: "2026-11-09T01:00:00Z"
         type: string
       symbols:
         description: Comma-separated Toobit USDT perpetual symbols
@@ -36,16 +36,16 @@ jobs:
         run: |
           python -m unittest test_toobit_history_pagination.py
           python -m unittest discover -v
-      - name: Run selected-symbol backtest from requested UTC date
+      - name: Run selected-symbol backtest from requested UTC datetime
         env:
-          START_DATE: ${{ inputs.start_date || '2026-11-09' }}
+          START_DATETIME: ${{ inputs.start_datetime || '2026-11-09T01:00:00Z' }}
           SYMBOLS: ${{ inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
         run: |
-          python run_toobit_multi_backtest.py --days 0 --start-date "$START_DATE" --symbols "$SYMBOLS" --slippage-bps 1.0 --output toobit_selected_from_2026-11-09.json
+          python run_toobit_multi_backtest.py --days 0 --start-datetime "$START_DATETIME" --symbols "$SYMBOLS" --slippage-bps 1.0 --output toobit_selected_from_2026-11-09_0100_utc.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: aurum-x-selected-backtest-from-2026-11-09
-          path: toobit_selected_from_2026-11-09.json
+          name: aurum-x-selected-backtest-from-2026-11-09-0100-utc
+          path: toobit_selected_from_2026-11-09_0100_utc.json
           if-no-files-found: warn
           retention-days: 30
