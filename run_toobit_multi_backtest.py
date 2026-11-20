@@ -119,7 +119,7 @@ def main():
             "days_requested": args.days,
         },
         "methodology": {
-            "strategy": "same 5m/15m/30m closed-candle strategy on every crypto symbol",
+            "strategy": "same 5m/15m/30m closed-candle strategy on every eligible contract",
             "symbol_selection": "all active Toobit USDT-margined linear perpetual contracts returned by exchangeInfo, ranked by 24h quote volume",
             "candidate_contracts": len(candidates),
             "successfully_tested_contracts": len(results),
