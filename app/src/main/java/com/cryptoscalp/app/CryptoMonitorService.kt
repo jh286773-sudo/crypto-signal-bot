@@ -111,13 +111,13 @@ class CryptoMonitorService : Service() {
                     when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,false)) {
                         SignalDecision.OPEN -> {
                             saveOpen(symbol,r,latestClosedCandleTime)
-                            notifySignal(symbol,r,selectedTimeframes)
+                            notifySignal(symbol,r)
                         }
                         SignalDecision.REVERSE -> {
                             recordVirtualClose(symbol,r.entry)
                             clearOpen(symbol)
                             saveOpen(symbol,r,latestClosedCandleTime)
-                            notifyReversal(symbol,openSide.orEmpty(),r,selectedTimeframes)
+                            notifyReversal(symbol,r)
                         }
                         SignalDecision.CLOSE_ONLY -> {
                             recordVirtualClose(symbol,r.entry)
@@ -199,30 +199,19 @@ class CryptoMonitorService : Service() {
     // Positions persist through all price movements and are closed only by an opposite confirmed signal.
     private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}
     private fun closeOpen(symbol:String,reason:String){ val px=Regex("قیمت ([0-9.eE+-]+)").find(reason)?.groupValues?.getOrNull(1)?.toDoubleOrNull(); if(px!=null)recordVirtualClose(symbol,px); clearOpen(symbol); notifyExit(symbol,"خروج از موقعیت • $symbol",reason) }
-    private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
-    private fun notifySignal(symbol:String,r:StrategyResult,timeframes:List<String>){
-        val body="جهت تأییدشده: ${r.signal}\n"+
-            "تایم‌فریم‌های تأییدشده: ${timeframes.joinToString("، ")}\n"+
-            "قانون ورود: EMA و DMI هم‌جهت؛ RSI یا MACD تأییدکننده\n"+
-            "این اعلان راهنمای دستی است؛ سفارش خودکار در صرافی ثبت نمی‌شود."
+    private fun fmt(v:Double)=SignalNotificationFormatter.formatPrice(v)
+    private fun notifySignal(symbol:String,r:StrategyResult){
+        val line=SignalNotificationFormatter.format(r.entry,r.signal)
         val b=notificationBuilder(alertChannel)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("${r.signal} • $symbol")
-            .setContentText("تأیید در ${timeframes.joinToString("، ")}")
-            .setStyle(Notification.BigTextStyle().bigText(body))
+            .setContentTitle(symbol)
+            .setContentText(line)
+            .setStyle(Notification.BigTextStyle().bigText(line))
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
     }
-    private fun notifyReversal(symbol:String,oldSide:String,r:StrategyResult,timeframes:List<String>){
-        val body="بستن موقعیت قبلی: $oldSide\n"+
-            "جهت جدید تأییدشده: ${r.signal}\n"+
-            "تایم‌فریم‌ها: ${timeframes.joinToString("، ")}\n"+
-            "قانون ورود: EMA و DMI هم‌جهت؛ RSI یا MACD تأییدکننده\n"+
-            "این اعلان راهنمای دستی است؛ سفارش خودکار در صرافی ثبت نمی‌شود."
-        val b=notificationBuilder(alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("تغییر جهت • $symbol")
-            .setContentText("بستن $oldSide ← بازکردن ${r.signal}")
-            .setStyle(Notification.BigTextStyle().bigText(body))
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
+    private fun notifyReversal(symbol:String,r:StrategyResult){
+        // The notification describes the newly confirmed side; no indicator diagnostics are shown.
+        notifySignal(symbol,r)
     }
     private fun notifyExit(symbol:String,title:String,body:String){
         val b=Notification.Builder(this,alertChannel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(title).setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
