@@ -541,7 +541,7 @@ def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float
     return abs(float(price) - float(ema21)) / float(atr) <= max_distance_atr
 
 
-def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None) -> Dict[str,Any]:
+def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None, research_warmup: bool = False) -> Dict[str,Any]:
     """Final decision is based on all indicator families and 5m/15m/30m alignment."""
     # If exchange timestamps are present, all three series must be complete, contiguous,
     # and selected at one identical 5m-close decision boundary. Untimestamped unit fixtures
@@ -613,8 +613,10 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                        "high_volatility_block":blocked})
         return result
     if signal in ("LONG","SHORT"):
+        side_history = expectancy_stats.get(signal, []) if isinstance(expectancy_stats, dict) else []
         allowed, expectancy = (expectancy_allows(expectancy_stats, signal)
-                                if expectancy_stats is not None else (True, {"allowed": True, "reason": "research_warmup"}))
+                                if expectancy_stats is not None and not (research_warmup and len(side_history) < 30)
+                                else (True, {"allowed": True, "count": len(side_history), "reason": "research_warmup"}))
         result["expectancy"] = expectancy
         if not allowed:
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
