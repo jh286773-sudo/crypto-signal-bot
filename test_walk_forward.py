@@ -102,7 +102,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_tp2_locks_tp1_for_remaining_position(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         # Entry is 100; targets are 101.5R, 102.5R, 103.5R for a 1.0 risk.
-        data["5m"][360].update({"low":100.6,"high":103.0})
+        data["5m"][360].update({"low":100.6,"high":102.0})
         data["5m"][361].update({"open":100.6,"low":100.5,"high":101.0,"close":100.8})
         signal={"signal":"LONG","stop_loss":100.0,"take_profits":[101.5,102.5,103.5]}
         with patch("walk_forward.analyze_market",return_value=signal):
@@ -114,7 +114,7 @@ class WalkForwardTests(unittest.TestCase):
         self.assertAlmostEqual(trade["exit"],101.5)
 
     def test_default_risk_is_half_percent_and_two_losses_trigger_cooldown(self):
-        data={tf:bars(tf,400) for tf in DURATION_MS}
+        data={tf:bars(tf,800) for tf in DURATION_MS}
         signal={"signal":"LONG","stop_loss":99.0,"take_profits":[102.0,103.0,104.0]}
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
