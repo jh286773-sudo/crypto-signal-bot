@@ -89,7 +89,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         if min(len(histories[tf]) for tf in REQUIRED_TFS) < 60:
             i += 1
             continue
-        # Match the live Android strategy input horizon and bound indicator cost.\n        signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()})
+        # Match the live Android strategy input horizon and bound indicator cost.
+        signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()})
         side = signal.get("signal")
         if side not in ("LONG", "SHORT"):
             i += 1
