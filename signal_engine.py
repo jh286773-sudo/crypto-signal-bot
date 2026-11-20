@@ -176,7 +176,40 @@ def _taker_strength(c):
             "sell_percent":round(100*sell/total,2)}
 
 
-def analyze_timeframe(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+def _volatility_status(c, timeframe="5m", current_atr=None):
+    """Flag exceptional ATR expansion versus the recent ATR%-baseline."""
+    if current_atr is None:
+        current_atr = _atr(c)
+    if not current_atr or not c or float(c[-1]["close"]) <= 0:
+        return {"atr_pct": None, "baseline_atr_pct": None,
+                "ratio": None, "high_volatility": False}
+    atr_pct = 100.0 * current_atr / float(c[-1]["close"])
+    start = max(15, len(c) - 30)
+    baseline = []
+    for end in range(start, len(c) - 1):
+        value = _atr(c[:end + 1])
+        close = float(c[end]["close"])
+        if value is not None and close > 0:
+            baseline.append(100.0 * value / close)
+    if not baseline:
+        return {"atr_pct": round(atr_pct, 4), "baseline_atr_pct": None,
+                "ratio": None, "high_volatility": False}
+    ordered = sorted(baseline)
+    mid = len(ordered) // 2
+    median = ordered[mid] if len(ordered) % 2 else (ordered[mid-1] + ordered[mid]) / 2
+    ratio = atr_pct / median if median > 0 else None
+    # The relative expansion test avoids blocking consistently volatile markets.
+    # Absolute floors prevent tiny baselines from creating false alarms.
+    floor = {"5m": 0.8, "15m": 1.2, "30m": 1.8}.get(timeframe, 0.8)
+    blocked = bool(ratio is not None and atr_pct >= floor and ratio >= 2.5)
+    return {"atr_pct": round(atr_pct, 4),
+            "baseline_atr_pct": round(median, 4),
+            "ratio": round(ratio, 3) if ratio is not None else None,
+            "high_volatility": blocked}
+
+
+def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str, Any]:
     if len(candles)<60:
         return {"valid":False,"reason":"At least 60 candles required for stable indicator calculation"}
     try:
@@ -189,6 +222,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         st=_stoch_rsi(close); ad=_adx(c); ichi=_ichimoku(c); a=_atr(c)
         vw=_vwap(c); obv=_obv(c); mfi=_mfi(c); structure=_market_structure(c)
         div=_divergence(c); strength=_taker_strength(c)
+        volatility=_volatility_status(c,timeframe,a)
         groups={}; details={}
 
         def vote(group,name,value,weight=1.0):
@@ -226,7 +260,8 @@ def analyze_timeframe(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         bias="bullish" if score>=22 and bullish>=4 else "bearish" if score<=-22 and bearish>=4 else "neutral"
         return {"valid":True,"close":price,"score":round(score,2),"bias":bias,
                 "family_scores":{k:round(v,3) for k,v in family_scores.items()},
-                "indicator_votes":details,"indicators":{
+                "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
+                "indicators":{
                     "ema":{"9":e9,"21":e21,"50":e50},"sma":{"20":s20,"50":s50},
                     "rsi":r,"macd":m,"bollinger":bb,"stoch_rsi":st,"adx_dmi":ad,
                     "ichimoku":ichi,"atr":a,"vwap":vw,"obv":obv,"mfi":mfi,
@@ -246,7 +281,7 @@ def _levels(side, price, volatility):
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
     """Final decision is based on all indicator families and 5m/15m/30m alignment."""
-    reports={tf:analyze_timeframe(timeframes.get(tf,[])) for tf in REQUIRED_TFS}
+    reports={tf:analyze_timeframe(timeframes.get(tf,[]),tf) for tf in REQUIRED_TFS}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Insufficient/invalid candles: "+", ".join(invalid),
@@ -263,6 +298,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
             "combined_score":round(combined,2),"timeframes":reports,
             "timeframe_weights":weights,"trade_enabled":False,
             "note":"Read-only analysis; confidence is a model score, not a probability or guarantee."}
+    blocked=[tf for tf in REQUIRED_TFS if reports[tf].get("high_volatility")]
+    if blocked:
+        result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                       "reason":"Abnormal volatility filter blocked: "+", ".join(blocked),
+                       "high_volatility_block":blocked})
+        return result
     if signal in ("LONG","SHORT"):
         a=reports["5m"]["indicators"]["atr"]; p=reports["5m"]["close"]
         if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}
