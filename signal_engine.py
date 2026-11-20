@@ -532,8 +532,14 @@ def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float
     return abs(float(price) - float(ema21)) / float(atr) <= max_distance_atr
 
 
-def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None, research_warmup: bool = False) -> Dict[str,Any]:
-    """Final decision is based on all indicator families and 5m/15m/30m alignment."""
+def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None, research_warmup: bool = False, adx_policy: str = "strict") -> Dict[str,Any]:
+    """Final decision is based on all indicator families and 5m/15m/30m alignment.
+
+    ADX policies: strict (all TFs trending), balanced (30m trending, 15m
+    trending/transition, 5m is an entry trigger), confirm_only (ADX never blocks).
+    """
+    if adx_policy not in ("strict", "balanced", "confirm_only"):
+        raise ValueError("adx_policy must be strict, balanced or confirm_only")
     # If exchange timestamps are present, all three series must be complete, contiguous,
     # and selected at one identical 5m-close decision boundary. Untimestamped unit fixtures
     # remain supported; live Toobit candles always carry open_time.
@@ -602,13 +608,24 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                        "rejection_reasons":["high_volatility:"+tf for tf in blocked],
                        "high_volatility_block":blocked})
         return result
-    non_trending = [tf for tf in REQUIRED_TFS if (reports[tf].get("market_regime") or {}).get("state") != "trending"]
-    if non_trending:
+    regimes = {tf: (reports[tf].get("market_regime") or {}).get("state", "unknown")
+               for tf in REQUIRED_TFS}
+    if adx_policy == "strict":
+        blocked_regime = [tf for tf in REQUIRED_TFS if regimes[tf] != "trending"]
+    elif adx_policy == "balanced":
+        blocked_regime = (["30m"] if regimes["30m"] != "trending" else [])
+        if regimes["15m"] not in ("trending", "transition"):
+            blocked_regime.append("15m")
+    else:
+        blocked_regime = []
+    if blocked_regime:
         result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                       "reason":"Market regime is ranging, transitional or unconfirmed: "+", ".join(non_trending),
-                       "rejection_reasons":["adx_regime_not_trending:"+tf for tf in non_trending],
-                       "blocked_market_regime":non_trending})
+                       "reason":"ADX policy blocked market regime: "+", ".join(blocked_regime),
+                       "rejection_reasons":["adx_regime_not_allowed:"+tf for tf in blocked_regime],
+                       "blocked_market_regime":blocked_regime,
+                       "adx_policy":adx_policy})
         return result
+    result["adx_policy"] = adx_policy
     if signal in ("LONG","SHORT"):
         side_history = expectancy_stats.get(signal, []) if isinstance(expectancy_stats, dict) else []
         allowed, expectancy = (expectancy_allows(expectancy_stats, signal)
