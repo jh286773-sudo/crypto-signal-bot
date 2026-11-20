@@ -60,11 +60,17 @@ class ToobitAPI:
         contracts = info.get("contracts", [])
         # TradFi stock/index/commodity/FX contracts also use USDT linear swaps.
         # Restrict this research universe to underlyings listed as exchange coins.
-        crypto_assets = {
-            str(item.get("coinId", "")).upper()
-            for item in info.get("coins", [])
-            if item.get("coinId")
-        }
+        crypto_assets = set()
+        for coin in info.get("coins", []):
+            if not isinstance(coin, dict):
+                continue
+            for key in ("coinId", "coin", "asset", "symbol", "coinName"):
+                value = coin.get(key)
+                if isinstance(value, str) and value.strip():
+                    crypto_assets.add(value.strip().upper())
+        # A missing coin catalogue is not permission to include unknown TradFi underlyings.
+        if not crypto_assets:
+            raise RuntimeError("Toobit exchangeInfo did not expose a crypto coin universe")
         eligible = {
             item["symbol"]
             for item in contracts
