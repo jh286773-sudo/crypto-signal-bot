@@ -63,6 +63,7 @@ jobs:
           SYMBOL: BTC-SWAP-USDT
           DAYS: '10'
           SLIPPAGE_BPS: '1.0'
+          END_MS: '1795172400000'
         run: |
           python run_toobit_backtest.py --symbol "$SYMBOL" --days "$DAYS" --slippage-bps "$SLIPPAGE_BPS" --slippage-source "assumed 1.0 bps adverse slippage per fill; not measured" --public-vip0-fees --output toobit_walk_forward_result.json
       - uses: actions/upload-artifact@v4
