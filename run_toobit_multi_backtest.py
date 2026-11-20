@@ -20,7 +20,7 @@ def finite_json(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--days", type=int, default=30, help="Maximum lookback; actual start is the common earliest available 5m candle")
+    parser.add_argument("--days", type=int, default=0, help="0 = all available history from each timeframe first candle; otherwise cap lookback")
     parser.add_argument("--symbols", required=True, help="Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT")
     
     parser.add_argument("--slippage-bps", type=float, default=1.0,
@@ -29,8 +29,8 @@ def main():
     parser.add_argument("--risk", type=float, default=0.005)
     parser.add_argument("--output", default="toobit_multi_crypto_30day.json")
     args = parser.parse_args()
-    if not 1 <= args.days <= 30:
-        raise SystemExit("--days must be between 1 and 30")
+    if not 0 <= args.days <= 3650:
+        raise SystemExit("--days must be between 0 and 3650")
     selected_symbols = list(dict.fromkeys(s.strip().upper() for s in args.symbols.split(",") if s.strip()))
     if not selected_symbols:
         raise SystemExit("--symbols must contain at least one symbol")
@@ -40,22 +40,28 @@ def main():
     api = ToobitAPI()
     end_ms = int(api.server_time()["serverTime"])
     end_ms = (end_ms // 300000) * 300000
-    requested_start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000
-    # Use only user-selected symbols; determine a common start from real available 5m history.
+    requested_start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000 if args.days else 0
+    # Only selected symbols are tested. Each timeframe starts at its own first real candle.
     active_symbols = set(api.get_futures_symbols(limit=10000, preferred_bases=None))
     invalid = [symbol for symbol in selected_symbols if symbol not in active_symbols]
     if invalid:
         raise SystemExit("Selected symbols are not active Toobit USDT perpetuals: " + ", ".join(invalid))
-    available_starts = {symbol: api.get_first_available_candle_open(symbol, "5m", end_ms)
-                        for symbol in selected_symbols}
-    start_ms = max(requested_start_ms, max(available_starts.values()))
+    available_starts = {
+        symbol: {tf: api.get_first_available_candle_open(symbol, tf, end_ms)
+                 for tf in ("5m", "15m", "30m")}
+        for symbol in selected_symbols
+    }
+    starts_by_symbol = {
+        symbol: {tf: max(requested_start_ms, start) for tf, start in starts.items()}
+        for symbol, starts in available_starts.items()
+    }
     candidates = selected_symbols
     results, failures = [], []
 
     # All symbols use the same UTC window, fee schedule, slippage and risk model.
     for symbol in candidates:
         try:
-            market = api.get_historical_range(symbol, start_ms, end_ms, include_funding=True)
+            market = api.get_historical_range(symbol, starts_by_symbol[symbol], end_ms, include_funding=True)
             commission = {
                 "source": "published Toobit VIP-0 futures taker fee",
                 "openTakerFee": 0.0006,
@@ -113,17 +119,23 @@ def main():
     }
     report = {
         "period_utc": {
-            "start": datetime.fromtimestamp(start_ms / 1000, timezone.utc).isoformat(),
             "end": datetime.fromtimestamp(end_ms / 1000, timezone.utc).isoformat(),
-            "days_requested_max": args.days,
-            "actual_days": round((end_ms - start_ms) / 86400000, 4),
-            "window_basis": "common earliest available closed 5m candle across selected symbols, capped by requested lookback",
+            "days_requested_max": args.days or "all_available",
+            "window_basis": "each timeframe begins at its own earliest available closed candle, optionally capped by lookback",
+            "timeframe_start_by_symbol_utc": {
+                symbol: {tf: datetime.fromtimestamp(start / 1000, timezone.utc).isoformat()
+                         for tf, start in starts.items()}
+                for symbol, starts in starts_by_symbol.items()
+            },
         },
         "methodology": {
             "strategy": "same 5m/15m/30m closed-candle strategy on every eligible contract",
             "symbol_selection": "only user-selected active Toobit USDT-margined linear perpetual contracts",
-            "available_5m_start_by_symbol_utc": {symbol: datetime.fromtimestamp(value / 1000, timezone.utc).isoformat() for symbol, value in available_starts.items()},
-            "common_start_utc": datetime.fromtimestamp(start_ms / 1000, timezone.utc).isoformat(),
+            "earliest_available_candle_by_symbol_and_timeframe_utc": {
+                symbol: {tf: datetime.fromtimestamp(value / 1000, timezone.utc).isoformat()
+                         for tf, value in starts.items()}
+                for symbol, starts in available_starts.items()
+            },
             "candidate_contracts": len(candidates),
             "successfully_tested_contracts": len(results),
             "universe_scope": "crypto underlyings listed in Toobit exchangeInfo coins; USDT linear perpetuals only; excludes TradFi, inverse and non-USDT contracts",
@@ -137,7 +149,7 @@ def main():
             "same_utc_window_for_all_symbols": True,
             "production_symbol_universe_changed": False,
             "full_candidate_scan_completed": len(results) + len(failures) == len(candidates),
-            "full_universe_data_complete": len(results) == len(candidates) and not failures,
+            "selected_symbol_data_complete": len(results) == len(candidates) and not failures,
             "failed_contract_count": len(failures),
         },
         "pooled_summary": pooled,
@@ -150,7 +162,7 @@ def main():
                                   "pooled_summary": pooled,
                                   "symbols": [x["symbol"] for x in results],
                                   "failed_symbols": failures,
-                                  "full_universe_data_complete": report["methodology"]["full_universe_data_complete"],
+                                  "selected_symbol_data_complete": report["methodology"]["selected_symbol_data_complete"],
                                   "output": args.output}), indent=2), flush=True)
     if len(results) != len(candidates) or failures:
         raise RuntimeError(
