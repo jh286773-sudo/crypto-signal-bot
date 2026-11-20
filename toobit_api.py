@@ -183,12 +183,23 @@ class ToobitAPI:
         expected_last = ((end_ms - 1) // step) * step
         cursor_start = expected_first
         rows_by_time = {}
+        page_number = 0
         while cursor_start <= expected_last:
+            # Toobit may return only the newest 1000 rows in a wide range.
+            # Bound each request to one page-sized time slice so older candles
+            # cannot be displaced by newer rows from the same response.
+            page_end = min(expected_last + step, cursor_start + page_size * step)
             page = self._get("/quote/v1/klines", {
                 "symbol": symbol, "interval": interval, "startTime": cursor_start,
-                "endTime": end_ms, "limit": page_size
+                "endTime": page_end, "limit": page_size
             })
+            page_number += 1
             if not isinstance(page, list) or not page:
+                print(
+                    f"Toobit kline page {page_number} {symbol} {interval}: "
+                    f"empty; requested [{cursor_start}, {page_end})",
+                    flush=True,
+                )
                 break
             page_opens = []
             for row in page:
@@ -208,8 +219,19 @@ class ToobitAPI:
                     item["taker_buy_volume"] = float(row[9])
                 rows_by_time[opened] = item
             if not page_opens:
+                print(
+                    f"Toobit kline page {page_number} {symbol} {interval}: "
+                    f"no valid timestamps; requested [{cursor_start}, {page_end})",
+                    flush=True,
+                )
                 break
-            newest_open = max(page_opens)
+            oldest_open, newest_open = min(page_opens), max(page_opens)
+            print(
+                f"Toobit kline page {page_number} {symbol} {interval}: "
+                f"rows={len(page_opens)} first={oldest_open} last={newest_open} "
+                f"requested=[{cursor_start}, {page_end})",
+                flush=True,
+            )
             if newest_open >= expected_last:
                 break
             next_cursor_start = newest_open + step
