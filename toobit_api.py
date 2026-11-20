@@ -330,6 +330,11 @@ class ToobitAPI:
                 and int(row[0]) < cursor_end
             ]
             if not page_opens:
+                if len(rows) >= page_size:
+                    raise RuntimeError(
+                        f"Toobit kline history pagination did not move backward for {symbol} {interval}; "
+                        "received a full page with no timestamps before the current cursor"
+                    )
                 break
             page_oldest = min(page_opens)
             if oldest is None or page_oldest < oldest:
