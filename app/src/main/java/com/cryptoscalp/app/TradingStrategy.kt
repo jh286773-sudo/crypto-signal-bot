@@ -163,7 +163,13 @@ object TradingStrategy {
                 else->"none"
             }
             val sweep=if(last.low<pl&&last.close>pl)"sell_side" else if(last.high>ph&&last.close<ph)"buy_side" else "none"
-            return Structure(event,sweep)
+            val tolerance=max(structureAtr*.25,last.close*.0005)
+            val priorBreakUp=prior.takeLast(6).any{it.close>ph}
+            val priorBreakDown=prior.takeLast(6).any{it.close<pl}
+            val retestLong=priorBreakUp&&last.low<=ph+tolerance&&last.close>ph&&last.close>last.open
+            val retestShort=priorBreakDown&&last.high>=pl-tolerance&&last.close<pl&&last.close<last.open
+            return Structure(event,sweep,previousSwingHigh=ph,previousSwingLow=pl,
+                retestLong=retestLong,retestShort=retestShort,falseBreakout=sweep!="none")
         }
         val last=w.last();val lastHigh=sh.last().second;val lastLow=sl.last().second
         val up=sh.size>=2&&sl.size>=2&&lastHigh>sh[sh.size-2].second&&lastLow>sl[sl.size-2].second
