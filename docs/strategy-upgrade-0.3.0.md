@@ -7,16 +7,15 @@
 - Any disagreement, neutral analysis, missing/invalid candles, or unavailable common closed-candle boundary means NO SIGNAL.
 - Unselected timeframes are never fetched as confirmation requirements and never gate a signal.
 
-## Direct technical-indicator decision
+## Direct technical-indicator decision (experimental branch update)
 - No indicator weights, timeframe weights, family weights, score totals, confidence scores, or score thresholds are used.
-- Core directional conditions must all agree: EMA20/50/200 alignment, RSI directional range, MACD histogram direction, and DMI direction (DI+ versus DI-).
-- Supporting conditions from VWAP, OBV trend, and the Bollinger middle band must not oppose the candidate direction.
-- If core conditions do not align or a supporting indicator opposes them, the timeframe is neutral and emits no direction.
-- SMC is an independent entry-confirmation filter, not a weighted indicator and not part of a score.
-- SMC context includes confirmed BOS/CHoCH, bullish/bearish Order Blocks, liquidity sweeps, Equal Highs/Lows, directional Retest, and false-breakout detection.
-- Each selected timeframe must independently confirm the same direction through a directional BOS/CHoCH, matching Retest, or opposing-side liquidity sweep. A false breakout or a clearly opposing active Order Block blocks the signal.
-- Equal Highs/Lows and swing structure are exposed as context; they are not converted into points.
-- Python and Android apply the same SMC confirmation rules.
+- EMA direction is bullish when EMA20 > EMA50 and price is above EMA200; bearish is the exact inverse.
+- RSI confirms bullish momentum at or above 50 and bearish momentum below 50. Overbought/oversold readings do not independently veto a trend.
+- DMI direction (DI+ versus DI-) must agree with EMA direction. Either RSI midpoint momentum OR MACD histogram direction must also confirm that direction.
+- VWAP, OBV trend, and the Bollinger middle band are displayed as supporting diagnostics only; they do not veto an otherwise valid direction.
+- Each selected timeframe is analyzed independently. One selected timeframe can signal on its own; multiple selected timeframes still require unanimous LONG or SHORT. Any neutral or conflicting timeframe means WAIT.
+- The independent market-structure approximation remains available as context, but it is not a mandatory signal gate. It is not the official LuxAlgo implementation.
+- Per-timeframe indicator directions and invalid-data reasons are attached to the strategy result, saved by the monitor, and shown in the app status panel.
 
 ## Runtime behavior
 - Decisions use closed candles only. For multiple selected timeframes, data is aligned to a shared closed-candle decision boundary.
