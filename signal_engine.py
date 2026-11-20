@@ -7,7 +7,6 @@ when the exchange explicitly supplies it.
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 from math import isfinite, sqrt
-from expectancy import expectancy_allows
 
 SUPPORTED_TFS = ("1m", "3m", "5m", "15m", "30m", "1h", "4h")
 REQUIRED_TFS = ("5m", "15m", "30m")  # backward-compatible default
@@ -514,7 +513,7 @@ def _levels(side, entry, atr, structure=None):
         targets = [entry - risk * multiple for multiple in (1.5, 2.5, 3.5)]
     return {"stop_loss": stop, "take_profits": targets, "risk_reward": [1.5, 2.5, 3.5]}
 
-def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None, research_warmup: bool = False, selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
+def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
     """Analyze only selected timeframes; every selected timeframe must agree."""
     selected_tfs = tuple(dict.fromkeys(REQUIRED_TFS if selected_timeframes is None else selected_timeframes))
     if not selected_tfs or any(tf not in SUPPORTED_TFS for tf in selected_tfs):
@@ -599,15 +598,6 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                        "blocked_market_regime":higher_timeframe_range})
         return result
     if signal in ("LONG","SHORT"):
-        side_history = expectancy_stats.get(signal, []) if isinstance(expectancy_stats, dict) else []
-        allowed, expectancy = (expectancy_allows(expectancy_stats, signal)
-                                if expectancy_stats is not None and not (research_warmup and len(side_history) < 30)
-                                else (True, {"allowed": True, "count": len(side_history), "reason": "research_warmup"}))
-        result["expectancy"] = expectancy
-        if not allowed:
-            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                    "entry_stage":"WAIT","reason":"Closed-trade net expectancy is not statistically established for this symbol and direction.",
-                    "rejection_reasons":["net_expectancy_gate"],"trade_enabled":False}
         a=reports[entry_tf]["indicators"]["atr"]; p=reports[entry_tf]["close"]
         if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}
         smc = reports[entry_tf]["indicators"].get("smc", {})
