@@ -230,7 +230,7 @@ def _market_structure(c, lookback=60):
                 "structure_event":event,"market_structure":"range",
                 "liquidity_sweep":sweep,"equal_high_liquidity":False,
                 "equal_low_liquidity":False,"order_blocks":[],
-                "false_breakout": sweep != "none",
+                "false_breakout": sweep != "none" and not (retest_long or retest_short),
                 "retest_long": retest_long, "retest_short": retest_short,
                 "breakout_quality": "retest_confirmed" if retest_long or retest_short else "false" if sweep != "none" else "unconfirmed" if event != "none" else "none"}
     last = w[-1]
@@ -277,7 +277,7 @@ def _market_structure(c, lookback=60):
     prior_break_down = any(float(x["close"]) < last_low and abs(float(x["close"])-last_low) >= (atr or 0)*0.10 for x in prior_bars)
     retest_long = prior_break_up and low <= last_high+tolerance and close > last_high and close > float(last["open"])
     retest_short = prior_break_down and high >= last_low-tolerance and close < last_low and close < float(last["open"])
-    false_breakout = sweep != "none"
+    false_breakout = sweep != "none" and not (retest_long or retest_short)
     return {
         "previous_swing_high": last_high, "previous_swing_low": last_low,
         "structure_event": event, "market_structure": "bullish" if up_trend else "bearish" if down_trend else "range",
