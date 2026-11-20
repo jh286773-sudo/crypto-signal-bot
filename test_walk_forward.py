@@ -113,6 +113,20 @@ class WalkForwardTests(unittest.TestCase):
         self.assertEqual(trade["exit_reason"],"stop_after_tp2")
         self.assertAlmostEqual(trade["exit"],101.5)
 
+    def test_default_risk_is_half_percent_and_two_losses_trigger_cooldown(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        signal={"signal":"LONG","stop_loss":99.0,"take_profits":[102.0,103.0,104.0]}
+        with patch("walk_forward.analyze_market",return_value=signal):
+            result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
+                                    initial_equity=10000,max_holding_bars=1)
+        self.assertEqual(result["risk_fraction"],0.005)
+        self.assertAlmostEqual(result["trades"][0]["risk_cash"],50.0)
+        self.assertEqual(result["loss_guard"]["loss_streak_limit"],2)
+        self.assertEqual(result["loss_guard"]["cooldown_bars"],288)
+        self.assertGreaterEqual(result["loss_guard"]["cooldown_events"],1)
+        self.assertGreater(result["loss_guard"]["cooldown_skipped_bars"],200)
+        self.assertLess(result["trade_count"],100)
+
     def test_walk_forward_reports_directional_quality_and_loss_streak(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         with patch("walk_forward.analyze_market",return_value={"signal":"NO_SIGNAL"}):
