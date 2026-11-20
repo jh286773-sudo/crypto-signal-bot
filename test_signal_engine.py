@@ -1,6 +1,6 @@
 import unittest, math
 from unittest.mock import patch
-from signal_engine import analyze_timeframe, analyze_market
+from signal_engine import analyze_timeframe, analyze_market, _adx_regime, _confirmed_pivots, _market_structure
 
 def candles(n=100, trend=1.0):
     rows=[]; p=100.0
@@ -49,6 +49,28 @@ class EngineTests(unittest.TestCase):
         r=analyze_timeframe(candles(),"5m")
         self.assertIn("volatility_filter",r)
         self.assertIn("baseline_atr_pct",r["volatility_filter"])
+
+    def test_adx_regime_distinguishes_trend_range_and_transition(self):
+        self.assertEqual(_adx_regime({"adx": 31, "plus_di": 28, "minus_di": 12})["state"], "trending")
+        self.assertEqual(_adx_regime({"adx": 14, "plus_di": 18, "minus_di": 17})["state"], "ranging")
+        self.assertEqual(_adx_regime({"adx": 21, "plus_di": 18, "minus_di": 17})["state"], "transition")
+
+    def test_confirmed_pivots_exclude_unconfirmed_edges(self):
+        highs, lows = _confirmed_pivots([1, 3, 1, 4, 1], 1, 1)
+        self.assertEqual(highs, [1, 3])
+        self.assertEqual(lows, [2])
+
+    def test_smc_report_exposes_structure_and_liquidity_fields(self):
+        data = candles(120)
+        structure = _market_structure(data)
+        self.assertIn("structure_event", structure)
+        self.assertIn("liquidity_sweep", structure)
+        self.assertIn("order_blocks", structure)
+        self.assertIn("equal_high_liquidity", structure)
+
+    def test_report_exposes_adx_market_regime(self):
+        result = analyze_timeframe(candles(120), "15m")
+        self.assertIn(result["market_regime"]["state"], ("trending", "ranging", "transition", "unknown"))
 
 
 if __name__=="__main__": unittest.main()
