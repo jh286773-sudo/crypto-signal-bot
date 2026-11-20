@@ -861,6 +861,57 @@ class MainActivity : Activity() {
         heading.addView(countView)
         picker.addView(heading)
 
+        val selectedStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rounded(Color.rgb(24, 24, 25), Color.rgb(128, 99, 48), 14)
+        }
+        selectedStrip.addView(text("ارزهای انتخاب‌شده", 10, goldLight, true))
+        val selectedSymbolsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val selectedSymbolsScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
+            addView(selectedSymbolsRow)
+        }
+        selectedStrip.addView(selectedSymbolsScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(38)
+        ))
+        fun updateSelectedSymbolsStrip() {
+            selectedSymbolsRow.removeAllViews()
+            if (selectedSymbols.isEmpty()) {
+                selectedSymbolsRow.addView(text("هنوز ارزی انتخاب نشده", 11, muted))
+            } else {
+                selectedSymbols.forEach { selected ->
+                    val shortName = selected.removeSuffix("-SWAP-USDT")
+                    val chip = TextView(this).apply {
+                        text = shortName
+                        textSize = 11f
+                        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                        gravity = Gravity.CENTER
+                        setTextColor(ink)
+                        setPadding(dp(12), dp(6), dp(12), dp(6))
+                        background = android.graphics.drawable.GradientDrawable(
+                            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                            intArrayOf(Color.WHITE, goldLight, gold)
+                        ).apply {
+                            cornerRadius = dp(10).toFloat()
+                            setStroke(dp(1), Color.rgb(255, 232, 165))
+                        }
+                        elevation = dp(3).toFloat()
+                    }
+                    selectedSymbolsRow.addView(chip, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, dp(30)
+                    ).apply { marginEnd = dp(7) })
+                }
+                selectedSymbolsScroll.post { selectedSymbolsScroll.fullScroll(View.FOCUS_RIGHT) }
+            }
+        }
+        picker.addView(selectedStrip, marginParams(top = 10, bottom = 2))
+        updateSelectedSymbolsStrip()
+
         val search = EditText(this).apply {
             hint = "جستجوی ارز؛ مثل BTC یا SOL"
             setSingleLine(true)
@@ -895,6 +946,7 @@ class MainActivity : Activity() {
             getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit()
                 .putStringSet("selected_symbols", selectedSymbols.toSet()).apply()
             countView.text = "${selectedSymbols.size} انتخاب"
+            updateSelectedSymbolsStrip()
             coinAdapter?.notifyDataSetChanged()
             renderSelectedChoices()
         }
@@ -937,6 +989,7 @@ class MainActivity : Activity() {
             selectedSymbols.clear()
             getSharedPreferences("crypto_monitor", Context.MODE_PRIVATE).edit().putStringSet("selected_symbols", emptySet()).apply()
             countView.text = "0 انتخاب"
+            updateSelectedSymbolsStrip()
             coinAdapter?.notifyDataSetChanged()
             renderSelectedChoices()
         }
