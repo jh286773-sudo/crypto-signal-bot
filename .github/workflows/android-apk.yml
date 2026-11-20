@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, port-029-brain, strategy-quality-upgrades, strategy-quality-upgrades-v2, smc-entry-risk-parity-v3, aurum-x/advanced-smc-entry-backtest]
+    branches: [main, port-029-brain, strategy-quality-upgrades, strategy-quality-upgrades-v2, smc-entry-risk-parity-v3, aurum-x/advanced-smc-entry-backtest, aurum-x-loss-reduction]
     paths:
       - 'app/**'
       - '*.gradle.kts'
