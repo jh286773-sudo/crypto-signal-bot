@@ -94,7 +94,9 @@ class CryptoMonitorService : Service() {
                         val old=JSONObject(open).optString("side")
                         if(old!=r.signal && !lossCooldownActive){clearOpen(symbol);saveOpen(symbol,r);notifySignal(symbol,r)}
                     }
-                    prefs.edit().putString("last_signal_$symbol",r.signal)
+                    // Keep the internal state non-directional while cooling down so a
+                    // still-valid signal can be reconsidered after the pause expires.
+                    prefs.edit().putString("last_signal_$symbol",if(lossCooldownActive)"WAIT" else r.signal)
                         .putLong(key,latestClosedCandleTime).apply()
                     analyzed++
                 }
