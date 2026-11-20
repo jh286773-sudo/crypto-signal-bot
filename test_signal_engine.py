@@ -321,4 +321,13 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["signal"], "NO_SIGNAL")
 
 
+    def test_family_bias_has_no_fixed_score_magnitude_gate(self):
+        from signal_engine import _family_bias
+        self.assertEqual(_family_bias({"trend": 0.01, "momentum": 0.02,
+                                       "volume": 0.01, "structure": -0.005}), "bullish")
+        self.assertEqual(_family_bias({"trend": -0.01, "momentum": -0.02,
+                                       "volume": 0.005}), "bearish")
+        self.assertEqual(_family_bias({"trend": 0.01, "momentum": -0.01}), "neutral")
+
+
 if __name__=="__main__": unittest.main()

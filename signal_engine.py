@@ -466,9 +466,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
             family_weights.update({"trend":0.8,"structure":1.6,"divergence":1.2})
         total_w=sum(family_weights[k] for k in family_scores)
         score=100*sum(family_scores[k]*family_weights[k] for k in family_scores)/total_w
-        bullish=sum(1 for x in family_scores.values() if x>0.20)
-        bearish=sum(1 for x in family_scores.values() if x<-0.20)
-        bias="bullish" if score>=22 and bullish>=4 else "bearish" if score<=-22 and bearish>=4 else "neutral"
+        bias=_family_bias(family_scores)
         return {"valid":True,"close":price,"score":round(score,2),"bias":bias,
                 "family_scores":{k:round(v,3) for k,v in family_scores.items()},
                 "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
@@ -506,6 +504,13 @@ def _levels(side, price, volatility, structure=None):
             "risk_per_unit":risk,"risk_reward":[1.5,2.5,3.5]}
 
 
+def _family_bias(family_scores: Dict[str, float]) -> str:
+    """Choose direction from family votes; score magnitude never gates the bias."""
+    bullish = sum(1 for value in family_scores.values() if float(value) > 0.0)
+    bearish = sum(1 for value in family_scores.values() if float(value) < 0.0)
+    return "bullish" if bullish > bearish else "bearish" if bearish > bullish else "neutral"
+
+
 def _no_major_indicator_conflict(report: Dict[str, Any], side: str) -> bool:
     """Allow one minor counter-vote, but never a core trend/momentum/strength conflict."""
     votes = report.get("indicator_votes")
@@ -517,20 +522,6 @@ def _no_major_indicator_conflict(report: Dict[str, Any], side: str) -> bool:
     opposing_minor = sum(1 for name, value in votes.items()
                          if name not in core and int(value) * direction < 0)
     return opposing_core == 0 and opposing_minor <= 1
-
-
-def _directional_quality(report: Dict[str, Any], side: str) -> bool:
-    """Require broad family agreement and reject material individual-indicator conflicts."""
-    families = report.get("family_scores")
-    if not isinstance(families, dict) or not families:
-        return False
-    direction = 1.0 if side == "LONG" else -1.0
-    aligned = sum(1 for value in families.values() if float(value) * direction >= 0.20)
-    opposing = sum(1 for value in families.values() if float(value) * direction <= -0.20)
-    core = ("trend", "momentum", "strength")
-    core_clear = all(float(families.get(name, 0.0)) * direction >= 0.0 for name in core)
-    return (aligned >= 5 and opposing <= 1 and core_clear
-            and _no_major_indicator_conflict(report, side))
 
 
 def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float],
