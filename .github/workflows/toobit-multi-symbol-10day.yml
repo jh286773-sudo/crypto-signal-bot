@@ -56,8 +56,9 @@ jobs:
             --slippage-bps "$SLIPPAGE_BPS" \
             --output toobit_multi_symbol_10day.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: aurum-x-toobit-full-usdt-perpetual-universe
           path: toobit_multi_symbol_10day.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
