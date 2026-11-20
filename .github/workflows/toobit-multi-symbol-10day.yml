@@ -1,4 +1,4 @@
-name: AURUM X Selected-Symbol Available-History Walk-Forward
+name: AURUM X Selected-Symbol Full-History Walk-Forward
 
 on:
   push:
@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       days:
-        description: Shared historical window in days
+        description: 0 = each timeframe's first available candle through today; otherwise cap lookback days
         required: true
-        default: "30"
+        default: "0"
         type: string
       symbols:
         description: Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT
@@ -46,11 +46,11 @@ jobs:
             --days "$DAYS" \
             --symbols "$SYMBOLS" \
             --slippage-bps "$SLIPPAGE_BPS" \
-            --output toobit_selected_available_history.json
+            --output toobit_selected_full_history.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: aurum-x-toobit-selected-available-history
+          name: aurum-x-toobit-selected-full-history
           path: toobit_multi_crypto_30day.json
           if-no-files-found: warn
           retention-days: 30
