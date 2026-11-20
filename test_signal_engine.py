@@ -145,21 +145,37 @@ class EngineTests(unittest.TestCase):
         result = analyze_timeframe(candles(120), "15m")
         self.assertIn(result["market_regime"]["state"], ("trending", "ranging", "transition", "unknown"))
 
-    def test_five_minute_trigger_must_confirm_higher_timeframe_bias(self):
-        strong = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},  "indicators": {"atr": 1.0}, "close": 100.0,"market_regime":{"state":"trending"}}
-        weak_trigger = {"valid": True, "score": 15.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0},  "indicators": {"atr": 1.0}, "close": 100.0,"market_regime":{"state":"trending"}}
-        with patch("signal_engine.analyze_timeframe", side_effect=[weak_trigger, strong, strong]):
-            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
-        self.assertEqual(result["signal"], "NO_SIGNAL")
+    def test_five_minute_bias_can_be_lower_score_when_all_timeframes_agree(self):
+        common = {"valid": True, "bias": "bullish",
+                  "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,
+                                    "volume":0.8,"structure":0.8,"orderflow":0.8},
+                  "indicators": {"atr":1.0,"smc":{"retest_long":True,
+                      "structure_event":"BOS_up","entry_distance_atr":0.2,
+                      "previous_swing_low":98.0}},
+                  "ema21":99.5,"close":100.0,"market_regime":{"state":"trending"}}
+        weak_trigger = {**common, "score":15.0}
+        strong = {**common, "score":60.0}
+        with patch("signal_engine.analyze_timeframe", side_effect=[weak_trigger,strong,strong]):
+            result = analyze_market({tf:candles() for tf in ("5m","15m","30m")},
+                                    expectancy_stats={"LONG":[0.5]*30})
+        self.assertEqual(result["signal"], "LONG")
 
-    def test_higher_timeframes_need_stronger_conviction_than_basic_bias(self):
-        strong = {"valid": True, "score": 60.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
-                  "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0,"market_regime":{"state":"trending"}}
-        moderate = {"valid": True, "score": 24.0, "bias": "bullish", "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, 
-                    "indicators": {"atr": 1.0, "smc": {"retest_long": True}}, "close": 100.0,"market_regime":{"state":"trending"}}
-        with patch("signal_engine.analyze_timeframe", side_effect=[strong, moderate, strong]):
-            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
-        self.assertEqual(result["signal"], "NO_SIGNAL")
+
+    def test_15m_bias_does_not_need_extra_score_26_gate(self):
+        common = {"valid": True, "bias": "bullish",
+                  "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,
+                                    "volume":0.8,"structure":0.8,"orderflow":0.8},
+                  "indicators": {"atr":1.0,"smc":{"retest_long":True,
+                      "structure_event":"BOS_up","entry_distance_atr":0.2,
+                      "previous_swing_low":98.0}},
+                  "ema21":99.5,"close":100.0,"market_regime":{"state":"trending"}}
+        strong = {**common, "score":60.0}
+        moderate = {**common, "score":24.0}
+        with patch("signal_engine.analyze_timeframe", side_effect=[strong,moderate,strong]):
+            result = analyze_market({tf:candles() for tf in ("5m","15m","30m")},
+                                    expectancy_stats={"LONG":[0.5]*30})
+        self.assertEqual(result["signal"], "LONG")
+
 
     def test_obv_uses_recent_direction_not_cumulative_sign(self):
         from signal_engine import _obv_trend
