@@ -9,7 +9,7 @@ import kotlin.math.roundToInt
 data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L, val takerBuyVolume: Double? = null)
 data class StrategyResult(val signal: String, val score: Int, val entry: Double, val stop: Double, val target1: Double, val target2: Double, val reasons: List<String>, val smc: List<String>, val target3: Double = target2, val riskReward: List<Double> = listOf(1.5, 2.5, 3.5))
 
-/** AURUM X 0.2.9 read-only engine: eight indicator families and 5m/15m/30m consensus. */
+/** AURUM X 0.3.0 read-only engine: eight indicator families and 5m/15m/30m consensus. */
 object TradingStrategy {
     private const val MIN_CANDLES = 60
     private val tfWeights = mapOf("5m" to .25, "15m" to .35, "30m" to .40)
