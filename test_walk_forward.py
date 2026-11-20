@@ -87,6 +87,23 @@ class WalkForwardTests(unittest.TestCase):
         self.assertEqual(costly["position_sizing"],
                          "risk_budget_includes_estimated_round_trip_fees_and_slippage")
 
+    def test_funding_is_not_silently_dropped_on_same_bar_exit(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        data["5m"][60]["low"]=98.0
+        data["5m"][60]["high"]=101.0
+        data["5m"][60]["funding_rate"]=0.001
+        data["5m"][60]["funding_settle_time"]=60*DURATION_MS["5m"]+60_000
+        with patch("walk_forward.analyze_market",return_value={
+            "signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]
+        }):
+            result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
+                                    initial_equity=10000,max_holding_bars=2)
+        trade=result["trades"][0]
+        self.assertEqual(trade["exit_reason"],"stop")
+        self.assertAlmostEqual(
+            trade["funding_cash"],trade["entry"]*trade["position_quantity"]*0.001,places=6
+        )
+
     def test_distinct_entry_exit_fees_and_funding_settlement_once(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][360:364]:
