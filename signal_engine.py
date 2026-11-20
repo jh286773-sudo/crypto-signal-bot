@@ -221,13 +221,18 @@ def _market_structure(c, lookback=60):
                  else "none")
         sweep = "sell_side" if low < pl and close > pl else "buy_side" if high > ph and close < ph else "none"
         tolerance = max((atr_value or close*0.001)*0.25, close*0.0005)
+        tolerance = max((atr_value or close*0.001)*0.25, close*0.0005)
+        prior_break_up = any(float(x["close"]) > ph for x in prior[-6:])
+        prior_break_down = any(float(x["close"]) < pl for x in prior[-6:])
+        retest_long = prior_break_up and low <= ph+tolerance and close > ph and close > float(last["open"])
+        retest_short = prior_break_down and high >= pl-tolerance and close < pl and close < float(last["open"])
         return {"previous_swing_high":ph,"previous_swing_low":pl,
                 "structure_event":event,"market_structure":"range",
                 "liquidity_sweep":sweep,"equal_high_liquidity":False,
                 "equal_low_liquidity":False,"order_blocks":[],
                 "false_breakout": sweep != "none",
-                "retest_long": False, "retest_short": False,
-                "breakout_quality": "false" if sweep != "none" else "none"}
+                "retest_long": retest_long, "retest_short": retest_short,
+                "breakout_quality": "retest_confirmed" if retest_long or retest_short else "false" if sweep != "none" else "unconfirmed" if event != "none" else "none"}
     last = w[-1]
     close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
     last_high_i, last_high = swing_highs[-1]
@@ -416,14 +421,16 @@ def _levels(side, price, volatility, structure=None):
     if side=="LONG":
         swing=structure.get("previous_swing_low")
         candidate=float(swing)-0.15*volatility if swing is not None else price-atr_risk
-        stop=candidate if 0 < candidate < price and price-candidate <= 3.0*volatility else price-atr_risk
+        structural_risk=price-candidate
+        stop=candidate if 0 < candidate < price and 0.25*volatility <= structural_risk <= 3.0*volatility else price-atr_risk
         risk=price-stop
         return {"entry":price,"stop_loss":stop,
                 "take_profits":[price+1.5*risk,price+2.5*risk,price+3.5*risk],
                 "risk_per_unit":risk,"risk_reward":[1.5,2.5,3.5]}
     swing=structure.get("previous_swing_high")
     candidate=float(swing)+0.15*volatility if swing is not None else price+atr_risk
-    stop=candidate if candidate > price and candidate-price <= 3.0*volatility else price+atr_risk
+    structural_risk=candidate-price
+    stop=candidate if candidate > price and 0.25*volatility <= structural_risk <= 3.0*volatility else price+atr_risk
     risk=stop-price
     return {"entry":price,"stop_loss":stop,
             "take_profits":[price-1.5*risk,price-2.5*risk,price-3.5*risk],
