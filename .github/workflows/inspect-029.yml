@@ -1,0 +1,26 @@
+name: Inspect 0.2.9 strategy
+on:
+  push:
+    branches: [inspect-029-brain]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract strategy files from 0.2.9 archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="AURUM-X-0.2.9-GitHub-ready.zip"
+          echo "=== ARCHIVE FILES ==="
+          unzip -Z1 "$ZIP" | grep -E '(TradingStrategy\\.kt|signal_engine\\.py|indicators\\.py|smart_money\\.py|smc\\.py|CryptoMonitorService\\.kt|app/build.gradle.kts)$' | head -100
+          mkdir -p /tmp/aurum029
+          unzip -oq "$ZIP" -d /tmp/aurum029
+          echo "=== CANDIDATE STRATEGY FILES ==="
+          find /tmp/aurum029 -type f \\( -name 'TradingStrategy.kt' -o -name 'signal_engine.py' -o -name 'indicators.py' -o -name 'smart_money.py' -o -name 'smc.py' \\) -print
+          for f in $(find /tmp/aurum029 -type f \\( -name 'TradingStrategy.kt' -o -name 'signal_engine.py' -o -name 'indicators.py' -o -name 'smart_money.py' -o -name 'smc.py' \\)); do
+            echo "=== FILE: $f ==="
+            cat "$f"
+          done
