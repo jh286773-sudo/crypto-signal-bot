@@ -32,6 +32,14 @@ class ShadowLedgerTests(unittest.TestCase):
         self.assertGreater(values[0], 0.0)
         self.assertEqual(self.ledger.stats("ETH-SWAP-USDT")["LONG"], [])
 
+    def test_tp1_and_new_breakeven_stop_in_same_candle_closes_remainder_conservatively(self):
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 105, 99, 102), self.candidate())
+        self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 116, 99, 110), {"signal": "NO_SIGNAL"})
+        values = self.ledger.stats("BTC-SWAP-USDT")["LONG"]
+        self.assertEqual(len(values), 1)
+        # One third exits at +1.5R; the remaining two thirds exit at breakeven.
+        self.assertGreater(values[0], 0.45)
+        self.assertLess(values[0], 0.50)
     def test_ambiguous_stop_and_target_candle_resolves_to_stop(self):
         self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 105, 99, 100), self.candidate())
         self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 116, 89, 100), {"signal": "NO_SIGNAL"})
