@@ -199,8 +199,10 @@ def _market_structure(c, lookback=60):
     highs = [float(x["high"]) for x in w]
     lows = [float(x["low"]) for x in w]
     ph, pl = _confirmed_pivots(highs, 2, 2)
-    swing_highs = [(i, highs[i]) for i in ph]
-    swing_lows = [(i, lows[i]) for i in pl]
+    # Exclude pivots confirmed only by the final two bars: they were not
+    # available when the current decision candle began.
+    swing_highs = [(i, highs[i]) for i in ph if i < len(w)-4]
+    swing_lows = [(i, lows[i]) for i in pl if i < len(w)-4]
     atr = _atr(w)
     last = w[-1]
     op, close = float(last["open"]), float(last["close"])
