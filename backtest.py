@@ -9,8 +9,8 @@ from typing import Any, Dict, Tuple
 from walk_forward import run_walk_forward
 
 
-def run_backtest(timeframes: Dict[str, list], holding_bars: int = 72,
-                 fee_bps: float = 8.0, slippage_bps: float = 2.0,
+def run_backtest(timeframes: Dict[str, list], *, fee_bps: float,
+                 slippage_bps: float, holding_bars: int = 72,
                  funding_bps_per_8h: float = 0.0,
                  initial_equity: float = 10_000.0,
                  risk_fraction: float = 0.01,
