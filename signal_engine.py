@@ -548,7 +548,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
     aligned_tfs = list(selected_tfs) if side else []
     major_conflicts_clear = bool(side) and all(_no_major_indicator_conflict(reports[tf], side) for tf in selected_tfs)
     signal = side if major_conflicts_clear else "NO_SIGNAL"
-    confidence=min(99,round(abs(combined)*0.75+max(longs,shorts)*8,1))
+    confidence=min(99,round(abs(combined)*0.75+max(len(long_tfs),len(short_tfs))*8,1))
     result={"signal":signal,"status":signal,"confidence_score":confidence,
             "combined_score":round(combined,2),"timeframes":reports,
             "timeframe_weights":weights,"trade_enabled":False,
