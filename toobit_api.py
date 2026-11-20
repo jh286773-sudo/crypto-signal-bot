@@ -283,6 +283,24 @@ class ToobitAPI:
             })
         return sorted(parsed, key=lambda x: x["settle_time"])
 
+    def get_first_available_candle_open(self, symbol, interval, end_ms):
+        """Find the oldest closed candle currently exposed by Toobit's kline endpoint."""
+        if interval not in self.INTERVALS:
+            raise ValueError("Invalid interval")
+        rows = self._get("/quote/v1/klines", {
+            "symbol": symbol, "interval": interval,
+            "startTime": 0, "endTime": int(end_ms), "limit": 1000
+        })
+        candles = []
+        for row in rows if isinstance(rows, list) else []:
+            if len(row) >= 6:
+                opened = int(row[0])
+                if opened + self.INTERVALS[interval] <= int(end_ms):
+                    candles.append(opened)
+        if not candles:
+            raise RuntimeError(f"Toobit exposes no closed {interval} candles for {symbol}")
+        return min(candles)
+
     def get_historical_range(self, symbol, start_ms, end_ms, include_funding=True):
         """Fetch timestamped 5m/15m/30m histories and attach actual funding events."""
         data = {
