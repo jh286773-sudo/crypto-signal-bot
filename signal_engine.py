@@ -387,11 +387,16 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
             o, h, low, close_value, volume = (
                 float(x[k]) for k in ("open", "high", "low", "close", "volume")
             )
+            taker_buy = x.get("taker_buy_volume")
+            if taker_buy is not None:
+                taker_buy = float(taker_buy)
             if (not all(isfinite(v) for v in (o, h, low, close_value, volume))
                     or min(o, h, low, close_value) <= 0 or volume < 0
                     or h < max(o, close_value) or low > min(o, close_value)
-                    or h < low):
-                raise ValueError(f"invalid OHLCV values at candle index {index}")
+                    or h < low
+                    or (taker_buy is not None and
+                        (not isfinite(taker_buy) or taker_buy < 0 or taker_buy > volume * 1.001))):
+                raise ValueError(f"invalid OHLCV/order-flow values at candle index {index}")
         c=candles; close=_series(c,"close"); price=close[-1]
         e9=_ema(close,9); e21=_ema(close,21); e50=_ema(close,50)
         s20=_sma(close,20); s50=_sma(close,50)
