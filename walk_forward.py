@@ -85,6 +85,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     peak = equity
     max_dd = 0.0
     trades = []
+    closed_net_r = {"LONG": [], "SHORT": []}
     loss_streak_indices = []
     entry_gap_skips = 0
     invalid_level_skips = 0
@@ -111,7 +112,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             i += 1
             continue
         # Match the live Android strategy input horizon and bound indicator cost.
-        signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()})
+        signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()},
+                                expectancy_stats={side: list(values) for side, values in closed_net_r.items()})
         decision_diagnostics["evaluated"] += 1
         side = signal.get("signal")
         if side not in ("LONG", "SHORT"):
@@ -332,6 +334,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         equity += net_pnl
         peak = max(peak, equity)
         max_dd = max(max_dd, (peak-equity)/peak if peak > 0 else 0.0)
+        # Only this now-closed trade may enter the history for subsequent decisions.
+        closed_net_r[side].append(net_pnl / risk_cash if risk_cash > 0 else 0.0)
         trades.append({
             "side": side, "signal_time": decision_time, "entry_time": five[entry_index][0],
             "signal_snapshot": signal_snapshot,
