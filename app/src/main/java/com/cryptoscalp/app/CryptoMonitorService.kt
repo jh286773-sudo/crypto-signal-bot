@@ -75,7 +75,7 @@ class CryptoMonitorService : Service() {
                 val marketAsOfMs=ExchangeMarketData.exchangeTimeMs()
                 val five=ExchangeMarketData.candles(exchange,symbol,"5m",marketAsOfMs)
                 val latestBar=five.last()
-                manageOpen(symbol,latestBar.close)
+                manageOpen(symbol,latestBar)
                 manageShadow(symbol,latestBar)
                 val latestClosedCandleTime=latestBar.time
                 val key="last_analysis_candle_$symbol"
@@ -191,14 +191,15 @@ class CryptoMonitorService : Service() {
         val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
         prefs.edit().putString(key,(prior+netR).joinToString(",")).apply()
     }
-    private fun manageOpen(symbol:String,price:Double){
+    private fun manageOpen(symbol:String,bar:MarketCandle){
+        val price=bar.close
         val raw=prefs.getString("open_setup_$symbol",null)?:return
         val s=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("open_setup_$symbol").apply();return}
         val long=s.optString("side")=="LONG"
         // Migrate setups saved by older app versions, which tracked only TP1/TP2.
         if(!s.has("tp3"))s.put("tp3",s.optDouble("tp2"))
         if(!s.has("tp2Done"))s.put("tp2Done",false)
-        val stop=if(long)price<=s.optDouble("stop") else price>=s.optDouble("stop")
+        val stop=if(long)bar.low<=s.optDouble("stop") else bar.high>=s.optDouble("stop")
         if(stop){
             val protectedByTarget = s.optBoolean("tp1Done")
             val cooldownStarted = if(protectedByTarget) {
@@ -212,10 +213,12 @@ class CryptoMonitorService : Service() {
             else if(protectedByTarget)
                 " • خروج پس از فعال‌شدن حد سود اول؛ در شمارش ضرر کامل لحاظ نشد"
             else ""
-            closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(price)}$detail")
+            val stopLevel=s.optDouble("stop")
+            val stopFill=if(long)minOf(bar.open,stopLevel) else maxOf(bar.open,stopLevel)
+            closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(stopFill)}$detail")
             return
         }
-        val tp1=if(long)price>=s.optDouble("tp1") else price<=s.optDouble("tp1")
+        val tp1=if(long)bar.high>=s.optDouble("tp1") else bar.low<=s.optDouble("tp1")
         if(tp1&&!s.optBoolean("tp1Done")){
             // After TP1, protect the remaining setup at breakeven. This is an
             // app-side alert level only; no stop/partial-close order is sent.
@@ -226,7 +229,7 @@ class CryptoMonitorService : Service() {
             notifyExit(symbol,"مرحله اول حد سود لمس شد • حد ضرر به نقطه ورود منتقل شد",
                 "قیمت فعلی: ${fmt(price)} • حد ضرر جدید: ${fmt(s.optDouble("stop"))} • هدف دوم: ${fmt(s.optDouble("tp2"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
         }
-        val tp2=if(long)price>=s.optDouble("tp2") else price<=s.optDouble("tp2")
+        val tp2=if(long)bar.high>=s.optDouble("tp2") else bar.low<=s.optDouble("tp2")
         if(tp2&&!s.optBoolean("tp2Done")){
             s.put("tp2Done",true)
             // Lock TP1 for the remaining setup after TP2; this is notification state only.
@@ -236,10 +239,11 @@ class CryptoMonitorService : Service() {
             notifyExit(symbol,"مرحله دوم حد سود لمس شد • سود مرحله اول محافظت شد",
                 "قیمت فعلی: ${fmt(price)} • حد ضرر حفاظتی جدید: ${fmt(lockedStop)} • هدف سوم: ${fmt(s.optDouble("tp3"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
         }
-        val tp3=if(long)price>=s.optDouble("tp3") else price<=s.optDouble("tp3")
+        val tp3=if(long)bar.high>=s.optDouble("tp3") else bar.low<=s.optDouble("tp3")
         if(tp3){
             clearLossHistory(symbol)
-            closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(price)}")
+            val targetFill=if(long)maxOf(bar.open,s.optDouble("tp3")) else minOf(bar.open,s.optDouble("tp3"))
+            closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(targetFill)}")
         }
     }
     private fun lossTimesKey(symbol:String)="full_stop_times_$symbol"
