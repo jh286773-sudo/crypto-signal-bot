@@ -20,3 +20,5 @@ jobs:
           pip install -r requirements.txt
       - name: Check Python files
         run: python -m compileall -q .
+      - name: Run strategy and backtest tests
+        run: python -m unittest -v test_signal_engine.py test_backtest.py
