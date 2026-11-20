@@ -209,8 +209,10 @@ object TradingStrategy {
         val priorDown=recent.any{it.close<sl-breakBuffer}
         val bullCandle=last.close>last.open&&closePosition>=.60
         val bearCandle=last.close<last.open&&closePosition<=.40
-        val retestLong=(priorUp&&last.low<=sh+tolerance&&last.close>sh&&bullCandle)||(sweep=="sell_side"&&bullCandle)
-        val retestShort=(priorDown&&last.high>=sl-tolerance&&last.close<sl&&bearCandle)||(sweep=="buy_side"&&bearCandle)
+        // A liquidity sweep alone is not an entry trigger. Require a prior
+        // close-confirmed structural break followed by a directional retest.
+        val retestLong=priorUp&&last.low<=sh+tolerance&&last.close>sh&&bullCandle
+        val retestShort=priorDown&&last.high>=sl-tolerance&&last.close<sl&&bearCandle||(sweep=="buy_side"&&bearCandle)
         val falseBreakout=(priorUp&&last.close<sh-tolerance)||(priorDown&&last.close>sl+tolerance)
         var obType="none";var obLow:Double?=null;var obHigh:Double?=null
         for(j in w.size-2 downTo max(0,w.size-20)){
@@ -318,6 +320,15 @@ object TradingStrategy {
         return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
     }
 
+    private fun directionalQuality(report:Report,direction:Double):Boolean {
+        val families=report.families
+        val aligned=families.values.count{it*direction>=.20}
+        val opposing=families.values.count{it*direction<=-.20}
+        val core=listOf("trend","momentum","strength")
+        val coreClear=core.all{(families[it]?:0.0)*direction>=0.0}
+        return aligned>=5&&opposing<=1&&coreClear
+    }
+
     fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
             if(rows.size<MIN_CANDLES||rows.any{it.time<=0L||it.time%duration!=0L})return false
@@ -366,19 +377,23 @@ object TradingStrategy {
         // Quality gate v1 mirrors the Python research engine: stronger 15m/30m
         // conviction, a stronger 5m trigger and a higher combined score.
         // These candidate thresholds require out-of-sample validation.
-        val higherBullish=reports["15m"]!!.score>=26&&reports["30m"]!!.score>=26
-        val higherBearish=reports["15m"]!!.score<=-26&&reports["30m"]!!.score<=-26
+        val higherBullish=reports["15m"]!!.score>=26&&reports["30m"]!!.score>=26&&
+            directionalQuality(reports["15m"]!!,1.0)&&directionalQuality(reports["30m"]!!,1.0)
+        val higherBearish=reports["15m"]!!.score<=-26&&reports["30m"]!!.score<=-26&&
+            directionalQuality(reports["15m"]!!,-1.0)&&directionalQuality(reports["30m"]!!,-1.0)
+        val triggerBullish=directionalQuality(trigger5,1.0)
+        val triggerBearish=directionalQuality(trigger5,-1.0)
         val signal=when{
-            allBullish&&higherBullish&&combined>=34&&trigger5.score>=24&&sm5?.retestLong==true->"LONG"
-            allBearish&&higherBearish&&combined<=-34&&trigger5.score<=-24&&sm5?.retestShort==true->"SHORT"
+            allBullish&&higherBullish&&combined>=34&&trigger5.score>=24&&triggerBullish&&sm5?.retestLong==true->"LONG"
+            allBearish&&higherBearish&&combined<=-34&&trigger5.score<=-24&&triggerBearish&&sm5?.retestShort==true->"SHORT"
             else->"WAIT"
         }
         val a=reports["5m"]?.atr?:0.0
         if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
             listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
-        if(signal!="WAIT"&&(sm5?.entryDistanceAtr?:0.0)>.80){
+        if(signal!="WAIT"&&(sm5?.entryDistanceAtr==null||sm5.entryDistanceAtr!!>.50)){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
-                listOf("Retest بیش از ۰٫۸ ATR از سطح ورود فاصله دارد؛ از ورود دیرهنگام صرف‌نظر شد"),reports.values.flatMap{it.smc}.distinct())
+                listOf("فاصله Retest نامشخص یا بیش از ۰٫۵ ATR است؛ ورود دیرهنگام رد شد"),reports.values.flatMap{it.smc}.distinct())
         }
         if(signal!="WAIT"&&sm5?.falseBreakout==true){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
