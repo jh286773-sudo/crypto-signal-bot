@@ -140,7 +140,7 @@ class CryptoMonitorService : Service() {
                 val detail=if(failed>0) " • خطا $failed: $firstError" else ""
                 val waiting=if(analyzed==0 && failed==0) " • هنوز کندل بسته‌شده مشترک جدید نرسیده" else ""
                 val lastAt=if(lastAnalysisAt>0L) " • آخرین تحلیل موفق: "+android.text.format.DateFormat.format("HH:mm:ss",lastAnalysisAt) else " • هنوز تحلیل موفقی ثبت نشده"
-                val statusLine="توبیت • تحلیل موفق در همین چرخه: $analyzed • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه$detail$waiting$lastAt"
+                val statusLine="توبیت • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه$detail$waiting$lastAt"
                 if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
                 updateStatus(statusLine+(if(lastDiagnostic.isNotBlank()) "\n"+lastDiagnostic else ""))
             }
