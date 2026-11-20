@@ -29,7 +29,7 @@ def main():
                         help="Assumed adverse slippage per fill; not measured")
     parser.add_argument("--equity-per-symbol", type=float, default=10000.0)
     parser.add_argument("--risk", type=float, default=0.005)
-    parser.add_argument("--output", default="toobit_multi_symbol_10day.json")
+    parser.add_argument("--output", default="toobit_multi_crypto_30day.json")
     args = parser.parse_args()
     if not 2 <= args.days <= 30:
         raise SystemExit("--days must be between 2 and 30 (funding endpoint history cap)")
