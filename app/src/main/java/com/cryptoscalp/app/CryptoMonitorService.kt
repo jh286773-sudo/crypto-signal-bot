@@ -76,6 +76,7 @@ class CryptoMonitorService : Service() {
                 val five=ExchangeMarketData.candles(exchange,symbol,"5m",marketAsOfMs)
                 val latestBar=five.last()
                 manageOpen(symbol,latestBar)
+                val hadShadowAtBarStart=prefs.getString("shadow_setup_$symbol",null)!=null
                 manageShadow(symbol,latestBar)
                 val latestClosedCandleTime=latestBar.time
                 val key="last_analysis_candle_$symbol"
@@ -87,7 +88,7 @@ class CryptoMonitorService : Service() {
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m",marketAsOfMs)
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m",marketAsOfMs)
                     val candidate=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,emptyMap(),false)
-                    if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
+                    if(!hadShadowAtBarStart && isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
                     val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol),true)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
