@@ -38,7 +38,9 @@ class CrossEngineContractTests(unittest.TestCase):
                              "close":close,"volume":100+i})
             data[tf]=rows
         from signal_engine import analyze_market
-        self.assertEqual(analyze_market(data)["signal"],fixture["expected_signal"])
+        result=analyze_market(data)
+        print("AURUM_PARITY_EXPECTED_SCORE="+str(round(result["combined_score"])))
+        self.assertEqual(result["signal"],fixture["expected_signal"])
 
 
 if __name__ == "__main__":
