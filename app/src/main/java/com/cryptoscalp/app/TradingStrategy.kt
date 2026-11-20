@@ -200,8 +200,13 @@ object TradingStrategy {
         var obType="none";var obLow:Double?=null;var obHigh:Double?=null
         for(j in w.size-2 downTo max(0,w.size-20)){
             val x=w[j];val next=w[j+1];val nextRange=max(next.high-next.low,1e-12)
-            if(x.close<x.open&&next.close>x.high&&next.close>=next.high-nextRange*.25){obType="bullish";obLow=x.low;obHigh=x.high;break}
-            if(x.close>x.open&&next.close<x.low&&next.close<=next.low+nextRange*.25){obType="bearish";obLow=x.low;obHigh=x.high;break}
+            val impulseBody=abs(next.close-next.open)
+            val bullishValid=x.close<x.open&&next.close>x.high&&next.close>=next.high-nextRange*.25&&
+                impulseBody>=atrRef*.50&&w.drop(j+2).none{it.close<x.low}
+            val bearishValid=x.close>x.open&&next.close<x.low&&next.close<=next.low+nextRange*.25&&
+                impulseBody>=atrRef*.50&&w.drop(j+2).none{it.close>x.high}
+            if(bullishValid){obType="bullish";obLow=x.low;obHigh=x.high;break}
+            if(bearishValid){obType="bearish";obLow=x.low;obHigh=x.high;break}
         }
         val retestLevel=when{retestLong->if(priorUp)sh else sl;retestShort->if(priorDown)sl else sh;else->null}
         val distance=retestLevel?.let{level->max(0.0,if(retestLong)(last.close-level)/atrRef else (level-last.close)/atrRef)}
@@ -287,7 +292,27 @@ object TradingStrategy {
     }
 
     fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>):StrategyResult {
-        val reports=linkedMapOf("5m" to analyze(five,"5m"),"15m" to analyze(fifteen,"15m"),"30m" to analyze(thirty,"30m"))
+        fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
+            if(rows.size<MIN_CANDLES||rows.any{it.time<=0L})return false
+            for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
+            return true
+        }
+        if(!validSeries(five,300_000L)||!validSeries(fifteen,900_000L)||!validSeries(thirty,1_800_000L)){
+            val p=five.lastOrNull()?.close?:0.0
+            return StrategyResult("WAIT",0,p,p,p,p,listOf("زمان کندل‌ها نامعتبر، ناقص یا غیرپیوسته است؛ تحلیل متوقف شد"),emptyList())
+        }
+        val decisionTime=five.last().time+300_000L
+        if(decisionTime>System.currentTimeMillis()){
+            val p=five.last().close
+            return StrategyResult("WAIT",0,p,p,p,p,listOf("کندل ۵ دقیقه‌ای هنوز به‌طور قطعی بسته نشده است؛ سیگنال صادر نمی‌شود"),emptyList())
+        }
+        val closed15=fifteen.filter{it.time+900_000L<=decisionTime}
+        val closed30=thirty.filter{it.time+1_800_000L<=decisionTime}
+        if(closed15.size<MIN_CANDLES||closed30.size<MIN_CANDLES){
+            val p=five.last().close
+            return StrategyResult("WAIT",0,p,p,p,p,listOf("کندل بسته‌شده کافی در تایم‌فریم‌های بالاتر موجود نیست"),emptyList())
+        }
+        val reports=linkedMapOf("5m" to analyze(five,"5m"),"15m" to analyze(closed15,"15m"),"30m" to analyze(closed30,"30m"))
         val invalid=reports.filterValues{!it.valid}.keys
         val price=reports["5m"]?.price?:five.lastOrNull()?.close?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,price,price,price,listOf("داده معتبر کافی نیست: "+invalid.joinToString("، ")),emptyList())
