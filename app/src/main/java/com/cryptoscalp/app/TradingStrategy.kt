@@ -151,7 +151,9 @@ object TradingStrategy {
         if(sh.isEmpty()||sl.isEmpty()){
             val prior=c.takeLast(21).dropLast(1)
             if(prior.size<10)return Structure("none","none")
-            val ph=prior.maxOf{it.high};val pl=prior.minOf{it.low};val last=c.last()
+            val reference=if(prior.size>=16)prior.dropLast(6) else prior
+            val recent=prior.takeLast(6)
+            val ph=reference.maxOf{it.high};val pl=reference.minOf{it.low};val last=c.last()
             val range=max(last.high-last.low,1e-12)
             val body=abs(last.close-last.open)
             val closeLocation=(last.close-last.low)/range
@@ -164,8 +166,8 @@ object TradingStrategy {
             }
             val sweep=if(last.low<pl&&last.close>pl)"sell_side" else if(last.high>ph&&last.close<ph)"buy_side" else "none"
             val tolerance=max(structureAtr*.25,last.close*.0005)
-            val priorBreakUp=prior.takeLast(6).any{it.close>ph}
-            val priorBreakDown=prior.takeLast(6).any{it.close<pl}
+            val priorBreakUp=recent.any{it.close>ph}
+            val priorBreakDown=recent.any{it.close<pl}
             val retestLong=priorBreakUp&&last.low<=ph+tolerance&&last.close>ph&&last.close>last.open
             val retestShort=priorBreakDown&&last.high>=pl-tolerance&&last.close<pl&&last.close<last.open
             return Structure(event,sweep,previousSwingHigh=ph,previousSwingLow=pl,
@@ -201,10 +203,12 @@ object TradingStrategy {
         }
         val tolerance=max(structureAtr*.25,last.close*.0005)
         val prior=w.dropLast(1).takeLast(6)
-        val priorBreakUp=prior.any{it.close>lastHigh&&abs(it.close-lastHigh)>=structureAtr*.10}
-        val priorBreakDown=prior.any{it.close<lastLow&&abs(it.close-lastLow)>=structureAtr*.10}
-        val retestLong=priorBreakUp&&last.low<=lastHigh+tolerance&&last.close>lastHigh&&last.close>last.open
-        val retestShort=priorBreakDown&&last.high>=lastLow-tolerance&&last.close<lastLow&&last.close<last.open
+        val retestLong=sh.asReversed().any{level->
+            prior.any{it.close>level.second+structureAtr*.10}&&last.low<=level.second+tolerance&&last.close>level.second&&last.close>last.open
+        }
+        val retestShort=sl.asReversed().any{level->
+            prior.any{it.close<level.second-structureAtr*.10}&&last.high>=level.second-tolerance&&last.close<level.second&&last.close<last.open
+        }
         return Structure(event,sweep,if(up)"bullish" else if(down)"bearish" else "range",equalHighs,equalLows,obType,obLow,obHigh,lastHigh,lastLow,retestLong,retestShort,sweep!="none"&&!retestLong&&!retestShort)
     }
 
