@@ -136,34 +136,116 @@ def _mfi(c,n=14):
     return 100-(100/(1+pos/neg))
 
 
-def _divergence(c, lookback=30):
-    if len(c)<lookback+15: return "none"
-    closes=[float(x["close"]) for x in c]
-    rs=[]
-    for end in range(len(closes)-lookback-14,len(closes)+1):
-        rs.append(_rsi(closes[:end]))
-    if len(rs)<lookback+1: return "none"
-    old_rsi=rs[0]; new_rsi=rs[-1]
-    old_p=min(closes[-lookback-14:-14]); new_p=min(closes[-14:])
-    old_ph=max(closes[-lookback-14:-14]); new_ph=max(closes[-14:])
-    if new_p<old_p and new_rsi>old_rsi+3: return "bullish"
-    if new_ph>old_ph and new_rsi<old_rsi-3: return "bearish"
+def _confirmed_pivots(values, left=2, right=2):
+    """Return confirmed local pivot indices; the right window avoids look-ahead."""
+    highs, lows = [], []
+    for i in range(left, len(values) - right):
+        window = values[i-left:i+right+1]
+        if values[i] == max(window) and window.count(values[i]) == 1:
+            highs.append(i)
+        if values[i] == min(window) and window.count(values[i]) == 1:
+            lows.append(i)
+    return highs, lows
+
+
+def _divergence(c, lookback=48):
+    """Regular RSI divergence between the last two confirmed price pivots."""
+    if len(c) < lookback + 20:
+        return "none"
+    closes = _series(c, "close")
+    highs, lows = _confirmed_pivots(closes[-lookback-2:], 2, 2)
+    offset = len(closes) - lookback - 2
+    lows = [i + offset for i in lows]
+    highs = [i + offset for i in highs]
+    if len(lows) >= 2:
+        p1, p2 = lows[-2:]
+        r1, r2 = _rsi(closes[:p1+1]), _rsi(closes[:p2+1])
+        if r1 is not None and r2 is not None and closes[p2] < closes[p1] and r2 > r1 + 3:
+            return "bullish"
+    if len(highs) >= 2:
+        p1, p2 = highs[-2:]
+        r1, r2 = _rsi(closes[:p1+1]), _rsi(closes[:p2+1])
+        if r1 is not None and r2 is not None and closes[p2] > closes[p1] and r2 < r1 - 3:
+            return "bearish"
     return "none"
 
 
-def _market_structure(c, lookback=20):
-    if len(c)<lookback+2: return {}
-    prev=c[-lookback-1:-1]; last=c[-1]
-    ph=max(float(x["high"]) for x in prev); pl=min(float(x["low"]) for x in prev)
-    close=float(last["close"]); high=float(last["high"]); low=float(last["low"])
-    event="none"; sweep="none"
-    if close>ph: event="BOS_up"
-    elif close<pl: event="BOS_down"
-    if low<pl and close>pl: sweep="sell_side"
-    elif high>ph and close<ph: sweep="buy_side"
-    return {"previous_swing_high":ph,"previous_swing_low":pl,
-            "structure_event":event,"liquidity_sweep":sweep}
+def _market_structure(c, lookback=60):
+    """Confirmed swing structure, BOS/CHoCH, liquidity pools, sweeps and OBs."""
+    if len(c) < max(lookback, 30):
+        return {}
+    w = c[-lookback:]
+    highs = [float(x["high"]) for x in w]
+    lows = [float(x["low"]) for x in w]
+    ph, pl = _confirmed_pivots(highs, 2, 2)
+    swing_highs = [(i, highs[i]) for i in ph]
+    swing_lows = [(i, lows[i]) for i in pl]
+    if not swing_highs or not swing_lows:
+        # Monotonic markets may not form two-sided fractal pivots yet.
+        # Use the prior 20 closed candles as a conservative provisional range.
+        prior = c[-21:-1]
+        if len(prior) < 10:
+            return {}
+        ph = max(float(x["high"]) for x in prior)
+        pl = min(float(x["low"]) for x in prior)
+        last = c[-1]
+        close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
+        event = "BOS_up" if close > ph else "BOS_down" if close < pl else "none"
+        sweep = "sell_side" if low < pl and close > pl else "buy_side" if high > ph and close < ph else "none"
+        return {"previous_swing_high":ph,"previous_swing_low":pl,
+                "structure_event":event,"market_structure":"range",
+                "liquidity_sweep":sweep,"equal_high_liquidity":False,
+                "equal_low_liquidity":False,"order_blocks":[]}
+    last = w[-1]
+    close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
+    last_high_i, last_high = swing_highs[-1]
+    last_low_i, last_low = swing_lows[-1]
+    prior_highs = [x[1] for x in swing_highs[:-1]]
+    prior_lows = [x[1] for x in swing_lows[:-1]]
+    up_trend = len(prior_highs) and len(prior_lows) and last_high > prior_highs[-1] and last_low > prior_lows[-1]
+    down_trend = len(prior_highs) and len(prior_lows) and last_high < prior_highs[-1] and last_low < prior_lows[-1]
+    event = "none"
+    if close > last_high:
+        event = "CHoCH_up" if down_trend else "BOS_up"
+    elif close < last_low:
+        event = "CHoCH_down" if up_trend else "BOS_down"
+    sweep = "none"
+    if low < last_low and close > last_low:
+        sweep = "sell_side"
+    elif high > last_high and close < last_high:
+        sweep = "buy_side"
+    atr = _atr(w)
+    tolerance = max((atr or close * 0.001) * 0.15, close * 0.0005)
+    equal_highs = [v for _, v in swing_highs[-5:] if abs(v-last_high) <= tolerance]
+    equal_lows = [v for _, v in swing_lows[-5:] if abs(v-last_low) <= tolerance]
+    order_blocks = []
+    # Keep the latest confirmed displacement-origin candle so later retests remain visible.
+    for j in range(len(w)-2, max(-1, len(w)-21), -1):
+        x, nxt = w[j], w[j+1]
+        xo, xc = float(x["open"]), float(x["close"])
+        nh, nl, nc = float(nxt["high"]), float(nxt["low"]), float(nxt["close"])
+        if xc < xo and nc > float(x["high"]) and nc > nh - (nh-nl)*0.25:
+            order_blocks.append({"type":"bullish","low":float(x["low"]),"high":float(x["high"])})
+            break
+        if xc > xo and nc < float(x["low"]) and nc < nl + (nh-nl)*0.25:
+            order_blocks.append({"type":"bearish","low":float(x["low"]),"high":float(x["high"])})
+            break
+    return {
+        "previous_swing_high": last_high, "previous_swing_low": last_low,
+        "structure_event": event, "market_structure": "bullish" if up_trend else "bearish" if down_trend else "range",
+        "liquidity_sweep": sweep, "equal_high_liquidity": len(equal_highs) >= 2,
+        "equal_low_liquidity": len(equal_lows) >= 2, "order_blocks": order_blocks,
+        "swing_high_count": len(swing_highs), "swing_low_count": len(swing_lows)
+    }
 
+
+def _adx_regime(ad):
+    value = ad.get("adx") if ad else None
+    if value is None:
+        return {"state":"unknown","adx":None,"direction":"neutral"}
+    direction = "bullish" if ad.get("plus_di",0) > ad.get("minus_di",0) else "bearish" if ad.get("minus_di",0) > ad.get("plus_di",0) else "neutral"
+    state = "trending" if value >= 25 else "ranging" if value < 18 else "transition"
+    return {"state":state,"adx":round(value,2),"direction":direction}
 
 def _taker_strength(c):
     rows=[x for x in c if x.get("taker_buy_volume") is not None]
@@ -176,7 +258,40 @@ def _taker_strength(c):
             "sell_percent":round(100*sell/total,2)}
 
 
-def analyze_timeframe(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+def _volatility_status(c, timeframe="5m", current_atr=None):
+    """Flag exceptional ATR expansion versus the recent ATR%-baseline."""
+    if current_atr is None:
+        current_atr = _atr(c)
+    if not current_atr or not c or float(c[-1]["close"]) <= 0:
+        return {"atr_pct": None, "baseline_atr_pct": None,
+                "ratio": None, "high_volatility": False}
+    atr_pct = 100.0 * current_atr / float(c[-1]["close"])
+    start = max(15, len(c) - 30)
+    baseline = []
+    for end in range(start, len(c) - 1):
+        value = _atr(c[:end + 1])
+        close = float(c[end]["close"])
+        if value is not None and close > 0:
+            baseline.append(100.0 * value / close)
+    if not baseline:
+        return {"atr_pct": round(atr_pct, 4), "baseline_atr_pct": None,
+                "ratio": None, "high_volatility": False}
+    ordered = sorted(baseline)
+    mid = len(ordered) // 2
+    median = ordered[mid] if len(ordered) % 2 else (ordered[mid-1] + ordered[mid]) / 2
+    ratio = atr_pct / median if median > 0 else None
+    # The relative expansion test avoids blocking consistently volatile markets.
+    # Absolute floors prevent tiny baselines from creating false alarms.
+    floor = {"5m": 0.8, "15m": 1.2, "30m": 1.8}.get(timeframe, 0.8)
+    blocked = bool(ratio is not None and atr_pct >= floor and ratio >= 2.5)
+    return {"atr_pct": round(atr_pct, 4),
+            "baseline_atr_pct": round(median, 4),
+            "ratio": round(ratio, 3) if ratio is not None else None,
+            "high_volatility": blocked}
+
+
+def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str, Any]:
     if len(candles)<60:
         return {"valid":False,"reason":"At least 60 candles required for stable indicator calculation"}
     try:
@@ -189,6 +304,8 @@ def analyze_timeframe(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         st=_stoch_rsi(close); ad=_adx(c); ichi=_ichimoku(c); a=_atr(c)
         vw=_vwap(c); obv=_obv(c); mfi=_mfi(c); structure=_market_structure(c)
         div=_divergence(c); strength=_taker_strength(c)
+        volatility=_volatility_status(c,timeframe,a)
+        regime=_adx_regime(ad)
         groups={}; details={}
 
         def vote(group,name,value,weight=1.0):
@@ -202,12 +319,17 @@ def analyze_timeframe(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         vote("momentum","RSI",1 if r is not None and 52<r<70 else -1 if r is not None and 30<r<48 else 0)
         vote("momentum","MACD",1 if m["histogram"] is not None and m["histogram"]>0 else -1 if m["histogram"] is not None and m["histogram"]<0 else 0,1.2)
         vote("momentum","StochRSI",1 if st is not None and st>55 else -1 if st is not None and st<45 else 0)
-        vote("strength","ADX_DMI",1 if ad.get("adx",0)>=20 and ad.get("plus_di",0)>ad.get("minus_di",0) else -1 if ad.get("adx",0)>=20 and ad.get("minus_di",0)>ad.get("plus_di",0) else 0,1.2)
+        # ADX >=25 confirms a directional regime; below 18 is treated as range.
+        # A weak/ranging ADX must not masquerade as a strong trend vote.
+        vote("strength","ADX_DMI",1 if regime["state"]=="trending" and regime["direction"]=="bullish" else -1 if regime["state"]=="trending" and regime["direction"]=="bearish" else 0,1.2)
         vote("volume","VWAP",1 if vw and price>vw else -1 if vw and price<vw else 0)
         vote("volume","OBV",1 if obv is not None and obv>0 else -1 if obv is not None and obv<0 else 0)
         vote("volume","MFI",1 if mfi is not None and 50<mfi<80 else -1 if mfi is not None and 20<mfi<50 else 0)
         vote("volatility","Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
-        vote("structure","SMC",1 if structure.get("structure_event")=="BOS_up" or structure.get("liquidity_sweep")=="sell_side" else -1 if structure.get("structure_event")=="BOS_down" or structure.get("liquidity_sweep")=="buy_side" else 0,1.3)
+        ob_tolerance = (a or price*0.001) * 0.25
+        smc_bull = structure.get("structure_event") in ("BOS_up","CHoCH_up") or structure.get("liquidity_sweep")=="sell_side" or any(x.get("type")=="bullish" and x["low"]-ob_tolerance <= price <= x["high"]+ob_tolerance for x in structure.get("order_blocks",[]))
+        smc_bear = structure.get("structure_event") in ("BOS_down","CHoCH_down") or structure.get("liquidity_sweep")=="buy_side" or any(x.get("type")=="bearish" and x["low"]-ob_tolerance <= price <= x["high"]+ob_tolerance for x in structure.get("order_blocks",[]))
+        vote("structure","SMC",1 if smc_bull and not smc_bear else -1 if smc_bear and not smc_bull else 0,1.3)
         vote("divergence","Divergence",1 if div=="bullish" else -1 if div=="bearish" else 0,1.1)
         vote("orderflow","TakerFlow",1 if strength.get("available") and strength["buy_percent"]>=55 else -1 if strength.get("available") and strength["sell_percent"]>=55 else 0)
 
@@ -219,6 +341,9 @@ def analyze_timeframe(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
             family_scores[family]=sum(v*w for v,w,_ in items)/denom if denom else 0
         family_weights={"trend":1.5,"momentum":1.3,"strength":1.1,"volume":1.0,
                         "volatility":0.6,"structure":1.4,"divergence":0.8,"orderflow":0.7}
+        # In ranges, reduce trend-following dominance and favor structure/reversal evidence.
+        if regime["state"] == "ranging":
+            family_weights.update({"trend":0.8,"structure":1.6,"divergence":1.2})
         total_w=sum(family_weights[k] for k in family_scores)
         score=100*sum(family_scores[k]*family_weights[k] for k in family_scores)/total_w
         bullish=sum(1 for x in family_scores.values() if x>0.20)
@@ -226,7 +351,9 @@ def analyze_timeframe(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         bias="bullish" if score>=22 and bullish>=4 else "bearish" if score<=-22 and bearish>=4 else "neutral"
         return {"valid":True,"close":price,"score":round(score,2),"bias":bias,
                 "family_scores":{k:round(v,3) for k,v in family_scores.items()},
-                "indicator_votes":details,"indicators":{
+                "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
+                "market_regime":regime,
+                "indicators":{
                     "ema":{"9":e9,"21":e21,"50":e50},"sma":{"20":s20,"50":s50},
                     "rsi":r,"macd":m,"bollinger":bb,"stoch_rsi":st,"adx_dmi":ad,
                     "ichimoku":ichi,"atr":a,"vwap":vw,"obv":obv,"mfi":mfi,
@@ -246,7 +373,7 @@ def _levels(side, price, volatility):
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
     """Final decision is based on all indicator families and 5m/15m/30m alignment."""
-    reports={tf:analyze_timeframe(timeframes.get(tf,[])) for tf in REQUIRED_TFS}
+    reports={tf:analyze_timeframe(timeframes.get(tf,[]),tf) for tf in REQUIRED_TFS}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Insufficient/invalid candles: "+", ".join(invalid),
@@ -255,14 +382,25 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
     combined=sum(reports[tf]["score"]*weights[tf] for tf in REQUIRED_TFS)
     longs=sum(reports[tf]["bias"]=="bullish" for tf in REQUIRED_TFS)
     shorts=sum(reports[tf]["bias"]=="bearish" for tf in REQUIRED_TFS)
-    if combined>=28 and longs==3: signal="LONG"
-    elif combined<=-28 and shorts==3: signal="SHORT"
+    # 15m/30m establish directional context; 5m must independently confirm the trigger.
+    higher_long = reports["15m"]["bias"]=="bullish" and reports["30m"]["bias"]=="bullish"
+    higher_short = reports["15m"]["bias"]=="bearish" and reports["30m"]["bias"]=="bearish"
+    trigger_long = reports["5m"]["bias"]=="bullish" and reports["5m"]["score"]>=18
+    trigger_short = reports["5m"]["bias"]=="bearish" and reports["5m"]["score"]<=-18
+    if combined>=28 and higher_long and trigger_long and longs==3: signal="LONG"
+    elif combined<=-28 and higher_short and trigger_short and shorts==3: signal="SHORT"
     else: signal="NO_SIGNAL"
     confidence=min(99,round(abs(combined)*0.75+max(longs,shorts)*8,1))
     result={"signal":signal,"status":signal,"confidence_score":confidence,
             "combined_score":round(combined,2),"timeframes":reports,
             "timeframe_weights":weights,"trade_enabled":False,
             "note":"Read-only analysis; confidence is a model score, not a probability or guarantee."}
+    blocked=[tf for tf in REQUIRED_TFS if reports[tf].get("high_volatility")]
+    if blocked:
+        result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                       "reason":"Abnormal volatility filter blocked: "+", ".join(blocked),
+                       "high_volatility_block":blocked})
+        return result
     if signal in ("LONG","SHORT"):
         a=reports["5m"]["indicators"]["atr"]; p=reports["5m"]["close"]
         if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}

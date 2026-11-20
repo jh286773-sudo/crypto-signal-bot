@@ -1,6 +1,6 @@
 import unittest, math
 from unittest.mock import patch
-from signal_engine import analyze_timeframe, analyze_market
+from signal_engine import analyze_timeframe, analyze_market, _adx_regime, _confirmed_pivots, _market_structure
 
 def candles(n=100, trend=1.0):
     rows=[]; p=100.0
@@ -37,5 +37,51 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["signal"],"LONG")
     def test_bad_input_safe(self):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])
+
+    def test_high_volatility_filter_blocks_signal(self):
+        bullish={"valid":True,"score":60.0,"bias":"bullish","high_volatility":True,"indicators":{"atr":1.0},"close":100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result=analyze_market({tf:candles() for tf in ("5m","15m","30m")})
+        self.assertEqual(result["signal"],"NO_SIGNAL")
+        self.assertEqual(result["high_volatility_block"],["5m","15m","30m"])
+
+    def test_volatility_filter_reports_baseline(self):
+        r=analyze_timeframe(candles(),"5m")
+        self.assertIn("volatility_filter",r)
+        self.assertIn("baseline_atr_pct",r["volatility_filter"])
+
+    def test_adx_regime_distinguishes_trend_range_and_transition(self):
+        self.assertEqual(_adx_regime({"adx": 31, "plus_di": 28, "minus_di": 12})["state"], "trending")
+        self.assertEqual(_adx_regime({"adx": 14, "plus_di": 18, "minus_di": 17})["state"], "ranging")
+        self.assertEqual(_adx_regime({"adx": 21, "plus_di": 18, "minus_di": 17})["state"], "transition")
+
+    def test_confirmed_pivots_exclude_unconfirmed_edges(self):
+        highs, lows = _confirmed_pivots([1, 3, 1, 4, 1], 1, 1)
+        self.assertEqual(highs, [1, 3])
+        self.assertEqual(lows, [2])
+
+    def test_smc_report_exposes_structure_and_liquidity_fields(self):
+        data = candles(120)
+        structure = _market_structure(data)
+        self.assertIn("structure_event", structure)
+        self.assertIn("liquidity_sweep", structure)
+        self.assertIn("order_blocks", structure)
+        self.assertIn("equal_high_liquidity", structure)
+
+    def test_report_exposes_adx_market_regime(self):
+        result = analyze_timeframe(candles(120), "15m")
+        self.assertIn(result["market_regime"]["state"], ("trending", "ranging", "transition", "unknown"))
+
+    def test_five_minute_trigger_must_confirm_higher_timeframe_bias(self):
+        strong = {"valid": True, "score": 60.0, "bias": "bullish", "indicators": {"atr": 1.0}, "close": 100.0}
+        weak_trigger = {"valid": True, "score": 15.0, "bias": "bullish", "indicators": {"atr": 1.0}, "close": 100.0}
+        with patch("signal_engine.analyze_timeframe", side_effect=[weak_trigger, strong, strong]):
+            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+
+    def test_divergence_requires_enough_closed_candles(self):
+        from signal_engine import _divergence
+        self.assertEqual(_divergence(candles(60)), "none")
+
 
 if __name__=="__main__": unittest.main()

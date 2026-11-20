@@ -16,8 +16,8 @@ object TradingStrategy {
     private val familyWeights = mapOf("trend" to 1.5, "momentum" to 1.3, "strength" to 1.1, "volume" to 1.0, "volatility" to .6, "structure" to 1.4, "divergence" to .8, "orderflow" to .7)
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
-    private data class Structure(val event: String, val sweep: String)
-    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val families: Map<String,Double> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList())
+    private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null)
+    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val families: Map<String,Double> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null)
 
     private fun ema(v: List<Double>, n: Int): Double? {
         if (v.size < n) return null
@@ -104,30 +104,94 @@ object TradingStrategy {
         for(i in c.size-n until c.size){val flow=tp(c[i])*max(c[i].volume,0.0);if(tp(c[i])>tp(c[i-1]))pos+=flow else if(tp(c[i])<tp(c[i-1]))neg+=flow}
         return if(neg==0.0)100.0 else 100-100/(1+pos/neg)
     }
-    private fun divergence(c:List<MarketCandle>,lookback:Int=30):String {
-        if(c.size<lookback+15)return "none"
-        val v=c.map{it.close};val rs=(v.size-lookback-14..v.size).mapNotNull{rsi(v.take(it))}
-        if(rs.size<lookback+1)return "none"
-        val old=v.subList(v.size-lookback-14,v.size-14);val recent=v.takeLast(14)
-        return when{recent.minOrNull()!!<old.minOrNull()!!&&rs.last()>rs.first()+3->"bullish";recent.maxOrNull()!!>old.maxOrNull()!!&&rs.last()<rs.first()-3->"bearish";else->"none"}
+    private fun confirmedPivots(values:List<Double>,left:Int=2,right:Int=2):Pair<List<Int>,List<Int>> {
+        val highs=mutableListOf<Int>();val lows=mutableListOf<Int>()
+        for(i in left until values.size-right){
+            val w=values.subList(i-left,i+right+1)
+            if(values[i]==w.maxOrNull()&&w.count{it==values[i]}==1)highs.add(i)
+            if(values[i]==w.minOrNull()&&w.count{it==values[i]}==1)lows.add(i)
+        }
+        return highs to lows
     }
-    private fun structure(c:List<MarketCandle>,n:Int=20):Structure {
-        if(c.size<n+2)return Structure("none","none")
-        val prev=c.subList(c.size-n-1,c.size-1);val last=c.last();val hi=prev.maxOf{it.high};val lo=prev.minOf{it.low}
-        val event=if(last.close>hi)"BOS_up" else if(last.close<lo)"BOS_down" else "none"
-        val sweep=if(last.low<lo&&last.close>lo)"sell_side" else if(last.high>hi&&last.close<hi)"buy_side" else "none"
-        return Structure(event,sweep)
+    private fun divergence(c:List<MarketCandle>,lookback:Int=48):String {
+        if(c.size<lookback+20)return "none"
+        val values=c.map{it.close};val start=values.size-lookback-2
+        val (hi,lo)=confirmedPivots(values.takeLast(lookback+2),2,2)
+        val lows=lo.map{it+start};val highs=hi.map{it+start}
+        if(lows.size>=2){
+            val p1=lows[lows.size-2];val p2=lows.last()
+            val r1=rsi(values.take(p1+1));val r2=rsi(values.take(p2+1))
+            if(r1!=null&&r2!=null&&values[p2]<values[p1]&&r2>r1+3)return "bullish"
+        }
+        if(highs.size>=2){
+            val p1=highs[highs.size-2];val p2=highs.last()
+            val r1=rsi(values.take(p1+1));val r2=rsi(values.take(p2+1))
+            if(r1!=null&&r2!=null&&values[p2]>values[p1]&&r2<r1-3)return "bearish"
+        }
+        return "none"
+    }
+    private fun structure(c:List<MarketCandle>,n:Int=60):Structure {
+        if(c.size<max(n,30))return Structure("none","none")
+        val w=c.takeLast(n);val highs=w.map{it.high};val lows=w.map{it.low}
+        val (hi,lo)=confirmedPivots(highs,2,2)
+        val sh=hi.map{it to highs[it]};val sl=lo.map{it to lows[it]}
+        if(sh.isEmpty()||sl.isEmpty()){
+            val prior=c.takeLast(21).dropLast(1)
+            if(prior.size<10)return Structure("none","none")
+            val ph=prior.maxOf{it.high};val pl=prior.minOf{it.low};val last=c.last()
+            val event=if(last.close>ph)"BOS_up" else if(last.close<pl)"BOS_down" else "none"
+            val sweep=if(last.low<pl&&last.close>pl)"sell_side" else if(last.high>ph&&last.close<ph)"buy_side" else "none"
+            return Structure(event,sweep)
+        }
+        val last=w.last();val lastHigh=sh.last().second;val lastLow=sl.last().second
+        val up=sh.size>=2&&sl.size>=2&&lastHigh>sh[sh.size-2].second&&lastLow>sl[sl.size-2].second
+        val down=sh.size>=2&&sl.size>=2&&lastHigh<sh[sh.size-2].second&&lastLow<sl[sl.size-2].second
+        val event=when{last.close>lastHigh->if(down)"CHoCH_up" else "BOS_up";last.close<lastLow->if(up)"CHoCH_down" else "BOS_down";else->"none"}
+        val sweep=when{last.low<lastLow&&last.close>lastLow->"sell_side";last.high>lastHigh&&last.close<lastHigh->"buy_side";else->"none"}
+        val a=atr(w)?:last.close*.001;val tol=max(a*.15,last.close*.0005)
+        val equalHighs=sh.takeLast(5).count{abs(it.second-lastHigh)<=tol}>=2
+        val equalLows=sl.takeLast(5).count{abs(it.second-lastLow)<=tol}>=2
+        var obType="none";var obLow:Double?=null;var obHigh:Double?=null
+        // Retain the latest displacement-origin block so later price retests can confirm.
+        for(j in w.size-2 downTo max(0,w.size-21)){
+            val x=w[j];val next=w[j+1]
+            if(x.close<x.open&&next.close>x.high&&next.close>next.high-(next.high-next.low)*.25){
+                obType="bullish";obLow=x.low;obHigh=x.high;break
+            }
+            if(x.close>x.open&&next.close<x.low&&next.close<next.low+(next.high-next.low)*.25){
+                obType="bearish";obLow=x.low;obHigh=x.high;break
+            }
+        }
+        return Structure(event,sweep,if(up)"bullish" else if(down)"bearish" else "range",equalHighs,equalLows,obType,obLow,obHigh)
     }
 
-    private fun analyze(c:List<MarketCandle>):Report {
+    private data class Volatility(val atrPct:Double,val baselinePct:Double,val ratio:Double,val blocked:Boolean)
+    private fun volatility(c:List<MarketCandle>,timeframe:String,currentAtr:Double?):Volatility? {
+        if(currentAtr==null||currentAtr<=0.0||c.isEmpty()||c.last().close<=0.0)return null
+        val pct=100.0*currentAtr/c.last().close
+        val start=max(15,c.size-30)
+        val baseline=(start until c.size-1).mapNotNull{end->
+            val a=atr(c.take(end+1));val close=c[end].close
+            if(a!=null&&close>0.0)100.0*a/close else null
+        }.sorted()
+        if(baseline.isEmpty())return Volatility(pct,0.0,0.0,false)
+        val mid=baseline.size/2
+        val median=if(baseline.size%2==0)(baseline[mid-1]+baseline[mid])/2.0 else baseline[mid]
+        val ratio=if(median>0.0)pct/median else 0.0
+        val floor=when(timeframe){"5m"->0.8;"15m"->1.2;"30m"->1.8;else->0.8}
+        return Volatility(pct,median,ratio,pct>=floor&&ratio>=2.5)
+    }
+
+    private fun analyze(c:List<MarketCandle>,timeframe:String):Report {
         if(c.size<MIN_CANDLES)return Report(false,"حداقل ۶۰ کندل لازم است")
         if(c.takeLast(MIN_CANDLES).any{!it.open.isFinite()||!it.high.isFinite()||!it.low.isFinite()||!it.close.isFinite()||!it.volume.isFinite()||it.open<=0||it.high<=0||it.low<=0||it.close<=0||it.high<it.low})
             return Report(false,"داده کندل نامعتبر است")
         val v=c.map{it.close};val price=v.last()
         val e9=ema(v,9)!!;val e21=ema(v,21)!!;val e50=ema(v,50)!!
         val s20=sma(v,20);val s50=sma(v,50);val r=rsi(v);val mc=macd(v);val bands=bb(v)
-        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vw=vwap(c);val ov=obv(c);val mf=mfi(c)
+        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obv(c);val mf=mfi(c)
         val sm=structure(c);val div=divergence(c)
+        val regime=when{dx==null->"unknown";dx.value>=25->"trending";dx.value<18->"ranging";else->"transition"}
         val groups=linkedMapOf<String,MutableList<Pair<Double,Double>>>();val notes=mutableListOf<String>()
         fun vote(group:String,name:String,value:Int,weight:Double=1.0){
             groups.getOrPut(group){mutableListOf()}.add(value.toDouble() to weight)
@@ -139,36 +203,53 @@ object TradingStrategy {
         vote("momentum","RSI",if(r!=null&&r>52&&r<70)1 else if(r!=null&&r>30&&r<48)-1 else 0)
         vote("momentum","MACD",mc.third?.let{if(it>0)1 else if(it<0)-1 else 0}?:0,1.2)
         vote("momentum","StochRSI",if(st!=null&&st>55)1 else if(st!=null&&st<45)-1 else 0)
-        vote("strength","ADX_DMI",if(dx!=null&&dx.value>=20&&dx.plus>dx.minus)1 else if(dx!=null&&dx.value>=20&&dx.minus>dx.plus)-1 else 0,1.2)
+        vote("strength","ADX_DMI",if(regime=="trending"&&dx!!.plus>dx.minus)1 else if(regime=="trending"&&dx!!.minus>dx.plus)-1 else 0,1.2)
         vote("volume","VWAP",if(vw!=null&&price>vw)1 else if(vw!=null&&price<vw)-1 else 0)
         vote("volume","OBV",if(ov!=null&&ov>0)1 else if(ov!=null&&ov<0)-1 else 0)
         vote("volume","MFI",if(mf!=null&&mf>50&&mf<80)1 else if(mf!=null&&mf>20&&mf<50)-1 else 0)
         vote("volatility","Bollinger",if(bands!=null&&price>bands.second)1 else if(bands!=null&&price<bands.second)-1 else 0)
-        vote("structure","SMC",if(sm.event=="BOS_up"||sm.sweep=="sell_side")1 else if(sm.event=="BOS_down"||sm.sweep=="buy_side")-1 else 0,1.3)
+        val obTolerance=(a?:price*.001)*.25
+        val inBullOb=sm.orderBlockType=="bullish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
+        val inBearOb=sm.orderBlockType=="bearish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
+        val smcBull=sm.event=="BOS_up"||sm.event=="CHoCH_up"||sm.sweep=="sell_side"||inBullOb
+        val smcBear=sm.event=="BOS_down"||sm.event=="CHoCH_down"||sm.sweep=="buy_side"||inBearOb
+        vote("structure","SMC",if(smcBull&&!smcBear)1 else if(smcBear&&!smcBull)-1 else 0,1.3)
         vote("divergence","Divergence",if(div=="bullish")1 else if(div=="bearish")-1 else 0,1.1)
         // Toobit does not currently expose taker_buy_volume in this candle response.
         vote("orderflow","TakerFlow",0)
         val families=groups.mapValues{(_,items)->val den=items.sumOf{it.second};if(den==0.0)0.0 else items.sumOf{it.first*it.second}/den}
-        val den=families.keys.sumOf{familyWeights[it]?:0.0}
-        val score=if(den==0.0)0.0 else 100*families.entries.sumOf{it.value*(familyWeights[it.key]?:0.0)}/den
+        val activeWeights=if(regime=="ranging")familyWeights+mapOf("trend" to .8,"structure" to 1.6,"divergence" to 1.2) else familyWeights
+        val den=families.keys.sumOf{activeWeights[it]?:0.0}
+        val score=if(den==0.0)0.0 else 100*families.entries.sumOf{it.value*(activeWeights[it.key]?:0.0)}/den
         val up=families.values.count{it>.20};val down=families.values.count{it<-.20}
         val bias=if(score>=22&&up>=4)"bullish" else if(score<=-22&&down>=4)"bearish" else "neutral"
         val smc=mutableListOf<String>()
         if(sm.event=="BOS_up")smc.add("BOS صعودی")
         if(sm.event=="BOS_down")smc.add("BOS نزولی")
+        if(sm.event=="CHoCH_up")smc.add("تغییر کاراکتر صعودی CHoCH")
+        if(sm.event=="CHoCH_down")smc.add("تغییر کاراکتر نزولی CHoCH")
         if(sm.sweep=="sell_side")smc.add("جمع‌آوری نقدینگی کف")
         if(sm.sweep=="buy_side")smc.add("جمع‌آوری نقدینگی سقف")
-        return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc)
+        if(sm.equalHighs)smc.add("استخر نقدینگی سقف‌های برابر")
+        if(sm.equalLows)smc.add("استخر نقدینگی کف‌های برابر")
+        if(sm.orderBlockType!="none")smc.add("Order Block "+sm.orderBlockType)
+        return Report(true,price=price,score=score,bias=bias,atr=a,families=families,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value)
     }
 
     fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>):StrategyResult {
-        val reports=linkedMapOf("5m" to analyze(five),"15m" to analyze(fifteen),"30m" to analyze(thirty))
+        val reports=linkedMapOf("5m" to analyze(five,"5m"),"15m" to analyze(fifteen,"15m"),"30m" to analyze(thirty,"30m"))
         val invalid=reports.filterValues{!it.valid}.keys
         val price=reports["5m"]?.price?:five.lastOrNull()?.close?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,price,price,price,listOf("داده معتبر کافی نیست: "+invalid.joinToString("، ")),emptyList())
         val combined=reports.entries.sumOf{it.value.score*(tfWeights[it.key]?:0.0)}
+        val volatilityBlocked=reports.filterValues{it.highVolatility}.keys
+        if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,listOf("فیلتر نوسان غیرعادی فعال شد؛ سیگنال متوقف شد: "+volatilityBlocked.joinToString("، ")),emptyList())
         val longs=reports.values.count{it.bias=="bullish"};val shorts=reports.values.count{it.bias=="bearish"}
-        val signal=when{combined>=28&&longs==3->"LONG";combined<=-28&&shorts==3->"SHORT";else->"WAIT"}
+        val higherLong=reports["15m"]?.bias=="bullish"&&reports["30m"]?.bias=="bullish"
+        val higherShort=reports["15m"]?.bias=="bearish"&&reports["30m"]?.bias=="bearish"
+        val triggerLong=reports["5m"]?.bias=="bullish"&&reports["5m"]!!.score>=25
+        val triggerShort=reports["5m"]?.bias=="bearish"&&reports["5m"]!!.score<=-25
+        val signal=when{combined>=28&&higherLong&&triggerLong&&longs==3->"LONG";combined<=-28&&higherShort&&triggerShort&&shorts==3->"SHORT";else->"WAIT"}
         val a=reports["5m"]?.atr?:0.0
         if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
         val risk=max(a*1.5,price*.001)
@@ -177,7 +258,7 @@ object TradingStrategy {
         val tp2=when(signal){"LONG"->price+2*risk;"SHORT"->price-2*risk;else->price}
         val reasons=mutableListOf("موتور تحلیل نسخه ۰.۲.۹: هشت خانواده شاخص","امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
         for((tf,rep) in reports){
-            reasons.add(tf+": "+rep.bias+"، امتیاز "+"%.2f".format(rep.score))
+            reasons.add(tf+": "+rep.bias+"، امتیاز "+"%.2f".format(rep.score)+"، رژیم "+rep.marketRegime+(rep.adxValue?.let{" ADX "+"%.1f".format(it)}?:""))
             reasons.add("امتیاز خانواده‌ها: "+rep.families.entries.joinToString("، "){it.key+"="+"%.2f".format(it.value)})
         }
         reasons.add(if(signal=="LONG")"تأیید کامل سه تایم‌فریم؛ لانگ" else if(signal=="SHORT")"تأیید کامل سه تایم‌فریم؛ شورت" else "اجماع سه تایم‌فریم کافی نیست؛ معامله‌ای پیشنهاد نمی‌شود")
