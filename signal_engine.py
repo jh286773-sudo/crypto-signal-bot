@@ -564,10 +564,15 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
             opens[tf] = stamps
         decision_time = opens["5m"][-1] + durations["5m"]
         expected = {tf: (decision_time // durations[tf]) * durations[tf] - durations[tf] for tf in ("15m","30m")}
+        analysis_timeframes = {tf:list(timeframes.get(tf,[])) for tf in REQUIRED_TFS}
         for tf in ("15m","30m"):
-            if opens[tf][-1] != expected[tf]:
-                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"{tf} last closed candle is not aligned to the 5m decision boundary", "trade_enabled":False}
-    reports={tf:analyze_timeframe(timeframes.get(tf,[]),tf) for tf in REQUIRED_TFS}
+            if expected[tf] not in opens[tf]:
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"{tf} has no candle closed exactly at the 5m decision boundary", "trade_enabled":False}
+            analysis_timeframes[tf] = [row for row in analysis_timeframes[tf]
+                                       if int(next(row[k] for k in ("timestamp","open_time","time") if k in row)) <= expected[tf]]
+    else:
+        analysis_timeframes = timeframes
+    reports={tf:analyze_timeframe(analysis_timeframes.get(tf,[]),tf) for tf in REQUIRED_TFS}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Insufficient/invalid candles: "+", ".join(invalid),
