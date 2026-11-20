@@ -162,31 +162,7 @@ class MainActivity : Activity() {
         }
         heroHeader.addView(livePill)
         hero.addView(heroHeader)
-        // Premium hero artwork container with deeper contrast and a larger visual stage.
-        val robotStage = FrameLayout(this).apply {
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(30, 25, 18), Color.rgb(12, 14, 18), Color.rgb(7, 9, 12))
-            ).apply {
-                cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), Color.rgb(119, 88, 35))
-            }
-            clipToOutline = true
-        }
-        val robotArt = ImageView(this).apply {
-            setImageResource(R.drawable.aurum_robot_hero)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            contentDescription = "AURUM X black and gold cybernetic bull"
-            setPadding(dp(8), dp(2), dp(8), dp(2))
-            adjustViewBounds = true
-            elevation = dp(8).toFloat()
-        }
-        robotStage.addView(robotArt, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-        hero.addView(robotStage, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(270)).apply {
-            topMargin = dp(12); bottomMargin = dp(5)
-        })
+        // Robot artwork removed; keep the market connection panel compact and information-focused.
         val sourceLine = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
