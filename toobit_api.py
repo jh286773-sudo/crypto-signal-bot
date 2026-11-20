@@ -127,6 +127,8 @@ class ToobitAPI:
                     "volume": float(row[5]),
                 }
             )
+            if len(row) > 9:
+                candles[-1]["taker_buy_volume"] = float(row[9])
         # Exchange kline endpoints may include the currently-forming candle.
         # Never pass that candle into indicator or signal calculations.
         candles.sort(key=lambda item: item["open_time"])
