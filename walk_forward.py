@@ -189,7 +189,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             rate = row.get("funding_rate")
             if settle_time is None or rate is None or j not in exposure_by_index:
                 continue
-            if int(settle_time) > j + DURATION_MS["5m"]:
+            candle_open = five[j][0]
+            if not candle_open < int(settle_time) <= candle_open + DURATION_MS["5m"]:
                 continue
             exposure = exposure_by_index[j]
             event_cash = entry * exposure * float(rate) * (1 if side == "LONG" else -1)
