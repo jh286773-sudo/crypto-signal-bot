@@ -9,11 +9,13 @@ class CrossEngineContractTests(unittest.TestCase):
         root=pathlib.Path(__file__).parent
         py=(root/"signal_engine.py").read_text()
         kt=(root/"app/src/main/java/com/cryptoscalp/app/TradingStrategy.kt").read_text()
-        for token in ("_indicator_bias", '("EMA", "RSI", "MACD", "ADX_DMI")',
-                      '("VWAP", "OBV_Trend", "Bollinger")'):
+        for token in ("def _indicator_bias", 'indicator_directions.get("EMA") == 1',
+                      'indicator_directions.get("ADX_DMI") == 1',
+                      'indicator_directions.get("RSI") == 1',
+                      'indicator_directions.get("MACD") == 1'):
             self.assertIn(token,py)
-        for token in ("fun indicatorBias", '"EMA","RSI","MACD","ADX_DMI"',
-                      '"VWAP","OBV_Trend","Bollinger"'):
+        for token in ("fun indicatorBias", 'votes["EMA"]==1',
+                      'votes["ADX_DMI"]==1', 'votes["RSI"]==1', 'votes["MACD"]==1'):
             self.assertIn(token,kt)
         py_signal=py[py.index("def analyze_market("):py.index("def generate_signal(")]
         kt_signal=kt[kt.index("fun evaluate(timeframes:"):kt.rfind("\\n}")]
