@@ -505,18 +505,31 @@ def _levels(side, price, volatility, structure=None):
             "risk_per_unit":risk,"risk_reward":[1.5,2.5,3.5]}
 
 
+def _no_major_indicator_conflict(report: Dict[str, Any], side: str) -> bool:
+    """Allow one minor counter-vote, but never a core trend/momentum/strength conflict."""
+    votes = report.get("indicator_votes")
+    if not isinstance(votes, dict) or not votes:
+        return True  # Compatibility for synthetic/legacy reports; live analysis always supplies votes.
+    direction = 1 if side == "LONG" else -1
+    core = {"EMA", "SMA", "Ichimoku", "RSI", "MACD", "StochRSI", "ADX_DMI"}
+    opposing_core = sum(1 for name in core if int(votes.get(name, 0)) * direction < 0)
+    opposing_minor = sum(1 for name, value in votes.items()
+                         if name not in core and int(value) * direction < 0)
+    return opposing_core == 0 and opposing_minor <= 1
+
+
 def _directional_quality(report: Dict[str, Any], side: str) -> bool:
-    """Require broad same-direction evidence and reject material family conflicts."""
+    """Require broad family agreement and reject material individual-indicator conflicts."""
     families = report.get("family_scores")
     if not isinstance(families, dict) or not families:
         return False
     direction = 1.0 if side == "LONG" else -1.0
     aligned = sum(1 for value in families.values() if float(value) * direction >= 0.20)
     opposing = sum(1 for value in families.values() if float(value) * direction <= -0.20)
-    # Trend, momentum and directional strength may not actively oppose the setup.
     core = ("trend", "momentum", "strength")
     core_clear = all(float(families.get(name, 0.0)) * direction >= 0.0 for name in core)
-    return aligned >= 5 and opposing <= 1 and core_clear
+    return (aligned >= 5 and opposing <= 1 and core_clear
+            and _no_major_indicator_conflict(report, side))
 
 
 def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float],
