@@ -153,8 +153,6 @@ class TradingStrategyParityTest {
     }
 
     @Test fun expectancyPolicyIsNotPartOfAndroidSignalEngine() {
-        val strategy = javaClass.getResourceAsStream("/../../main/java/com/cryptoscalp/app/TradingStrategy.kt")
-        // The compile-time API contract is covered by evaluating the simplified overload.
         val now = System.currentTimeMillis()
         val five = series(220, 300_000L, (now / 300_000L) * 300_000L - 219 * 300_000L)
         val fifteen = series(220, 900_000L, (now / 900_000L) * 900_000L - 219 * 900_000L)
