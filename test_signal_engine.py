@@ -58,6 +58,51 @@ class EngineTests(unittest.TestCase):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")}, expectancy_stats={"LONG":[0.5]*30})
         self.assertEqual(result["signal"],"NO_SIGNAL")
         self.assertIn("blocked_market_regime",result)
+    def test_adx_policy_strict_balanced_and_confirm_only(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,
+                                     "volume":0.8,"structure":0.8,"orderflow":0.8},
+                   "indicators": {"atr":1.0,"smc":{"retest_long":True,
+                       "structure_event":"BOS_up","entry_distance_atr":0.2}},
+                   "ema21":99.5,"close":100.0}
+        reports = [
+            {**bullish, "market_regime":{"state":"ranging"}},
+            {**bullish, "market_regime":{"state":"transition"}},
+            {**bullish, "market_regime":{"state":"trending"}},
+        ]
+        with patch("signal_engine.analyze_timeframe", side_effect=reports):
+            strict = analyze_market({tf:candles() for tf in ("5m","15m","30m")}, adx_policy="strict")
+        self.assertEqual(strict["signal"], "NO_SIGNAL")
+        self.assertIn("adx_regime_not_allowed:5m", strict["rejection_reasons"])
+
+        with patch("signal_engine.analyze_timeframe", side_effect=reports):
+            balanced = analyze_market({tf:candles() for tf in ("5m","15m","30m")},
+                                      expectancy_stats={"LONG":[0.5]*30}, adx_policy="balanced")
+        self.assertEqual(balanced["signal"], "LONG")
+
+        with patch("signal_engine.analyze_timeframe", side_effect=reports):
+            confirm = analyze_market({tf:candles() for tf in ("5m","15m","30m")},
+                                     expectancy_stats={"LONG":[0.5]*30}, adx_policy="confirm_only")
+        self.assertEqual(confirm["signal"], "LONG")
+
+    def test_balanced_adx_policy_still_requires_30m_trending_and_15m_not_ranging(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,
+                                     "volume":0.8,"structure":0.8,"orderflow":0.8},
+                   "indicators": {"atr":1.0,"smc":{"retest_long":True,
+                       "structure_event":"BOS_up","entry_distance_atr":0.2}},
+                   "ema21":99.5,"close":100.0}
+        reports = [
+            {**bullish, "market_regime":{"state":"trending"}},
+            {**bullish, "market_regime":{"state":"ranging"}},
+            {**bullish, "market_regime":{"state":"trending"}},
+        ]
+        with patch("signal_engine.analyze_timeframe", side_effect=reports):
+            result = analyze_market({tf:candles() for tf in ("5m","15m","30m")},
+                                    adx_policy="balanced")
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("adx_regime_not_allowed:15m", result["rejection_reasons"])
+
     def test_anti_chase_filter_rejects_extended_entry_and_accepts_pullback(self):
         from signal_engine import _entry_not_chasing
         self.assertFalse(_entry_not_chasing(102.0, 100.0, 2.0))
