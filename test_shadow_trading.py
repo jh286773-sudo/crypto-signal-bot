@@ -26,6 +26,12 @@ class ShadowLedgerTests(unittest.TestCase):
             row = db.execute("SELECT state FROM shadow_open WHERE symbol=?", (symbol,)).fetchone()
         return None if row is None else __import__("json").loads(row[0])
 
+    def test_short_signal_while_flat_never_opens_a_position(self):
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100),
+                            self.candidate("SHORT", 100))
+        self.assertIsNone(self.open_state())
+        self.assertEqual(self.ledger.stats("BTC-SWAP-USDT")["SHORT"], [])
+
     def test_long_is_held_through_price_moves_and_wait(self):
         self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 130, 70, 110), self.candidate("LONG"))
         self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 110, 150, 60, 90), {"signal": "NO_SIGNAL"})
@@ -33,25 +39,23 @@ class ShadowLedgerTests(unittest.TestCase):
         self.assertEqual(self.open_state()["side"], "LONG")
         self.assertEqual(self.ledger.stats("BTC-SWAP-USDT")["LONG"], [])
 
-    def test_long_reverses_to_short_on_opposite_signal(self):
+    def test_short_closes_long_and_does_not_open_short(self):
         self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("LONG", 100))
         self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 105, 110, 104, 108), self.candidate("SHORT", 108))
-        state = self.open_state()
-        self.assertEqual(state["side"], "SHORT")
-        self.assertEqual(state["entry"], 108)
+        self.assertIsNone(self.open_state())
         self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["LONG"]), 1)
+        self.assertEqual(self.ledger.stats("BTC-SWAP-USDT")["SHORT"], [])
         self.assertGreater(self.ledger.stats("BTC-SWAP-USDT")["LONG"][0], 0)
 
-    def test_short_reverses_to_long_on_opposite_signal(self):
-        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("SHORT", 100))
+    def test_short_position_from_legacy_state_is_closed_when_long_arrives(self):
+        with self.ledger._db() as db:
+            db.execute("INSERT INTO shadow_open(symbol,state,last_bar) VALUES(?,?,?)",
+                       ("BTC-SWAP-USDT", '{"side":"SHORT","entry":100}', 300000))
         self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 95, 96, 90, 92), self.candidate("LONG", 92))
-        state = self.open_state()
-        self.assertEqual(state["side"], "LONG")
-        self.assertEqual(state["entry"], 92)
-        self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["SHORT"]), 1)
-        self.assertGreater(self.ledger.stats("BTC-SWAP-USDT")["SHORT"][0], 0)
+        self.assertEqual(self.open_state()["side"], "LONG")
+        self.assertEqual(self.ledger.stats("BTC-SWAP-USDT")["SHORT"].__len__(), 1)
 
-    def test_same_side_signal_does_not_duplicate_or_reset_position(self):
+    def test_same_side_long_signal_does_not_duplicate_or_reset_position(self):
         self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("LONG", 100))
         self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 110, 111, 109, 110), self.candidate("LONG", 110))
         self.assertEqual(self.open_state()["entry"], 100)
