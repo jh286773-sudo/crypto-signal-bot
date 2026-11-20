@@ -74,7 +74,11 @@ class CryptoMonitorService : Service() {
                 // Capture one exchange-clock boundary and use it for all three HTTP candle requests.
                 val marketAsOfMs=ExchangeMarketData.exchangeTimeMs()
                 val five=ExchangeMarketData.candles(exchange,symbol,"5m",marketAsOfMs)
-                val latestClosedCandleTime=five.last().time
+                val latestBar=five.last()
+                manageOpen(symbol,latestBar)
+                val hadShadowAtBarStart=prefs.getString("shadow_setup_$symbol",null)!=null
+                manageShadow(symbol,latestBar)
+                val latestClosedCandleTime=latestBar.time
                 val key="last_analysis_candle_$symbol"
                 val previousCandleTime=prefs.getLong(key,-1L)
                 if(previousCandleTime<0L){
@@ -83,20 +87,22 @@ class CryptoMonitorService : Service() {
                 } else if(latestClosedCandleTime>previousCandleTime){
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m",marketAsOfMs)
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m",marketAsOfMs)
-                    val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol))
+                    val candidate=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,emptyMap(),false)
+                    if(!hadShadowAtBarStart && isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
+                    val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol),true)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
                     val lossCooldownActive = isLossCooldownActive(symbol,System.currentTimeMillis())
                     when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,lossCooldownActive)) {
                         SignalDecision.OPEN -> {
-                            saveOpen(symbol,r)
+                            saveOpen(symbol,r,latestClosedCandleTime)
                             notifySignal(symbol,r)
                         }
                         SignalDecision.REVERSE -> {
                             recordVirtualClose(symbol,r.entry)
                             clearOpen(symbol)
-                            saveOpen(symbol,r)
+                            saveOpen(symbol,r,latestClosedCandleTime)
                             notifyReversal(symbol,openSide.orEmpty(),r)
                         }
                         SignalDecision.CLOSE_ONLY -> {
@@ -127,14 +133,68 @@ class CryptoMonitorService : Service() {
     // WAIT is an internal no-trade state only; user-facing entry alerts are LONG or SHORT.
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
 
-    private fun saveOpen(symbol:String,r:StrategyResult){
-        // Track direction only. SL/TP are not part of this hold-until-reversal mode.
-        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("openedAt",System.currentTimeMillis())
+    private fun saveOpen(symbol:String,r:StrategyResult,barTime:Long){
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3).put("tp1Done",false).put("tp2Done",false).put("openedAt",System.currentTimeMillis()).put("openedBar",barTime)
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
     }
-    private fun expectancyKey(symbol:String,side:String)="closed_net_r_${symbol}_$side"
+    private fun expectancyKey(symbol:String,side:String)="shadow_closed_net_r_"+symbol+"_"+side
     private fun loadExpectancyStats(symbol:String):Map<String,List<Double>> = listOf("LONG","SHORT").associateWith { side ->
         prefs.getString(expectancyKey(symbol,side),"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(200)
+    }
+    private fun saveShadow(symbol:String,r:StrategyResult,barTime:Long){
+        val risk=kotlin.math.abs(r.entry-r.stop); if(risk<=0.0||!risk.isFinite())return
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("initialRisk",risk).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3).put("remaining",1.0).put("grossR",0.0).put("entryCostR",r.entry*.0007/risk).put("tp1Done",false).put("tp2Done",false).put("openedBar",barTime).put("lastBar",barTime)
+        prefs.edit().putString("shadow_setup_$symbol",o.toString()).apply()
+    }
+    private fun recordShadowClose(symbol:String,o:JSONObject,exit:Double,fraction:Double){
+        val side=o.optString("side"); val entry=o.optDouble("entry",0.0); val risk=o.optDouble("initialRisk",0.0)
+        if((side!="LONG"&&side!="SHORT")||entry<=0.0||risk<=0.0||exit<=0.0||fraction<=0.0)return
+        val dir=if(side=="LONG")1.0 else -1.0
+        o.put("grossR",o.optDouble("grossR",0.0)+dir*(exit-entry)/risk*fraction)
+        o.put("exitCostR",o.optDouble("exitCostR",0.0)+exit*.0007/risk*fraction)
+        o.put("remaining",maxOf(0.0,o.optDouble("remaining",1.0)-fraction))
+        if(o.optDouble("remaining",0.0)<=1e-8){
+            val net=o.optDouble("grossR",0.0)-o.optDouble("entryCostR",0.0)-o.optDouble("exitCostR",0.0)
+            if(net.isFinite()){val key=expectancyKey(symbol,side);val old=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199);prefs.edit().putString(key,(old+net).joinToString(",")).remove("shadow_setup_$symbol").apply()}
+            else prefs.edit().remove("shadow_setup_$symbol").apply()
+        }else prefs.edit().putString("shadow_setup_$symbol",o.toString()).apply()
+    }
+    private fun manageShadow(symbol:String,bar:MarketCandle){
+        val raw=prefs.getString("shadow_setup_$symbol",null)?:return
+        val o=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("shadow_setup_$symbol").apply();return}
+        val long=o.optString("side")=="LONG"
+        if(bar.time<=o.optLong("lastBar",o.optLong("openedBar",0L)))return
+        o.put("lastBar",bar.time)
+        val stop=o.optDouble("stop",0.0)
+        val stopped=if(long)bar.low<=stop else bar.high>=stop
+        if(stopped){val fill=if(long)minOf(bar.open,stop) else maxOf(bar.open,stop);recordShadowClose(symbol,o,fill,o.optDouble("remaining",1.0));return}
+        for(i in 0..2){
+            if((i==0&&o.optBoolean("tp1Done"))||(i==1&&o.optBoolean("tp2Done")))continue
+            val target=o.optDouble("tp"+(i+1),0.0); val hit=if(long)bar.high>=target else bar.low<=target
+            if(!hit)break
+            val rem=o.optDouble("remaining",0.0); val fraction=if(i==2)rem else minOf(rem,1.0/3.0)
+            val fill=if(long)maxOf(bar.open,target) else minOf(bar.open,target)
+            if(i==0){o.put("tp1Done",true);o.put("stop",o.optDouble("entry"))}
+            if(i==1){o.put("tp2Done",true);o.put("stop",o.optDouble("tp1"))}
+            recordShadowClose(symbol,o,fill,fraction)
+            if(prefs.getString("shadow_setup_$symbol",null)==null)return
+            // Conservative OHLC handling: if a newly protected stop is also touched
+            // in this candle, close the remainder at that stop rather than assuming
+            // a favorable intrabar path.
+            if(i<2){
+                val protectedStop=o.optDouble("stop",0.0)
+                val protectedStopHit=if(long)bar.low<=protectedStop else bar.high>=protectedStop
+                if(protectedStopHit){
+                    val protectedFill=if(long)minOf(bar.open,protectedStop) else maxOf(bar.open,protectedStop)
+                    recordShadowClose(symbol,o,protectedFill,o.optDouble("remaining",0.0))
+                    return
+                }
+                break
+            }
+        }
+        if(bar.time-o.optLong("openedBar",bar.time)>=72L*300_000L){
+            recordShadowClose(symbol,o,bar.close,o.optDouble("remaining",1.0))
+        }
     }
     private fun recordVirtualClose(symbol:String,exit:Double){
         val raw=prefs.getString("open_setup_$symbol",null)?:return
@@ -147,18 +207,21 @@ class CryptoMonitorService : Service() {
         // Conservative modeled round-trip fee + slippage: 10 bps each side.
         val costsR=(entry+exit)*0.001/risk
         val netR=grossR-costsR
-        val key=expectancyKey(symbol,side)
+        val key="closed_net_r_"+symbol+"_"+side
         val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
         prefs.edit().putString(key,(prior+netR).joinToString(",")).apply()
     }
-    private fun manageOpen(symbol:String,price:Double){
+    private fun manageOpen(symbol:String,bar:MarketCandle){
+        val price=bar.close
         val raw=prefs.getString("open_setup_$symbol",null)?:return
         val s=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("open_setup_$symbol").apply();return}
         val long=s.optString("side")=="LONG"
+        if(bar.time<=s.optLong("openedBar",0L))return
+        s.put("openedBar",bar.time)
         // Migrate setups saved by older app versions, which tracked only TP1/TP2.
         if(!s.has("tp3"))s.put("tp3",s.optDouble("tp2"))
         if(!s.has("tp2Done"))s.put("tp2Done",false)
-        val stop=if(long)price<=s.optDouble("stop") else price>=s.optDouble("stop")
+        val stop=if(long)bar.low<=s.optDouble("stop") else bar.high>=s.optDouble("stop")
         if(stop){
             val protectedByTarget = s.optBoolean("tp1Done")
             val cooldownStarted = if(protectedByTarget) {
@@ -172,10 +235,12 @@ class CryptoMonitorService : Service() {
             else if(protectedByTarget)
                 " • خروج پس از فعال‌شدن حد سود اول؛ در شمارش ضرر کامل لحاظ نشد"
             else ""
-            closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(price)}$detail")
+            val stopLevel=s.optDouble("stop")
+            val stopFill=if(long)minOf(bar.open,stopLevel) else maxOf(bar.open,stopLevel)
+            closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(stopFill)}$detail")
             return
         }
-        val tp1=if(long)price>=s.optDouble("tp1") else price<=s.optDouble("tp1")
+        val tp1=if(long)bar.high>=s.optDouble("tp1") else bar.low<=s.optDouble("tp1")
         if(tp1&&!s.optBoolean("tp1Done")){
             // After TP1, protect the remaining setup at breakeven. This is an
             // app-side alert level only; no stop/partial-close order is sent.
@@ -185,8 +250,14 @@ class CryptoMonitorService : Service() {
             prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
             notifyExit(symbol,"مرحله اول حد سود لمس شد • حد ضرر به نقطه ورود منتقل شد",
                 "قیمت فعلی: ${fmt(price)} • حد ضرر جدید: ${fmt(s.optDouble("stop"))} • هدف دوم: ${fmt(s.optDouble("tp2"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
+            val protectedStop=s.optDouble("stop")
+            if(if(long)bar.low<=protectedStop else bar.high>=protectedStop){
+                val fill=if(long)minOf(bar.open,protectedStop) else maxOf(bar.open,protectedStop)
+                closeOpen(symbol,"حد ضرر سربه‌سر پس از حد سود اول فعال شد • قیمت ${fmt(fill)}")
+                return
+            }
         }
-        val tp2=if(long)price>=s.optDouble("tp2") else price<=s.optDouble("tp2")
+        val tp2=if(long)bar.high>=s.optDouble("tp2") else bar.low<=s.optDouble("tp2")
         if(tp2&&!s.optBoolean("tp2Done")){
             s.put("tp2Done",true)
             // Lock TP1 for the remaining setup after TP2; this is notification state only.
@@ -195,11 +266,17 @@ class CryptoMonitorService : Service() {
             prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
             notifyExit(symbol,"مرحله دوم حد سود لمس شد • سود مرحله اول محافظت شد",
                 "قیمت فعلی: ${fmt(price)} • حد ضرر حفاظتی جدید: ${fmt(lockedStop)} • هدف سوم: ${fmt(s.optDouble("tp3"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
+            if(if(long)bar.low<=lockedStop else bar.high>=lockedStop){
+                val fill=if(long)minOf(bar.open,lockedStop) else maxOf(bar.open,lockedStop)
+                closeOpen(symbol,"حد ضرر سود قفل‌شده پس از حد سود دوم فعال شد • قیمت ${fmt(fill)}")
+                return
+            }
         }
-        val tp3=if(long)price>=s.optDouble("tp3") else price<=s.optDouble("tp3")
+        val tp3=if(long)bar.high>=s.optDouble("tp3") else bar.low<=s.optDouble("tp3")
         if(tp3){
             clearLossHistory(symbol)
-            closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(price)}")
+            val targetFill=if(long)maxOf(bar.open,s.optDouble("tp3")) else minOf(bar.open,s.optDouble("tp3"))
+            closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(targetFill)}")
         }
     }
     private fun lossTimesKey(symbol:String)="full_stop_times_$symbol"
@@ -223,7 +300,7 @@ class CryptoMonitorService : Service() {
         prefs.edit().remove(lossTimesKey(symbol)).remove(lossCooldownKey(symbol)).apply()
     }
     private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}
-    private fun closeOpen(symbol:String,reason:String){clearOpen(symbol);notifyExit(symbol,"خروج از موقعیت • $symbol",reason)}
+    private fun closeOpen(symbol:String,reason:String){ val px=Regex("قیمت ([0-9.eE+-]+)").find(reason)?.groupValues?.getOrNull(1)?.toDoubleOrNull(); if(px!=null)recordVirtualClose(symbol,px); clearOpen(symbol); notifyExit(symbol,"خروج از موقعیت • $symbol",reason) }
     private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
     private fun notifySignal(symbol:String,r:StrategyResult){
         val body=buildString{

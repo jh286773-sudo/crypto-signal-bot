@@ -7,9 +7,9 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
     def test_kline_range_pages_without_duplicate_candles(self):
         api = ToobitAPI()
         first = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-                 for i in range(2, 1002)]
+                 for i in range(1000)]
         second = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-                  for i in range(2)]
+                  for i in range(1000, 1002)]
         with patch.object(api, "_get", side_effect=[first, second]) as get:
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 1002 * 300000)
         self.assertEqual(len(rows), 1002)
@@ -24,17 +24,16 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
             return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
         later = [row(2), row(3)]
         prefix = [row(0), row(1)]
-        with patch.object(api, "_get", side_effect=[later, prefix]) as get:
-            rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 4 * 300000)
-        self.assertEqual([item["timestamp"] for item in rows], [0, 300000, 600000, 900000])
-        self.assertEqual(get.call_count, 2)
+        with patch.object(api, "_get", side_effect=[later, []]):
+            with self.assertRaisesRegex(RuntimeError, "incomplete 5m history"):
+                api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 4 * 300000)
 
     def test_kline_range_continues_after_a_short_nonfinal_page(self):
         api = ToobitAPI()
         def row(i):
             return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-        first = [row(i) for i in range(500, 1002)]
-        second = [row(i) for i in range(500)]
+        first = [row(i) for i in range(500)]
+        second = [row(i) for i in range(500, 1002)]
         with patch.object(api, "_get", side_effect=[first, second]) as get:
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 1002 * 300000)
         self.assertEqual(len(rows), 1002)
@@ -48,6 +47,17 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 3 * 300000)
         self.assertEqual([item["timestamp"] for item in rows], [0, 300000, 600000])
 
+    def test_crypto_universe_excludes_tradfi_contracts(self):
+        api = ToobitAPI()
+        info = {"coins": [{"coinId": "BTC"}, {"coinId": "ETH"}, {"coinId": "USDT"}],
+                "contracts": [
+                    {"symbol": "BTC-SWAP-USDT", "status": "TRADING", "quoteAsset": "USDT", "inverse": False, "underlying": "BTC"},
+                    {"symbol": "NVDA-SWAP-USDT", "status": "TRADING", "quoteAsset": "USDT", "inverse": False, "underlying": "NVDA"},
+                    {"symbol": "ETH-SWAP-USDT", "status": "TRADING", "quoteAsset": "USDT", "inverse": False, "underlying": "ETH"},
+                ]}
+        with patch.object(api, "_get", side_effect=[info, [{"s": "BTC-SWAP-USDT", "qv": "100"}, {"s": "NVDA-SWAP-USDT", "qv": "200"}, {"s": "ETH-SWAP-USDT", "qv": "50"}]]):
+            symbols = api.get_futures_symbols(limit=100, preferred_bases=None)
+        self.assertEqual(set(symbols), {"BTC-SWAP-USDT", "ETH-SWAP-USDT"})
     def test_live_klines_parse_taker_buy_volume_from_exchange_payload(self):
         api = ToobitAPI()
         row0 = [0, "1", "2", "0.5", "1.5", "10", 0, "15", 2, "6", "9"]

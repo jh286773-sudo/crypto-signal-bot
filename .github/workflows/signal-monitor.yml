@@ -32,6 +32,16 @@ jobs:
           pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
+      - name: Restore persistent shadow-trading ledger
+        uses: actions/cache@v4
+        with:
+          path: |
+            aurum_shadow_trades.sqlite3
+            aurum_shadow_trades.sqlite3-shm
+            aurum_shadow_trades.sqlite3-wal
+          key: aurum-shadow-ledger-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            aurum-shadow-ledger-
       - name: Scan liquid USDT perpetual contracts
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}

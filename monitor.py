@@ -4,6 +4,7 @@ import requests
 
 from toobit_api import ToobitAPI
 from signal_engine import analyze_market
+from shadow_trading import ShadowLedger
 
 MAJOR_BASE_ASSETS = ("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK", "AVAX")
 MAX_SYMBOLS = min(10, max(1, int(os.getenv("MAX_SYMBOLS", "10"))))
@@ -46,6 +47,7 @@ def _analysis_reasons(result):
 
 def main():
     api = ToobitAPI()
+    shadow = ShadowLedger()
     symbols = api.get_futures_symbols(limit=MAX_SYMBOLS, preferred_bases=MAJOR_BASE_ASSETS)
     logging.info("Scanning %d supported major-coin USDT perpetual contracts: %s", len(symbols), ", ".join(symbols))
 
@@ -54,8 +56,11 @@ def main():
     for symbol in symbols:
         try:
             candles = api.get_multi_timeframe(symbol)
-            # Live Python monitor has no trusted closed-trade ledger; fail closed until one is supplied.
-            result = analyze_market(candles, expectancy_stats={})
+            # Candidate analysis is isolated from alerts and feeds only the persistent shadow ledger.
+            candidate = analyze_market(candles, expectancy_stats={}, research_warmup=True)
+            shadow.process(symbol, candles["5m"][-1], candidate)
+            # Live alerts remain fail-closed until this symbol AND direction prove positive net expectancy.
+            result = analyze_market(candles, expectancy_stats=shadow.stats(symbol))
             signal = result.get("signal", "NO_SIGNAL")
             reports = result.get("timeframes", {})
             five = reports.get("5m", {})

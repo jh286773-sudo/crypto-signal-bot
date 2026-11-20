@@ -29,7 +29,7 @@ def main():
                         help="Assumed adverse slippage per fill; not measured")
     parser.add_argument("--equity-per-symbol", type=float, default=10000.0)
     parser.add_argument("--risk", type=float, default=0.005)
-    parser.add_argument("--output", default="toobit_multi_symbol_10day.json")
+    parser.add_argument("--output", default="toobit_multi_crypto_30day.json")
     args = parser.parse_args()
     if not 2 <= args.days <= 30:
         raise SystemExit("--days must be between 2 and 30 (funding endpoint history cap)")
@@ -83,12 +83,6 @@ def main():
             failures.append({"symbol": symbol, "error": str(exc)})
             print(f"SKIP {symbol}: {exc}", flush=True)
 
-    if len(results) < args.min_symbols:
-        raise RuntimeError(
-            f"Only {len(results)} perpetual contracts completed; at least {args.min_symbols} required. "
-            f"Failures: {failures}"
-        )
-
     total_start = sum(item["initial_equity"] for item in results)
     total_final = sum(item["final_equity"] for item in results)
     trades = [trade for item in results for trade in item["trades"]]
@@ -105,11 +99,11 @@ def main():
         "initial_capital_sum": total_start,
         "final_capital_sum": total_final,
         "net_pnl_sum": total_final - total_start,
-        "net_return_pct_equal_capital_per_symbol": 100.0 * (total_final / total_start - 1.0),
+        "net_return_pct_equal_capital_per_symbol": 100.0 * (total_final / total_start - 1.0) if total_start > 0 else 0.0,
         "gross_profit_sum": gross_profit,
         "gross_loss_sum": gross_loss,
         "profit_factor": gross_profit / abs(gross_loss) if gross_loss else (math.inf if gross_profit else 0.0),
-        "max_symbol_drawdown_pct": max(item["max_drawdown_pct"] for item in results),
+        "max_symbol_drawdown_pct": max((item["max_drawdown_pct"] for item in results), default=0.0),
         "warning": "Pooled equal-capital summary of independent per-symbol simulations, not a single shared-margin portfolio. Max drawdown is the worst individual symbol drawdown. Failed symbols are listed separately and are not silently treated as zero-return symbols.",
     }
     report = {
@@ -123,7 +117,7 @@ def main():
             "symbol_selection": "all active Toobit USDT-margined linear perpetual contracts returned by exchangeInfo, ranked by 24h quote volume",
             "candidate_contracts": len(candidates),
             "successfully_tested_contracts": len(results),
-            "universe_scope": "USDT linear perpetuals; excludes inverse and non-USDT contracts",
+            "universe_scope": "crypto underlyings listed in Toobit exchangeInfo coins; USDT linear perpetuals only; excludes TradFi, inverse and non-USDT contracts",
             "minimum_symbols": args.min_symbols,
             "slippage_bps_per_fill": args.slippage_bps,
             "slippage_is_measured": False,
@@ -134,6 +128,8 @@ def main():
             "same_utc_window_for_all_symbols": True,
             "production_symbol_universe_changed": False,
             "full_candidate_scan_completed": len(results) + len(failures) == len(candidates),
+            "full_universe_data_complete": len(results) == len(candidates) and not failures,
+            "failed_contract_count": len(failures),
         },
         "pooled_summary": pooled,
         "per_symbol": results,
@@ -144,7 +140,14 @@ def main():
     print(json.dumps(finite_json({"period_utc": report["period_utc"],
                                   "pooled_summary": pooled,
                                   "symbols": [x["symbol"] for x in results],
+                                  "failed_symbols": failures,
+                                  "full_universe_data_complete": report["methodology"]["full_universe_data_complete"],
                                   "output": args.output}), indent=2), flush=True)
+    if len(results) < args.min_symbols or failures:
+        raise RuntimeError(
+            f"Full-universe {args.days}-day backtest is incomplete: {len(results)}/{len(candidates)} "
+            f"contracts completed, {len(failures)} failed. Detailed report saved to {args.output}."
+        )
 
 
 if __name__ == "__main__":
