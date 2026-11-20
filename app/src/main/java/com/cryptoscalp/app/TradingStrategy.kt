@@ -333,9 +333,11 @@ object TradingStrategy {
         if(missing.isNotEmpty()) return StrategyResult("WAIT",0.0,
             listOf("داده تایم‌فریم انتخاب‌شده موجود نیست: "+missing.joinToString("، ")))
         val raw = selected.associateWith { timeframes[it].orEmpty() }
-        if(selected.any { !validSeries(raw.getValue(it),durations.getValue(it)) }) {
+        val invalidSeries=selected.filter { !validSeries(raw.getValue(it),durations.getValue(it)) }
+        if(invalidSeries.isNotEmpty()) {
             return StrategyResult("WAIT",raw[selected.first()]?.lastOrNull()?.close?:0.0,
-                listOf("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود"))
+                listOf("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود")+
+                    invalidSeries.map { "$it: حداقل ۲۰۰ کندل مرتب و پیوسته با زمان‌بندی معتبر لازم است" })
         }
         val latestCommonClose = selected.minOf { tf -> raw.getValue(tf).last().time + durations.getValue(tf) }
         val freshnessWindow = selected.maxOf { durations.getValue(it) }
@@ -359,7 +361,8 @@ object TradingStrategy {
         val invalid=reports.filterValues{!it.valid}.keys
         val price=reports[selected.first()]?.price?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",price,
-            listOf("اطلاعات کافی/معتبر نیست: "+invalid.joinToString("، ")+"؛ سیگنالی صادر نمی‌شود"))
+            listOf("اطلاعات کافی/معتبر نیست؛ سیگنالی صادر نمی‌شود")+
+                invalid.map { tf -> "$tf: "+(reports[tf]?.reason?: "داده نامعتبر") })
         val allBullish=reports.values.all{it.bias=="bullish"}
         val allBearish=reports.values.all{it.bias=="bearish"}
         val direction=when { allBullish->"LONG"; allBearish->"SHORT"; else->"WAIT" }
