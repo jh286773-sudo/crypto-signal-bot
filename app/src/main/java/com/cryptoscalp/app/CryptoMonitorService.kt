@@ -101,7 +101,7 @@ class CryptoMonitorService : Service() {
                         SignalDecision.REVERSE -> {
                             recordVirtualClose(symbol,r.entry)
                             clearOpen(symbol)
-                            saveOpen(symbol,r)
+                            saveOpen(symbol,r,latestClosedCandleTime)
                             notifyReversal(symbol,openSide.orEmpty(),r)
                         }
                         SignalDecision.CLOSE_ONLY -> {
