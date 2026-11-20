@@ -135,7 +135,14 @@ object TradingStrategy {
         val w=c.takeLast(n);val highs=w.map{it.high};val lows=w.map{it.low}
         val (hi,lo)=confirmedPivots(highs,2,2)
         val sh=hi.map{it to highs[it]};val sl=lo.map{it to lows[it]}
-        if(sh.isEmpty()||sl.isEmpty())return Structure("none","none")
+        if(sh.isEmpty()||sl.isEmpty()){
+            val prior=c.takeLast(21).dropLast(1)
+            if(prior.size<10)return Structure("none","none")
+            val ph=prior.maxOf{it.high};val pl=prior.minOf{it.low};val last=c.last()
+            val event=if(last.close>ph)"BOS_up" else if(last.close<pl)"BOS_down" else "none"
+            val sweep=if(last.low<pl&&last.close>pl)"sell_side" else if(last.high>ph&&last.close<ph)"buy_side" else "none"
+            return Structure(event,sweep)
+        }
         val last=w.last();val lastHigh=sh.last().second;val lastLow=sl.last().second
         val up=sh.size>=2&&sl.size>=2&&lastHigh>sh[sh.size-2].second&&lastLow>sl[sl.size-2].second
         val down=sh.size>=2&&sl.size>=2&&lastHigh<sh[sh.size-2].second&&lastLow<sl[sl.size-2].second
