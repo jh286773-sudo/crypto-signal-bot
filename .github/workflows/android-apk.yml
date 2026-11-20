@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, port-029-brain, strategy-quality-upgrades]
+    branches: [main, port-029-brain, strategy-quality-upgrades, strategy-quality-upgrades-v2]
     paths:
       - 'app/**'
       - '*.gradle.kts'
