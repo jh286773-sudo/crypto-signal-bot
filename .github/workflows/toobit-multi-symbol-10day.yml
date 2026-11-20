@@ -11,8 +11,9 @@ on:
         default: "0"
         type: string
       symbols:
-        description: Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT
+        description: Selected Toobit USDT perpetuals (comma-separated)
         required: true
+        default: "BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT"
         type: string
       slippage_bps:
         description: Assumed adverse slippage per fill in bps (not measured)
@@ -38,8 +39,8 @@ jobs:
           pip install -r requirements.txt
       - name: Run Toobit multi-symbol historical backtest
         env:
-          DAYS: ${{ github.event.inputs.days || '30' }}
-          SYMBOLS: ${{ github.event.inputs.symbols || '' }}
+          DAYS: ${{ github.event.inputs.days || '0' }}
+          SYMBOLS: ${{ github.event.inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
           SLIPPAGE_BPS: ${{ github.event.inputs.slippage_bps || '1.0' }}
         run: |
           python run_toobit_multi_backtest.py \
@@ -51,6 +52,6 @@ jobs:
         if: always()
         with:
           name: aurum-x-toobit-selected-full-history
-          path: toobit_multi_crypto_30day.json
+          path: toobit_selected_full_history.json
           if-no-files-found: warn
           retention-days: 30
