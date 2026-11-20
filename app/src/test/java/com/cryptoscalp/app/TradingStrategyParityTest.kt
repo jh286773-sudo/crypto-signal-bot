@@ -78,7 +78,7 @@ class TradingStrategyParityTest {
         val decisionTime = five.last().time + 300_000L
         val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime - 1L)
         assertEquals("WAIT", result.signal)
-        assert(result.reasons.any { it.contains("هنوز به‌طور قطعی بسته نشده") })
+        assert(result.reasons.any { it.contains("قابل‌همگام‌سازی نیست") })
     }
 
     @Test fun rejectsMalformedOldCandleBeforeRecursiveIndicators() {
@@ -102,5 +102,19 @@ class TradingStrategyParityTest {
         val fifteen = series(60, 900_000L, base15)
         val thirty = series(60, 1_800_000L, base30)
         assertEquals("WAIT", TradingStrategy.evaluate(five, fifteen, thirty).signal)
+    } 
+    @Test fun rejectsHigherTimeframeSeriesNotAlignedToFiveMinuteDecisionBoundary() {
+        val now = System.currentTimeMillis()
+        val fiveStart = (now / 300_000L) * 300_000L - 80 * 300_000L
+        val five = series(80, 300_000L, fiveStart)
+        val decisionTime = five.last().time + 300_000L
+        val expected15 = (decisionTime / 900_000L) * 900_000L - 900_000L
+        val expected30 = (decisionTime / 1_800_000L) * 1_800_000L - 1_800_000L
+        val fifteen = series(80, 900_000L, expected15 - 80 * 900_000L)
+        val thirty = series(80, 1_800_000L, expected30 - 79 * 1_800_000L)
+        val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime + 1_000L)
+        assertEquals("WAIT", result.signal)
+        assert(result.reasons.any { it.contains("همگام نیست") })
     }
+
 }
