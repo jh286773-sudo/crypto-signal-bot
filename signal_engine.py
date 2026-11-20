@@ -608,7 +608,8 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                        "high_volatility_block":blocked})
         return result
     if signal in ("LONG","SHORT"):
-        allowed, expectancy = expectancy_allows(expectancy_stats, signal)
+        allowed, expectancy = (expectancy_allows(expectancy_stats, signal)
+                                if expectancy_stats is not None else (True, {"allowed": True, "reason": "research_warmup"}))
         result["expectancy"] = expectancy
         if not allowed:
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
