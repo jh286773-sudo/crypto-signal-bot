@@ -50,13 +50,14 @@ class ShadowLedger:
     def stats(self, symbol: str, limit: int = 200) -> dict[str, list[float]]:
         with self._db() as db:
             rows = db.execute(
-                "SELECT side, net_r FROM shadow_closed WHERE symbol=? ORDER BY id DESC LIMIT ?",
-                (symbol, int(limit) * 2),
+                "SELECT side, net_r FROM shadow_closed WHERE symbol=? ORDER BY id ASC",
+                (symbol,),
             ).fetchall()
         result = {"LONG": [], "SHORT": []}
-        for side, value in reversed(rows):
-            if side in result and len(result[side]) < limit:
+        for side, value in rows:
+            if side in result:
                 result[side].append(float(value))
+                result[side] = result[side][-max(1, int(limit)):]
         return result
 
     def process(self, symbol: str, bar: dict[str, Any], candidate: dict[str, Any]) -> None:
