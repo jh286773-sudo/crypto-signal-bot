@@ -49,6 +49,10 @@ class ShadowLedgerTests(unittest.TestCase):
         self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["LONG"]), 1)
         self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["SHORT"]), 1)
 
+    def test_shadow_trade_closes_after_72_five_minute_bars(self):
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate())
+        self.ledger.process("BTC-SWAP-USDT", self.candle(300000 + 72 * 300000, 100, 101, 99, 100), {"signal": "NO_SIGNAL"})
+        self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["LONG"]), 1)
     def test_duplicate_candle_does_not_duplicate_entry_or_exit(self):
         bar = self.candle(300000, 100, 101, 99, 100)
         self.ledger.process("BTC-SWAP-USDT", bar, self.candidate())
