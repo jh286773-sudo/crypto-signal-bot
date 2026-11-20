@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - aurum-x-loss-reduction
+      - audit/fix-candle-snapshot-and-dedup
   workflow_dispatch:
     inputs:
       symbol:
