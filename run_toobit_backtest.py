@@ -19,6 +19,8 @@ def parse_args():
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--slippage-bps", type=float, required=True,
                          help="Measured adverse slippage per fill, in basis points")
+    parser.add_argument("--public-vip0-fees", action="store_true",
+                         help="Use published VIP-0 futures taker fee (6 bps) instead of account-specific rates")
     parser.add_argument("--equity", type=float, default=10000.0)
     parser.add_argument("--risk", type=float, default=0.01)
     parser.add_argument("--output", default="toobit_walk_forward_result.json")
@@ -37,13 +39,20 @@ def main():
     start_ms = ((end_ms - args.days * 86_400_000) // DURATION_MS["30m"]) * DURATION_MS["30m"]
 
     # Account-specific open/close taker rates, returned as decimals by Toobit.
-    commission = api.get_account_commission_rate(args.symbol)
+    if args.public_vip0_fees:
+        fee_open_bps = fee_close_bps = 6.0
+        commission = {"source": "published VIP-0 futures taker rate", "openTakerFee": 0.0006,
+                      "closeTakerFee": 0.0006}
+    else:
+        commission = api.get_account_commission_rate(args.symbol)
+        fee_open_bps = commission["openTakerFee"] * 10000
+        fee_close_bps = commission["closeTakerFee"] * 10000
     data = api.get_historical_range(args.symbol, start_ms, end_ms, include_funding=True)
 
     result = run_backtest(
         data,
-        fee_bps_open=commission["openTakerFee"] * 10000,
-        fee_bps_close=commission["closeTakerFee"] * 10000,
+        fee_bps_open=fee_open_bps,
+        fee_bps_close=fee_close_bps,
         slippage_bps=args.slippage_bps,
         initial_equity=args.equity,
         risk_fraction=args.risk,
@@ -54,7 +63,8 @@ def main():
         "start": datetime.fromtimestamp(start_ms / 1000, timezone.utc).isoformat(),
         "end": datetime.fromtimestamp(end_ms / 1000, timezone.utc).isoformat(),
     }
-    result["commission_source"] = "Toobit authenticated USER_DATA commissionRate"
+    result["commission_source"] = ("published Toobit VIP-0 futures taker schedule" if args.public_vip0_fees
+                                   else "Toobit authenticated USER_DATA commissionRate")
     result["commission_rates"] = commission
     result["slippage_source"] = "user-supplied measured adverse slippage per fill"
     result["candle_counts"] = {tf: len(rows) for tf, rows in data.items()}
