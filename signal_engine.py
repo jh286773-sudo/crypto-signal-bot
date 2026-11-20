@@ -420,7 +420,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         e20=_ema(close,20); e50=_ema(close,50); e200=_ema(close,200)
         r=_rsi(close); m=_macd(close); bb=_bollinger(close)
         ad=_adx(c); a=_atr(c)
-        vw=_vwap(c); obv=_obv_trend(c); structure=_market_structure(c)
+        vw=_vwap(c); obv=_obv_trend(c)
         volatility=_volatility_status(c,timeframe,a)
         regime=_adx_regime(ad)
         details={}
@@ -443,7 +443,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
                 "indicators":{
                     "ema":{"20":e20,"50":e50,"200":e200},
                     "rsi":r,"macd":m,"bollinger":bb,"adx_dmi":ad,
-                    "atr":a,"vwap":vw,"obv":obv,"smc":structure}}
+                    "atr":a,"vwap":vw,"obv":obv}}
     except (KeyError,TypeError,ValueError,ZeroDivisionError) as exc:
         return {"valid":False,"reason":f"Invalid candle data: {exc}"}
 
