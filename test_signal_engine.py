@@ -304,7 +304,7 @@ class EngineTests(unittest.TestCase):
 
     def test_individual_indicator_conflicts_allow_one_minor_but_block_core_or_two(self):
         from signal_engine import _no_major_indicator_conflict
-        self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"VWAP":-1}}, "LONG"))
+        self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"LegacyMinor":-1}}, "LONG"))
         self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":-1,"MACD":1,"VWAP":1}}, "LONG"))
         self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"VWAP":-1,"OBV_Trend":-1}}, "LONG"))
         self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":-1,"RSI":-1,"MACD":-1,"VWAP":1}}, "SHORT"))
