@@ -59,6 +59,36 @@ class BacktestTests(unittest.TestCase):
         self.assertEqual(first["exit"],99.0)
         self.assertEqual(first["exit_index"],61)
 
+    def test_rejects_non_chronological_candles(self):
+        data={tf:flat_candles(70) for tf in ("5m","15m","30m")}
+        for rows in data.values():
+            for i,row in enumerate(rows):
+                row["timestamp"]=i*300000
+        data["5m"][10]["timestamp"]=data["5m"][9]["timestamp"]
+        with self.assertRaisesRegex(ValueError,"strictly increasing"):
+            run_backtest(data,holding_bars=1)
+
+    def test_uses_historical_funding_rate_for_long(self):
+        data={tf:flat_candles(64) for tf in ("5m","15m","30m")}
+        data["5m"][60]["funding_rate"]=0.001
+        data["5m"][61]["funding_rate"]=0.002
+        with patch("backtest.analyze_market",return_value={"signal":"LONG"}):
+            result=run_backtest(data,holding_bars=1,fee_bps=0,slippage_bps=0)
+        self.assertEqual(result["trade_count"],1)
+        self.assertEqual(result["trades"][0]["funding_source"],
+                         "historical_candle_funding_rate")
+        self.assertAlmostEqual(result["trades"][0]["funding_cost_bps"],30.0)
+        self.assertEqual(result["funding_mode"],"historical_per_candle")
+
+    def test_positive_funding_is_received_by_short(self):
+        data={tf:flat_candles(64) for tf in ("5m","15m","30m")}
+        data["5m"][60]["funding_rate"]=0.001
+        data["5m"][61]["funding_rate"]=0.002
+        with patch("backtest.analyze_market",return_value={"signal":"SHORT"}):
+            result=run_backtest(data,holding_bars=1,fee_bps=0,slippage_bps=0)
+        self.assertAlmostEqual(result["trades"][0]["funding_cost_bps"],-30.0)
+        self.assertGreater(result["trades"][0]["net_return_pct"],0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
