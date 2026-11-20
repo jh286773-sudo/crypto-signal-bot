@@ -9,11 +9,11 @@ import kotlin.math.roundToInt
 data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L, val takerBuyVolume: Double? = null)
 data class StrategyResult(val signal: String, val score: Int, val entry: Double, val stop: Double, val target1: Double, val target2: Double, val reasons: List<String>, val smc: List<String>, val target3: Double = target2, val riskReward: List<Double> = listOf(1.5, 2.5, 3.5))
 
-/** AURUM X 0.3.0 read-only engine: eight indicator families and 5m/15m/30m consensus. */
+/** AURUM X 0.3.0 read-only engine: selected 10-indicator suite and 5m/15m/30m consensus. */
 object TradingStrategy {
-    private const val MIN_CANDLES = 60
+    private const val MIN_CANDLES = 200
     private val tfWeights = mapOf("5m" to .25, "15m" to .35, "30m" to .40)
-    private val familyWeights = mapOf("trend" to 1.5, "momentum" to 1.3, "strength" to 1.1, "volume" to 1.0, "volatility" to .6, "structure" to 1.4, "divergence" to .8, "orderflow" to .7)
+    private val familyWeights = mapOf("trend" to 1.5, "momentum" to 1.3, "strength" to 1.1, "volume" to 1.0, "volatility" to .8)
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
     private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null, val previousSwingHigh: Double? = null, val previousSwingLow: Double? = null, val retestLong: Boolean = false, val retestShort: Boolean = false, val falseBreakout: Boolean = false, val retestLevel: Double? = null, val entryDistanceAtr: Double? = null, val equalHighLevel: Double? = null, val equalLowLevel: Double? = null)
@@ -251,7 +251,7 @@ object TradingStrategy {
     }
 
     private fun analyze(c:List<MarketCandle>,timeframe:String):Report {
-        if(c.size<MIN_CANDLES)return Report(false,"حداقل ۶۰ کندل لازم است")
+        if(c.size<MIN_CANDLES)return Report(false,"حداقل ۲۰۰ کندل برای EMA200 لازم است")
         // All history feeds recursive indicators, so validate every candle,
         // not only the visible tail; an old NaN can otherwise poison EMA/ATR.
         if(c.any{
@@ -262,10 +262,10 @@ object TradingStrategy {
             (it.takerBuyVolume!=null&&(!it.takerBuyVolume.isFinite()||it.takerBuyVolume<0.0||it.takerBuyVolume>it.volume*1.001))
         }) return Report(false,"داده کندل نامعتبر است")
         val v=c.map{it.close};val price=v.last()
-        val e9=ema(v,9)!!;val e21=ema(v,21)!!;val e50=ema(v,50)!!
-        val s20=sma(v,20);val s50=sma(v,50);val r=rsi(v);val mc=macd(v);val bands=bb(v)
-        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obvTrend(c);val mf=mfi(c)
-        val sm=structure(c);val div=divergence(c)
+        val e20=ema(v,20)!!;val e50=ema(v,50)!!;val e200=ema(v,200)!!
+        val r=rsi(v);val mc=macd(v);val bands=bb(v)
+        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obvTrend(c)
+        val sm=structure(c)
         val regime=when{dx==null->"unknown";dx.value>=25->"trending";dx.value<18->"ranging";else->"transition"}
         val groups=linkedMapOf<String,MutableList<Pair<Double,Double>>>();val notes=mutableListOf<String>();val indicatorVotes=linkedMapOf<String,Int>()
         fun vote(group:String,name:String,value:Int,weight:Double=1.0){
@@ -273,34 +273,24 @@ object TradingStrategy {
             indicatorVotes[name]=value
             if(value!=0)notes.add(name+":"+(if(value>0)"+" else "")+value)
         }
-        vote("trend","EMA",if(e9>e21&&e21>e50)1 else if(e9<e21&&e21<e50)-1 else 0,1.2)
-        vote("trend","SMA",if(s20!=null&&s50!=null&&price>s20&&s20>s50)1 else if(s20!=null&&s50!=null&&price<s20&&s20<s50)-1 else 0)
+        vote("trend","EMA",if(e20>e50&&e50>e200)1 else if(e20<e50&&e50<e200)-1 else 0,1.2)
         vote("trend","Ichimoku",if(ichi!=null&&price>max(ichi.spanA,ichi.spanB)&&ichi.tenkan>ichi.kijun)1 else if(ichi!=null&&price<min(ichi.spanA,ichi.spanB)&&ichi.tenkan<ichi.kijun)-1 else 0,1.2)
         vote("momentum","RSI",if(r!=null&&r>52&&r<70)1 else if(r!=null&&r>30&&r<48)-1 else 0)
         vote("momentum","MACD",mc.third?.let{if(it>0)1 else if(it<0)-1 else 0}?:0,1.2)
         vote("momentum","StochRSI",if(st!=null&&st>55)1 else if(st!=null&&st<45)-1 else 0)
-        vote("strength","ADX_DMI",if(regime=="trending"&&dx!!.plus>dx.minus)1 else if(regime=="trending"&&dx!!.minus>dx.plus)-1 else 0,1.2)
+        // ADX measures strength; DI+/DI- provide direction without an ADX magnitude gate.
+        vote("strength","ADX_DMI",if(dx!=null&&dx.plus>dx.minus)1 else if(dx!=null&&dx.minus>dx.plus)-1 else 0,1.2)
         vote("volume","VWAP",if(vw!=null&&price>vw)1 else if(vw!=null&&price<vw)-1 else 0)
         vote("volume","OBV_Trend",ov)
-        vote("volume","VolumeImpulse",volumeImpulse(c,a),1.1)
-        vote("volume","MFI",if(mf!=null&&mf>50&&mf<80)1 else if(mf!=null&&mf>20&&mf<50)-1 else 0)
         vote("volatility","Bollinger",if(bands!=null&&price>bands.second)1 else if(bands!=null&&price<bands.second)-1 else 0)
         val obTolerance=(a?:price*.001)*.25
         val inBullOb=sm.orderBlockType=="bullish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
         val inBearOb=sm.orderBlockType=="bearish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
         val smcBull=sm.event=="BOS_up"||sm.event=="CHoCH_up"||sm.sweep=="sell_side"||inBullOb
         val smcBear=sm.event=="BOS_down"||sm.event=="CHoCH_down"||sm.sweep=="buy_side"||inBearOb
-        vote("structure","SMC",if(smcBull&&!smcBear)1 else if(smcBear&&!smcBull)-1 else 0,1.3)
-        vote("divergence","Divergence",if(div=="bullish")1 else if(div=="bearish")-1 else 0,1.1)
-        val flowRows=c.filter{it.takerBuyVolume!=null}
-        val flowTotal=flowRows.sumOf{max(it.volume,0.0)}
-        val flowBuy=flowRows.sumOf{max(it.takerBuyVolume?:0.0,0.0)}
-        val flowSell=max(0.0,flowTotal-flowBuy)
-        val takerVote=if(flowTotal>0.0&&flowBuy/flowTotal>=.55)1
-            else if(flowTotal>0.0&&flowSell/flowTotal>=.55)-1 else 0
-        vote("orderflow","TakerFlow",takerVote)
+        // SMC remains an independent entry-structure safeguard, not an extra indicator vote.
         val families=groups.mapValues{(_,items)->val den=items.sumOf{it.second};if(den==0.0)0.0 else items.sumOf{it.first*it.second}/den}
-        val activeWeights=if(regime=="ranging")familyWeights+mapOf("trend" to .8,"structure" to 1.6,"divergence" to 1.2) else familyWeights
+        val activeWeights=familyWeights
         val den=families.keys.sumOf{activeWeights[it]?:0.0}
         val score=if(den==0.0)0.0 else 100*families.entries.sumOf{it.value*(activeWeights[it.key]?:0.0)}/den
         val up=families.values.count{it>0.0};val down=families.values.count{it<0.0}
@@ -318,7 +308,7 @@ object TradingStrategy {
         if(sm.retestLong)smc.add("بازگشت و تثبیت صعودی روی سطح شکست")
         if(sm.retestShort)smc.add("بازگشت و تثبیت نزولی زیر سطح شکست")
         if(sm.orderBlockType!="none")smc.add("Order Block "+sm.orderBlockType)
-        return Report(true,price=price,score=score,bias=bias,atr=a,ema21=e21,families=families,indicatorVotes=indicatorVotes,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
+        return Report(true,price=price,score=score,bias=bias,atr=a,ema21=e20,families=families,indicatorVotes=indicatorVotes,notes=notes,smc=smc,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value,structure=sm)
     }
 
     internal fun entryNotExtended(price:Double,ema21:Double?,atr:Double?,maxDistanceAtr:Double=.80):Boolean {
@@ -327,7 +317,7 @@ object TradingStrategy {
     }
 
     internal fun noMajorIndicatorConflict(votes:Map<String,Int>,direction:Int):Boolean {
-        val core=setOf("EMA","SMA","Ichimoku","RSI","MACD","StochRSI","ADX_DMI")
+        val core=setOf("EMA","Ichimoku","RSI","MACD","StochRSI","ADX_DMI","VWAP","OBV_Trend","Bollinger")
         val opposingCore=core.count{(votes[it]?:0)*direction<0}
         val opposingMinor=votes.count{(it.key !in core)&&it.value*direction<0}
         return opposingCore==0&&opposingMinor<=1
