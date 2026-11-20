@@ -13,6 +13,12 @@ class TradingStrategyParityTest {
             MarketCandle(p,p+0.2,p-0.2,p,100.0,start+i*duration)
         }
 
+    private fun fallingSeries(count:Int,duration:Long,start:Long):List<MarketCandle> =
+        (0 until count).map { i ->
+            val p=100.0-i*0.001
+            MarketCandle(p,p+0.2,p-0.2,p,100.0,start+i*duration)
+        }
+
     @Test fun directIndicatorRulesHaveNoWeightsOrScoreThresholds() {
         assertEquals("bullish",TradingStrategy.indicatorBias(mapOf(
             "EMA" to 1,"RSI" to 1,"MACD" to 1,"ADX_DMI" to 1,
@@ -101,7 +107,7 @@ class TradingStrategyParityTest {
         val rows1m=series(220,duration1m,decision-219*duration1m)
         val rows3m=series(220,duration3m,decision-219*duration3m-duration3m)
         val rows15m=series(220,duration15m,decision-219*duration15m-duration15m)
-        val rows4h=series(220,duration4h,decision-219*duration4h)
+        val rows4h=series(220,duration4h,decision-220*duration4h)
         // The 1m series ends later than the other timeframes; all are independently fresh.
         val asOf=decision+duration1m
         val result=TradingStrategy.evaluate(mapOf(
@@ -115,6 +121,22 @@ class TradingStrategyParityTest {
         assertTrue(result.reasons.any{it.startsWith("3m:")})
         assertTrue(result.reasons.any{it.startsWith("15m:")})
         assertTrue(result.reasons.any{it.startsWith("4h:")})
+    }
+
+    @Test fun conflictingSelectedTimeframesDoNotEmitAnySignal() {
+        val oneMinute=60_000L
+        val threeMinutes=180_000L
+        val decision=(System.currentTimeMillis()/threeMinutes)*threeMinutes
+        val rising=series(220,oneMinute,decision-220*oneMinute)
+        val falling=fallingSeries(220,threeMinutes,decision-220*threeMinutes)
+        val result=TradingStrategy.evaluate(mapOf(
+            "1m" to rising,
+            "3m" to falling
+        ),decision+1L)
+        assertEquals("WAIT",result.signal)
+        assertTrue(result.reasons.any{it.startsWith("1m: LONG")})
+        assertTrue(result.reasons.any{it.startsWith("3m: SHORT")})
+        assertTrue(result.reasons.first().contains("همه تایم‌فریم‌های انتخاب‌شده"))
     }
 
     @Test fun timeframeMustUseItsOwnLatestClosedCandle() {
