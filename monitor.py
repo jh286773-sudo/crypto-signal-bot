@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import requests
 
@@ -28,18 +29,20 @@ def notify(title, message, priority="default"):
     return True
 
 
-def _analysis_reasons(result):
-    parts = []
-    for tf, report in result.get("timeframes", {}).items():
-        bias = report.get("bias", "unknown")
-        votes = report.get("indicator_votes", {})
-        active = [f"{name}:{'+' if value > 0 else ''}{value}"
-                  for name, value in votes.items() if value]
-        detail = f"{tf}: {bias}"
-        if active:
-            detail += " (" + ", ".join(active) + ")"
-        parts.append(detail)
-    return "؛ ".join(parts) or result.get("reason", "No directional confirmation")
+def format_signal_alert(price, signal):
+    if signal not in ("LONG", "SHORT"):
+        raise ValueError("Only LONG and SHORT can be sent as entry alerts.")
+    value = float(price)
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("Entry price must be finite and positive.")
+    if value >= 100:
+        formatted = f"{value:.2f}"
+    elif value >= 1:
+        formatted = f"{value:.4f}"
+    else:
+        formatted = f"{value:.7f}"
+    return f"{formatted} ورود {signal}"
+
 
 
 def main():
@@ -71,25 +74,8 @@ def main():
                 logging.warning("%s: missing valid entry price; alert skipped", symbol)
                 continue
 
-            atr = float(entry_report.get("indicators", {}).get("atr") or 0.0)
-            risk = max(atr * 1.5, float(price) * 0.001)
-            stop = float(price) - risk if signal == "LONG" else float(price) + risk
-            sign = 1 if signal == "LONG" else -1
-            targets = [float(price) + sign * risk, float(price) + sign * 2 * risk]
-
-            signal_fa = "خرید (لانگ)" if signal == "LONG" else "فروش (شورت)"
-            reasons = _analysis_reasons(result)
-            message = (
-                f"جفت‌ارز: {symbol}\n"
-                f"نوع سیگنال: {signal_fa}\n"
-                f"قیمت ورود پیشنهادی: {float(price):.8g}\n"
-                f"حد ضرر محاسباتی: {stop:.8g}\n"
-                f"حد سود ۱: {targets[0]:.8g}\n"
-                f"حد سود ۲: {targets[1]:.8g}\n"
-                f"دلایل: {reasons}\n"
-                "فقط سیگنال است؛ هیچ سفارشی ثبت نشده است."
-            )
-            if notify(f"سیگنال {signal_fa} | {symbol}", message, "high"):
+            message = format_signal_alert(price, signal)
+            if notify(symbol, message, "high"):
                 alerts += 1
         except Exception:
             logging.exception("Analysis failed for %s; continuing with next contract", symbol)
