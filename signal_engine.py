@@ -10,6 +10,7 @@ from math import isfinite, sqrt
 from expectancy import expectancy_allows
 
 REQUIRED_TFS = ("5m", "15m", "30m")
+MIN_INDICATOR_CANDLES = 200
 
 
 def _series(c, key):
@@ -396,8 +397,8 @@ def _volatility_status(c, timeframe="5m", current_atr=None):
 
 
 def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str, Any]:
-    if len(candles)<60:
-        return {"valid":False,"reason":"At least 60 candles required for stable indicator calculation"}
+    if len(candles)<MIN_INDICATOR_CANDLES:
+        return {"valid":False,"reason":"At least 200 candles required for EMA200 and stable indicator calculation"}
     try:
         # Every candle participates in recursive indicators; validating only
         # the last 60 bars can let an older NaN/invalid OHLC value poison the
@@ -417,12 +418,10 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
                         (not isfinite(taker_buy) or taker_buy < 0 or taker_buy > volume * 1.001))):
                 raise ValueError(f"invalid OHLCV/order-flow values at candle index {index}")
         c=candles; close=_series(c,"close"); price=close[-1]
-        e9=_ema(close,9); e21=_ema(close,21); e50=_ema(close,50)
-        s20=_sma(close,20); s50=_sma(close,50)
+        e20=_ema(close,20); e50=_ema(close,50); e200=_ema(close,200)
         r=_rsi(close); m=_macd(close); bb=_bollinger(close)
         st=_stoch_rsi(close); ad=_adx(c); ichi=_ichimoku(c); a=_atr(c)
-        vw=_vwap(c); obv=_obv_trend(c); mfi=_mfi(c); structure=_market_structure(c)
-        div=_divergence(c); strength=_taker_strength(c)
+        vw=_vwap(c); obv=_obv_trend(c); structure=_market_structure(c)
         volatility=_volatility_status(c,timeframe,a)
         regime=_adx_regime(ad)
         groups={}; details={}
@@ -432,26 +431,20 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
             groups.setdefault(group,[]).append((value,weight,name))
             details[name]=value
 
-        vote("trend","EMA",1 if e9>e21>e50 else -1 if e9<e21<e50 else 0,1.2)
-        vote("trend","SMA",1 if s20 and s50 and price>s20>s50 else -1 if s20 and s50 and price<s20<s50 else 0)
+        vote("trend","EMA",1 if e20>e50>e200 else -1 if e20<e50<e200 else 0,1.2)
         vote("trend","Ichimoku",1 if ichi and price>max(ichi["span_a"],ichi["span_b"]) and ichi["tenkan"]>ichi["kijun"] else -1 if ichi and price<min(ichi["span_a"],ichi["span_b"]) and ichi["tenkan"]<ichi["kijun"] else 0,1.2)
-        vote("momentum","RSI",1 if r is not None and 52<r<70 else -1 if r is not None and 30<r<48 else 0)
+        vote("momentum","RSI",1 if r is not None and r>52 and r<70 else -1 if r is not None and r>30 and r<48 else 0)
         vote("momentum","MACD",1 if m["histogram"] is not None and m["histogram"]>0 else -1 if m["histogram"] is not None and m["histogram"]<0 else 0,1.2)
         vote("momentum","StochRSI",1 if st is not None and st>55 else -1 if st is not None and st<45 else 0)
-        # ADX >=25 confirms a directional regime; below 18 is treated as range.
-        # A weak/ranging ADX must not masquerade as a strong trend vote.
-        vote("strength","ADX_DMI",1 if regime["state"]=="trending" and regime["direction"]=="bullish" else -1 if regime["state"]=="trending" and regime["direction"]=="bearish" else 0,1.2)
+        # ADX measures strength; DI+/DI- supply direction. ADX magnitude is not a direction gate.
+        vote("strength","ADX_DMI",1 if ad and ad.get("plus_di",0)>ad.get("minus_di",0) else -1 if ad and ad.get("minus_di",0)>ad.get("plus_di",0) else 0,1.2)
         vote("volume","VWAP",1 if vw and price>vw else -1 if vw and price<vw else 0)
         vote("volume","OBV_Trend",obv)
-        vote("volume","VolumeImpulse",_volume_impulse(c,a),1.1)
-        vote("volume","MFI",1 if mfi is not None and 50<mfi<80 else -1 if mfi is not None and 20<mfi<50 else 0)
         vote("volatility","Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
         ob_tolerance = (a or price*0.001) * 0.25
         smc_bull = structure.get("structure_event") in ("BOS_up","CHoCH_up") or structure.get("liquidity_sweep")=="sell_side" or any(x.get("type")=="bullish" and x["low"]-ob_tolerance <= price <= x["high"]+ob_tolerance for x in structure.get("order_blocks",[]))
         smc_bear = structure.get("structure_event") in ("BOS_down","CHoCH_down") or structure.get("liquidity_sweep")=="buy_side" or any(x.get("type")=="bearish" and x["low"]-ob_tolerance <= price <= x["high"]+ob_tolerance for x in structure.get("order_blocks",[]))
-        vote("structure","SMC",1 if smc_bull and not smc_bear else -1 if smc_bear and not smc_bull else 0,1.3)
-        vote("divergence","Divergence",1 if div=="bullish" else -1 if div=="bearish" else 0,1.1)
-        vote("orderflow","TakerFlow",1 if strength.get("available") and strength["buy_percent"]>=55 else -1 if strength.get("available") and strength["sell_percent"]>=55 else 0)
+         # SMC remains an independent entry-structure safeguard, not an extra indicator vote.
 
         # Each indicator family contributes once; correlated indicators do not
         # overwhelm the decision simply because a family contains more indicators.
@@ -459,11 +452,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         for family,items in groups.items():
             denom=sum(w for _,w,_ in items)
             family_scores[family]=sum(v*w for v,w,_ in items)/denom if denom else 0
-        family_weights={"trend":1.5,"momentum":1.3,"strength":1.1,"volume":1.0,
-                        "volatility":0.6,"structure":1.4,"divergence":0.8,"orderflow":0.7}
-        # In ranges, reduce trend-following dominance and favor structure/reversal evidence.
-        if regime["state"] == "ranging":
-            family_weights.update({"trend":0.8,"structure":1.6,"divergence":1.2})
+        family_weights={"trend":1.5,"momentum":1.3,"strength":1.1,"volume":1.0,"volatility":0.8}
         total_w=sum(family_weights[k] for k in family_scores)
         score=100*sum(family_scores[k]*family_weights[k] for k in family_scores)/total_w
         bias=_family_bias(family_scores)
@@ -471,12 +460,11 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
                 "family_scores":{k:round(v,3) for k,v in family_scores.items()},
                 "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
                 "market_regime":regime,
-                "ema21":e21,
+                "ema21":e20,
                 "indicators":{
-                    "ema":{"9":e9,"21":e21,"50":e50},"sma":{"20":s20,"50":s50},
+                    "ema":{"20":e20,"50":e50,"200":e200},
                     "rsi":r,"macd":m,"bollinger":bb,"stoch_rsi":st,"adx_dmi":ad,
-                    "ichimoku":ichi,"atr":a,"vwap":vw,"obv":obv,"mfi":mfi,
-                    "divergence":div,"smc":structure,"taker_flow":strength}}
+                    "ichimoku":ichi,"atr":a,"vwap":vw,"obv":obv,"smc":structure}}
     except (KeyError,TypeError,ValueError,ZeroDivisionError) as exc:
         return {"valid":False,"reason":f"Invalid candle data: {exc}"}
 
@@ -517,7 +505,7 @@ def _no_major_indicator_conflict(report: Dict[str, Any], side: str) -> bool:
     if not isinstance(votes, dict) or not votes:
         return True  # Compatibility for synthetic/legacy reports; live analysis always supplies votes.
     direction = 1 if side == "LONG" else -1
-    core = {"EMA", "SMA", "Ichimoku", "RSI", "MACD", "StochRSI", "ADX_DMI"}
+    core = {"EMA", "Ichimoku", "RSI", "MACD", "StochRSI", "ADX_DMI", "VWAP", "OBV_Trend", "Bollinger"}
     opposing_core = sum(1 for name in core if int(votes.get(name, 0)) * direction < 0)
     opposing_minor = sum(1 for name, value in votes.items()
                          if name not in core and int(value) * direction < 0)
@@ -602,12 +590,17 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                        "rejection_reasons":["high_volatility:"+tf for tf in blocked],
                        "high_volatility_block":blocked})
         return result
-    non_trending = [tf for tf in REQUIRED_TFS if (reports[tf].get("market_regime") or {}).get("state") != "trending"]
-    if non_trending:
+    # ADX is a market-strength context filter, not a three-timeframe hard gate.
+    # Only suppress entries when BOTH higher timeframes independently show a range.
+    higher_timeframe_range = [
+        tf for tf in ("15m", "30m")
+        if (reports[tf].get("market_regime") or {}).get("state") == "ranging"
+    ]
+    if len(higher_timeframe_range) == 2:
         result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                       "reason":"Market regime is ranging, transitional or unconfirmed: "+", ".join(non_trending),
-                       "rejection_reasons":["adx_regime_not_trending:"+tf for tf in non_trending],
-                       "blocked_market_regime":non_trending})
+                       "reason":"Both higher timeframes indicate a low-trend-strength market",
+                       "rejection_reasons":["adx_higher_timeframes_both_ranging"],
+                       "blocked_market_regime":higher_timeframe_range})
         return result
     if signal in ("LONG","SHORT"):
         side_history = expectancy_stats.get(signal, []) if isinstance(expectancy_stats, dict) else []
