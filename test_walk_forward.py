@@ -107,7 +107,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_tp2_locks_tp1_for_remaining_position(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         # Entry is 100; targets are 101.5R, 102.5R, 103.5R for a 1.0 risk.
-        data["5m"][360].update({"low":100.5,"high":103.0})
+        data["5m"][360].update({"low":101.1,"high":103.0})
         data["5m"][361].update({"open":100.6,"low":100.5,"high":101.0,"close":100.8})
         signal=make_signal(100.0,[101.5,102.5,103.5])
         with patch("walk_forward.analyze_market",return_value=signal):
