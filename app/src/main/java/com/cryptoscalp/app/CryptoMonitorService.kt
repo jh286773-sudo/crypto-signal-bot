@@ -122,6 +122,9 @@ class CryptoMonitorService : Service() {
         val raw=prefs.getString("open_setup_$symbol",null)?:return
         val s=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("open_setup_$symbol").apply();return}
         val long=s.optString("side")=="LONG"
+        // Migrate setups saved by older app versions, which tracked only TP1/TP2.
+        if(!s.has("tp3"))s.put("tp3",s.optDouble("tp2"))
+        if(!s.has("tp2Done"))s.put("tp2Done",false)
         val stop=if(long)price<=s.optDouble("stop") else price>=s.optDouble("stop")
         if(stop){closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(price)}");return}
         val tp1=if(long)price>=s.optDouble("tp1") else price<=s.optDouble("tp1")
