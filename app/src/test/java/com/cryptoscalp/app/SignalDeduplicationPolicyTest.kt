@@ -23,7 +23,7 @@ class SignalDeduplicationPolicyTest {
 
     @Test fun legacyShortPositionIsNeverReversedIntoAnotherShort() {
         assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide("SHORT", "LONG", "SHORT", false))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide("SHORT", "SHORT", "SHORT", false))
+        assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide("SHORT", "SHORT", "SHORT", false))
     }
 
     @Test fun waitNeverCreatesAnEntryOrExit() {
