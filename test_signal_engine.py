@@ -307,7 +307,7 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"LegacyMinor":-1}}, "LONG"))
         self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":-1,"MACD":1,"VWAP":1}}, "LONG"))
         self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"VWAP":-1,"OBV_Trend":-1}}, "LONG"))
-        self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":-1,"RSI":-1,"MACD":-1,"VWAP":1}}, "SHORT"))
+        self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":-1,"RSI":-1,"MACD":-1,"VWAP":1}}, "SHORT"))
 
     def test_indicator_family_conflict_blocks_directional_signal(self):
         conflicted = {"valid": True, "score": 60.0, "bias": "bullish",
