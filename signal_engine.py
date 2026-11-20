@@ -221,7 +221,6 @@ def _market_structure(c, lookback=60):
                  else "none")
         sweep = "sell_side" if low < pl and close > pl else "buy_side" if high > ph and close < ph else "none"
         tolerance = max((atr_value or close*0.001)*0.25, close*0.0005)
-        tolerance = max((atr_value or close*0.001)*0.25, close*0.0005)
         prior_break_up = any(float(x["close"]) > ph for x in prior[-6:])
         prior_break_down = any(float(x["close"]) < pl for x in prior[-6:])
         retest_long = prior_break_up and low <= ph+tolerance and close > ph and close > float(last["open"])
