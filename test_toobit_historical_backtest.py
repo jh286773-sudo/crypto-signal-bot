@@ -7,9 +7,9 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
     def test_kline_range_pages_without_duplicate_candles(self):
         api = ToobitAPI()
         first = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-                 for i in range(1000)]
+                 for i in range(2, 1002)]
         second = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-                  for i in range(999, 1002)]
+                  for i in range(2)]
         with patch.object(api, "_get", side_effect=[first, second]) as get:
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 1002 * 300000)
         self.assertEqual(len(rows), 1002)
@@ -33,8 +33,8 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         api = ToobitAPI()
         def row(i):
             return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-        first = [row(i) for i in range(500)]
-        second = [row(i) for i in range(500, 1002)]
+        first = [row(i) for i in range(500, 1002)]
+        second = [row(i) for i in range(500)]
         with patch.object(api, "_get", side_effect=[first, second]) as get:
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 1002 * 300000)
         self.assertEqual(len(rows), 1002)
