@@ -25,7 +25,8 @@ class ToobitAPI:
         """Read-only USER_DATA request. Never logs or persists API credentials."""
         if not self.api_key or not self.api_secret:
             raise RuntimeError("TOOBIT_API_KEY and TOOBIT_API_SECRET are required for account fee lookup")
-        ordered = list(params.items()) + [("timestamp", int(time.time() * 1000)), ("recvWindow", 5000)]
+        server_ms = int(self.server_time()["serverTime"])
+        ordered = list(params.items()) + [("timestamp", server_ms), ("recvWindow", 5000)]
         query = urlencode(ordered)
         signature = hmac.new(self.api_secret.encode(), query.encode(), hashlib.sha256).hexdigest()
         response = self.session.get(
