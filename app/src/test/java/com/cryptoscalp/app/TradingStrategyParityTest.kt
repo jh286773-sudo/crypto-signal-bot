@@ -53,6 +53,18 @@ class TradingStrategyParityTest {
         assertEquals(number("expected_score").toInt(), result.score)
     }
 
+    @Test fun rejectsMalformedOldCandleBeforeRecursiveIndicators() {
+        val now = System.currentTimeMillis()
+        val base5 = (now / 300_000L) * 300_000L - 80 * 300_000L
+        val base15 = (now / 900_000L) * 900_000L - 80 * 900_000L
+        val base30 = (now / 1_800_000L) * 1_800_000L - 80 * 1_800_000L
+        val five = series(80, 300_000L, base5).toMutableList()
+        five[0] = five[0].copy(high = five[0].open - 1.0)
+        val fifteen = series(80, 900_000L, base15)
+        val thirty = series(80, 1_800_000L, base30)
+        assertEquals("WAIT", TradingStrategy.evaluate(five, fifteen, thirty).signal)
+    }
+
     @Test fun returnsWaitWhenHigherTimeframeHistoryIsInsufficientAfterAsOfTrim() {
         val now = System.currentTimeMillis()
         val base5 = (now / 300_000L) * 300_000L - 80 * 300_000L
