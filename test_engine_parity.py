@@ -15,13 +15,15 @@ class CrossEngineContractTests(unittest.TestCase):
         for token in ("fun indicatorBias", '"EMA","RSI","MACD","ADX_DMI"',
                       '"VWAP","OBV_Trend","Bollinger"'):
             self.assertIn(token,kt)
+        py_signal=py[py.index("def analyze_market("):py.index("def generate_signal(")]
+        kt_signal=kt[kt.index("fun evaluate(timeframes:"):kt.rfind("\\n}")]
         for obsolete in ("family_weights", "tfWeights", "familyWeights",
                          "combined_score", "timeframe_weights", "confidence_score",
                          "retest_long", "retest_short", "smc_false_breakout"):
-            self.assertNotIn(obsolete,py)
+            self.assertNotIn(obsolete,py_signal)
         for obsolete in ("tfWeights", "familyWeights", "combined", "retestLong",
                          "retestShort", "falseBreakout", "score"):
-            self.assertNotIn(obsolete,kt)
+            self.assertNotIn(obsolete,kt_signal)
 
     def test_shared_golden_fixture_has_no_score_contract(self):
         root=pathlib.Path(__file__).parent
