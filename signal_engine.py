@@ -115,13 +115,34 @@ def _vwap(c,n=20):
     return sum(((float(x["high"])+float(x["low"])+float(x["close"]))/3)*float(x.get("volume",0)) for x in w)/vol
 
 
-def _obv(c):
-    if len(c)<2: return None
-    out=0.0
-    for i in range(1,len(c)):
-        a=float(c[i]["close"]); b=float(c[i-1]["close"]); vol=float(c[i].get("volume",0))
-        out += vol if a>b else -vol if a<b else 0
-    return out
+def _obv_trend(c, lookback=8):
+    """Use recent OBV direction, not the arbitrary sign of its cumulative origin."""
+    if len(c) < lookback + 1:
+        return 0
+    delta = 0.0
+    for i in range(len(c) - lookback, len(c)):
+        current = float(c[i]["close"])
+        previous = float(c[i-1]["close"])
+        volume = max(0.0, float(c[i].get("volume", 0)))
+        delta += volume if current > previous else -volume if current < previous else 0.0
+    return 1 if delta > 0 else -1 if delta < 0 else 0
+
+
+def _volume_impulse(c, current_atr):
+    """Directional high-participation candle; not a substitute for exchange order flow."""
+    if len(c) < 26 or current_atr is None or current_atr <= 0:
+        return 0
+    recent = sum(max(0.0, float(x.get("volume", 0))) for x in c[-5:]) / 5
+    baseline = sum(max(0.0, float(x.get("volume", 0))) for x in c[-25:-5]) / 20
+    if baseline <= 0 or recent / baseline < 1.3:
+        return 0
+    last = c[-1]
+    o, h, low, close = (float(last[k]) for k in ("open", "high", "low", "close"))
+    span = h - low
+    if span <= 0 or abs(close - o) < current_atr * 0.35:
+        return 0
+    location = (close - low) / span
+    return 1 if close > o and location >= 0.70 else -1 if close < o and location <= 0.30 else 0
 
 
 def _mfi(c,n=14):
@@ -190,7 +211,14 @@ def _market_structure(c, lookback=60):
         pl = min(float(x["low"]) for x in prior)
         last = c[-1]
         close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
-        event = "BOS_up" if close > ph else "BOS_down" if close < pl else "none"
+        atr_value = _atr(w)
+        span = max(high - low, 1e-12)
+        body = abs(close - float(last["open"]))
+        close_location = (close - low) / span
+        displacement = atr_value is not None and body >= atr_value * 0.35
+        event = ("BOS_up" if close > ph and displacement and close_location >= 0.70
+                 else "BOS_down" if close < pl and displacement and close_location <= 0.30
+                 else "none")
         sweep = "sell_side" if low < pl and close > pl else "buy_side" if high > ph and close < ph else "none"
         return {"previous_swing_high":ph,"previous_swing_low":pl,
                 "structure_event":event,"market_structure":"range",
@@ -205,16 +233,20 @@ def _market_structure(c, lookback=60):
     up_trend = len(prior_highs) and len(prior_lows) and last_high > prior_highs[-1] and last_low > prior_lows[-1]
     down_trend = len(prior_highs) and len(prior_lows) and last_high < prior_highs[-1] and last_low < prior_lows[-1]
     event = "none"
-    if close > last_high:
+    atr = _atr(w)
+    candle_range = max(high - low, 1e-12)
+    body = abs(close - float(last["open"]))
+    close_location = (close - low) / candle_range
+    displacement = atr is not None and body >= atr * 0.35
+    if close > last_high and displacement and close_location >= 0.70:
         event = "CHoCH_up" if down_trend else "BOS_up"
-    elif close < last_low:
+    elif close < last_low and displacement and close_location <= 0.30:
         event = "CHoCH_down" if up_trend else "BOS_down"
     sweep = "none"
     if low < last_low and close > last_low:
         sweep = "sell_side"
     elif high > last_high and close < last_high:
         sweep = "buy_side"
-    atr = _atr(w)
     tolerance = max((atr or close * 0.001) * 0.15, close * 0.0005)
     equal_highs = [v for _, v in swing_highs[-5:] if abs(v-last_high) <= tolerance]
     equal_lows = [v for _, v in swing_lows[-5:] if abs(v-last_low) <= tolerance]
@@ -302,7 +334,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         s20=_sma(close,20); s50=_sma(close,50)
         r=_rsi(close); m=_macd(close); bb=_bollinger(close)
         st=_stoch_rsi(close); ad=_adx(c); ichi=_ichimoku(c); a=_atr(c)
-        vw=_vwap(c); obv=_obv(c); mfi=_mfi(c); structure=_market_structure(c)
+        vw=_vwap(c); obv=_obv_trend(c); mfi=_mfi(c); structure=_market_structure(c)
         div=_divergence(c); strength=_taker_strength(c)
         volatility=_volatility_status(c,timeframe,a)
         regime=_adx_regime(ad)
@@ -323,7 +355,8 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         # A weak/ranging ADX must not masquerade as a strong trend vote.
         vote("strength","ADX_DMI",1 if regime["state"]=="trending" and regime["direction"]=="bullish" else -1 if regime["state"]=="trending" and regime["direction"]=="bearish" else 0,1.2)
         vote("volume","VWAP",1 if vw and price>vw else -1 if vw and price<vw else 0)
-        vote("volume","OBV",1 if obv is not None and obv>0 else -1 if obv is not None and obv<0 else 0)
+        vote("volume","OBV_Trend",obv)
+        vote("volume","VolumeImpulse",_volume_impulse(c,a),1.1)
         vote("volume","MFI",1 if mfi is not None and 50<mfi<80 else -1 if mfi is not None and 20<mfi<50 else 0)
         vote("volatility","Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
         ob_tolerance = (a or price*0.001) * 0.25

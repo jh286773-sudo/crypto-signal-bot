@@ -24,6 +24,21 @@ class BacktestTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_backtest(data)
 
+    def test_backtest_accounts_for_slippage_and_funding_and_reports_drawdown(self):
+        data={tf:flat_candles(80) for tf in ("5m","15m","30m")}
+        with patch("backtest.analyze_market", return_value={"signal":"LONG"}):
+            result=run_backtest(data,holding_bars=2,fee_bps=0,
+                                slippage_bps=2,funding_bps_per_8h=8)
+        self.assertGreater(result["round_trip_slippage_bps"],0)
+        self.assertGreater(result["estimated_funding_bps"],0)
+        self.assertIn("max_drawdown_pct",result)
+        self.assertIn("expectancy_pct",result)
+
+    def test_backtest_rejects_negative_execution_costs(self):
+        data={tf:flat_candles(70) for tf in ("5m","15m","30m")}
+        with self.assertRaises(ValueError):
+            run_backtest(data,slippage_bps=-1)
+
     def test_rejects_negative_fees(self):
         data={tf:flat_candles() for tf in ("5m","15m","30m")}
         with self.assertRaises(ValueError):

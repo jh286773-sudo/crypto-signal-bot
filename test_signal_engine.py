@@ -79,6 +79,25 @@ class EngineTests(unittest.TestCase):
             result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
         self.assertEqual(result["signal"], "NO_SIGNAL")
 
+    def test_obv_uses_recent_direction_not_cumulative_sign(self):
+        from signal_engine import _obv_trend
+        rows = candles(20)
+        for i, row in enumerate(rows):
+            row["close"] = 100.0 + (i if i < 12 else 12 - (i - 12))
+            row["volume"] = 100.0
+        self.assertEqual(_obv_trend(rows), -1)
+
+    def test_volume_impulse_requires_expansion_and_directional_close(self):
+        from signal_engine import _volume_impulse
+        rows = candles(30)
+        for row in rows:
+            row["volume"] = 100.0
+        for row in rows[-5:]:
+            row["volume"] = 200.0
+        rows[-1].update({"open": 100.0, "low": 99.8, "high": 101.0,
+                         "close": 100.9})
+        self.assertEqual(_volume_impulse(rows, 0.5), 1)
+
     def test_divergence_requires_enough_closed_candles(self):
         from signal_engine import _divergence
         self.assertEqual(_divergence(candles(60)), "none")

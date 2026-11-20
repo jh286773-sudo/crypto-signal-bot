@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - strategy-quality-upgrades
+      - strategy-quality-upgrades-v2
 
 jobs:
   check:

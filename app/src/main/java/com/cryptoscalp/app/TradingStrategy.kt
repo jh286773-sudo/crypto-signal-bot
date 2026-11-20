@@ -91,11 +91,24 @@ object TradingStrategy {
         if(vol<=0)return null
         return w.sumOf{((it.high+it.low+it.close)/3)*max(it.volume,0.0)}/vol
     }
-    private fun obv(c:List<MarketCandle>):Double? {
-        if(c.size<2)return null
-        var x=0.0
-        for(i in 1 until c.size)x+=when{c[i].close>c[i-1].close->c[i].volume;c[i].close<c[i-1].close->-c[i].volume;else->0.0}
-        return x
+    private fun obvTrend(c:List<MarketCandle>,lookback:Int=8):Int {
+        if(c.size<lookback+1)return 0
+        var delta=0.0
+        for(i in c.size-lookback until c.size) {
+            val volume=max(c[i].volume,0.0)
+            delta+=when { c[i].close>c[i-1].close->volume; c[i].close<c[i-1].close->-volume; else->0.0 }
+        }
+        return if(delta>0)1 else if(delta<0)-1 else 0
+    }
+    private fun volumeImpulse(c:List<MarketCandle>,currentAtr:Double?):Int {
+        if(c.size<26||currentAtr==null||currentAtr<=0.0)return 0
+        val recent=c.takeLast(5).map{max(it.volume,0.0)}.average()
+        val baseline=c.dropLast(5).takeLast(20).map{max(it.volume,0.0)}.average()
+        if(baseline<=0.0||recent/baseline<1.3)return 0
+        val last=c.last();val span=last.high-last.low
+        if(span<=0.0||abs(last.close-last.open)<currentAtr*.35)return 0
+        val location=(last.close-last.low)/span
+        return if(last.close>last.open&&location>=.70)1 else if(last.close<last.open&&location<=.30)-1 else 0
     }
     private fun mfi(c:List<MarketCandle>,n:Int=14):Double? {
         if(c.size<n+1)return null
@@ -139,14 +152,32 @@ object TradingStrategy {
             val prior=c.takeLast(21).dropLast(1)
             if(prior.size<10)return Structure("none","none")
             val ph=prior.maxOf{it.high};val pl=prior.minOf{it.low};val last=c.last()
-            val event=if(last.close>ph)"BOS_up" else if(last.close<pl)"BOS_down" else "none"
+            val range=max(last.high-last.low,1e-12)
+            val body=abs(last.close-last.open)
+            val closeLocation=(last.close-last.low)/range
+            val structureAtr=atr(w)?:0.0
+            val displacement=structureAtr>0.0&&body>=structureAtr*.35
+            val event=when {
+                last.close>ph&&displacement&&closeLocation>=.70->"BOS_up"
+                last.close<pl&&displacement&&closeLocation<=.30->"BOS_down"
+                else->"none"
+            }
             val sweep=if(last.low<pl&&last.close>pl)"sell_side" else if(last.high>ph&&last.close<ph)"buy_side" else "none"
             return Structure(event,sweep)
         }
         val last=w.last();val lastHigh=sh.last().second;val lastLow=sl.last().second
         val up=sh.size>=2&&sl.size>=2&&lastHigh>sh[sh.size-2].second&&lastLow>sl[sl.size-2].second
         val down=sh.size>=2&&sl.size>=2&&lastHigh<sh[sh.size-2].second&&lastLow<sl[sl.size-2].second
-        val event=when{last.close>lastHigh->if(down)"CHoCH_up" else "BOS_up";last.close<lastLow->if(up)"CHoCH_down" else "BOS_down";else->"none"}
+        val candleRange=max(last.high-last.low,1e-12)
+        val body=abs(last.close-last.open)
+        val closeLocation=(last.close-last.low)/candleRange
+        val structureAtr=atr(w)?:0.0
+        val displacement=structureAtr>0.0&&body>=structureAtr*.35
+        val event=when {
+            last.close>lastHigh&&displacement&&closeLocation>=.70->if(down)"CHoCH_up" else "BOS_up"
+            last.close<lastLow&&displacement&&closeLocation<=.30->if(up)"CHoCH_down" else "BOS_down"
+            else->"none"
+        }
         val sweep=when{last.low<lastLow&&last.close>lastLow->"sell_side";last.high>lastHigh&&last.close<lastHigh->"buy_side";else->"none"}
         val a=atr(w)?:last.close*.001;val tol=max(a*.15,last.close*.0005)
         val equalHighs=sh.takeLast(5).count{abs(it.second-lastHigh)<=tol}>=2
@@ -189,7 +220,7 @@ object TradingStrategy {
         val v=c.map{it.close};val price=v.last()
         val e9=ema(v,9)!!;val e21=ema(v,21)!!;val e50=ema(v,50)!!
         val s20=sma(v,20);val s50=sma(v,50);val r=rsi(v);val mc=macd(v);val bands=bb(v)
-        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obv(c);val mf=mfi(c)
+        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obvTrend(c);val mf=mfi(c)
         val sm=structure(c);val div=divergence(c)
         val regime=when{dx==null->"unknown";dx.value>=25->"trending";dx.value<18->"ranging";else->"transition"}
         val groups=linkedMapOf<String,MutableList<Pair<Double,Double>>>();val notes=mutableListOf<String>()
@@ -205,7 +236,8 @@ object TradingStrategy {
         vote("momentum","StochRSI",if(st!=null&&st>55)1 else if(st!=null&&st<45)-1 else 0)
         vote("strength","ADX_DMI",if(regime=="trending"&&dx!!.plus>dx.minus)1 else if(regime=="trending"&&dx!!.minus>dx.plus)-1 else 0,1.2)
         vote("volume","VWAP",if(vw!=null&&price>vw)1 else if(vw!=null&&price<vw)-1 else 0)
-        vote("volume","OBV",if(ov!=null&&ov>0)1 else if(ov!=null&&ov<0)-1 else 0)
+        vote("volume","OBV_Trend",ov)
+        vote("volume","VolumeImpulse",volumeImpulse(c,a),1.1)
         vote("volume","MFI",if(mf!=null&&mf>50&&mf<80)1 else if(mf!=null&&mf>20&&mf<50)-1 else 0)
         vote("volatility","Bollinger",if(bands!=null&&price>bands.second)1 else if(bands!=null&&price<bands.second)-1 else 0)
         val obTolerance=(a?:price*.001)*.25
