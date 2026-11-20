@@ -431,8 +431,9 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
             if value not in (-1,0,1): return
             details[name]=value
 
-        vote("EMA",1 if e20>e50>e200 else -1 if e20<e50<e200 else 0)
-        vote("RSI",1 if r is not None and 52<r<70 else -1 if r is not None and 30<r<48 else 0)
+        vote("EMA",1 if e20>e50 and price>e200 else -1 if e20<e50 and price<e200 else 0)
+        # RSI midpoint momentum; extremes do not veto an otherwise valid trend.
+        vote("RSI",1 if r is not None and r>=50 else -1 if r is not None and r<50 else 0)
         vote("MACD",1 if m["histogram"] is not None and m["histogram"]>0 else -1 if m["histogram"] is not None and m["histogram"]<0 else 0)
         # DI+/DI- directly identify directional pressure.
         vote("ADX_DMI",1 if ad and ad.get("plus_di",0)>ad.get("minus_di",0) else -1 if ad and ad.get("minus_di",0)>ad.get("plus_di",0) else 0)
@@ -440,7 +441,8 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         vote("OBV_Trend",obv)
         vote("Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
         bias=_indicator_bias(details)
-        return {"valid":True,"close":price,"bias":bias,
+        smc=_market_structure(c)
+        return {"valid":True,"close":price,"bias":bias,"smc":smc,
                 "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
                 "market_regime":regime,"ema21":e20,
                 "indicators":{
@@ -478,16 +480,38 @@ def _levels(side, entry, atr, structure=None):
     return {"stop_loss": stop, "take_profits": targets, "risk_reward": [1.5, 2.5, 3.5]}
 
 def _indicator_bias(indicator_directions: Dict[str, int]) -> str:
-    """Use explicit indicator conditions, never weights, sums, or numeric scores."""
-    core_long = all(indicator_directions.get(name) == 1 for name in ("EMA", "RSI", "MACD", "ADX_DMI"))
-    core_short = all(indicator_directions.get(name) == -1 for name in ("EMA", "RSI", "MACD", "ADX_DMI"))
-    support_long = all(indicator_directions.get(name, 0) >= 0 for name in ("VWAP", "OBV_Trend", "Bollinger"))
-    support_short = all(indicator_directions.get(name, 0) <= 0 for name in ("VWAP", "OBV_Trend", "Bollinger"))
-    if core_long and support_long:
+    """Direct logical conditions only: EMA and DMI align; RSI OR MACD confirms."""
+    long_momentum = (indicator_directions.get("RSI") == 1 or
+                     indicator_directions.get("MACD") == 1)
+    short_momentum = (indicator_directions.get("RSI") == -1 or
+                      indicator_directions.get("MACD") == -1)
+    if (indicator_directions.get("EMA") == 1 and
+            indicator_directions.get("ADX_DMI") == 1 and long_momentum):
         return "bullish"
-    if core_short and support_short:
+    if (indicator_directions.get("EMA") == -1 and
+            indicator_directions.get("ADX_DMI") == -1 and short_momentum):
         return "bearish"
     return "neutral"
+
+
+def _smc_confirms(structure: Dict[str, Any], side: str) -> bool:
+    """Independent SMC entry filter; no weights or scores are involved."""
+    if not structure or structure.get("false_breakout", False):
+        return False
+    blocks = structure.get("order_blocks") or []
+    if side == "LONG":
+        if blocks and blocks[0].get("type") == "bearish":
+            return False
+        return (structure.get("structure_event") in ("BOS_up", "CHoCH_up")
+                or structure.get("retest_long", False)
+                or structure.get("liquidity_sweep") == "sell_side")
+    if side == "SHORT":
+        if blocks and blocks[0].get("type") == "bullish":
+            return False
+        return (structure.get("structure_event") in ("BOS_down", "CHoCH_down")
+                or structure.get("retest_short", False)
+                or structure.get("liquidity_sweep") == "buy_side")
+    return False
 
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
@@ -532,19 +556,33 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
     reports={tf:analyze_timeframe(analysis_timeframes.get(tf,[]),tf) for tf in selected_tfs}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
-        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Insufficient/invalid candles: "+", ".join(invalid),
-                "timeframes":reports,"trade_enabled":False}
+        detail = "; ".join(
+            f"{tf}: {reports[tf].get('reason', 'invalid candle data')}" for tf in invalid)
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                "reason":"Insufficient/invalid candles: "+detail,
+                "timeframes":reports,"diagnostics":{tf: reports[tf].get("reason", "invalid candle data") for tf in invalid},
+                "trade_enabled":False}
     all_bullish=all(reports[tf]["bias"]=="bullish" for tf in selected_tfs)
     all_bearish=all(reports[tf]["bias"]=="bearish" for tf in selected_tfs)
     side="LONG" if all_bullish else "SHORT" if all_bearish else None
+    diagnostics = {
+        tf: {"bias": reports[tf]["bias"],
+             "indicator_directions": reports[tf].get("indicator_votes", {}),
+             "explanation": ("EMA and DMI must align, with RSI or MACD confirming; supporting indicators are informational only.")}
+        for tf in selected_tfs
+    }
     if side is None:
+        detail = "; ".join(
+            f"{tf}: {reports[tf]['bias']} | " +
+            ", ".join(f"{name}={value:+d}" for name, value in reports[tf].get("indicator_votes", {}).items())
+            for tf in selected_tfs)
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                "reason":"Indicator analysis must agree across every selected timeframe; disagreement or neutral analysis means no signal.",
-                "timeframes":reports,"trade_enabled":False,
+                "reason":"All selected timeframes must independently agree; neutral or conflicting directions mean no signal. "+detail,
+                "timeframes":reports,"diagnostics":diagnostics,"trade_enabled":False,
                 "rejection_reasons":["selected_timeframe_unanimity_required"]}
     entry_tf=min(selected_tfs,key=lambda tf:SUPPORTED_TFS.index(tf))
     return {"signal":side,"status":side,"timeframes":reports,"entry":reports[entry_tf]["close"],
-            "entry_timeframe":entry_tf,"entry_stage":"ENTRY",
+            "entry_timeframe":entry_tf,"entry_stage":"ENTRY","diagnostics":diagnostics,
             "reason":("Independent indicator analysis confirms "+side+" on "+entry_tf) if len(selected_tfs)==1
                      else ("All selected timeframes independently confirm "+side),
             "trade_enabled":False,"note":"Read-only technical analysis; no exchange orders are placed."}

@@ -1,6 +1,6 @@
 import unittest, math
 from unittest.mock import patch
-from signal_engine import analyze_timeframe, analyze_market, _indicator_bias, _adx_regime, _confirmed_pivots, _market_structure
+from signal_engine import analyze_timeframe, analyze_market, _indicator_bias, _adx_regime, _confirmed_pivots, _market_structure, _smc_confirms
 
 
 def candles(n=220, trend=1.0):
@@ -20,6 +20,21 @@ def report(bias, close=100.0):
 
 
 class EngineTests(unittest.TestCase):
+    def test_smc_is_an_independent_directional_entry_filter(self):
+        base = {"false_breakout": False, "order_blocks": [],
+                "structure_event": "BOS_up", "retest_long": False,
+                "retest_short": False, "liquidity_sweep": "none"}
+        self.assertTrue(_smc_confirms(base, "LONG"))
+        self.assertFalse(_smc_confirms(base, "SHORT"))
+        false_break = dict(base, false_breakout=True)
+        self.assertFalse(_smc_confirms(false_break, "LONG"))
+        opposing_ob = dict(base, order_blocks=[{"type": "bearish"}])
+        self.assertFalse(_smc_confirms(opposing_ob, "LONG"))
+        sweep = dict(base, structure_event="none", liquidity_sweep="sell_side")
+        self.assertTrue(_smc_confirms(sweep, "LONG"))
+        retest = dict(base, structure_event="none", retest_short=True)
+        self.assertFalse(_smc_confirms(retest, "LONG"))
+
     def test_optimized_macd_and_stoch_rsi_match_reference_calculation(self):
         from signal_engine import _macd, _stoch_rsi, _ema, _rsi
         values=[100.0+math.sin(i/4.0)*2.0+i*0.03 for i in range(120)]
@@ -37,6 +52,7 @@ class EngineTests(unittest.TestCase):
     def test_indicator_report_contains_technical_indicators_without_score_fields(self):
         result=analyze_timeframe(candles())
         self.assertTrue(result["valid"])
+        self.assertEqual(result["bias"],"bullish")  # RSI above 70 does not veto an aligned uptrend.
         for key in ("ema","rsi","macd","bollinger","adx_dmi","atr","vwap","obv"):
             self.assertIn(key,result["indicators"])
         self.assertEqual(set(result["indicator_votes"]),
@@ -44,14 +60,12 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn("score",result)
         self.assertNotIn("family_scores",result)
 
-    def test_direct_indicator_rule_requires_core_alignment_and_no_supporting_opposition(self):
-        self.assertEqual(_indicator_bias({"EMA":1,"RSI":1,"MACD":1,"ADX_DMI":1,
-                                          "VWAP":1,"OBV_Trend":0,"Bollinger":1}),"bullish")
-        self.assertEqual(_indicator_bias({"EMA":-1,"RSI":-1,"MACD":-1,"ADX_DMI":-1,
-                                          "VWAP":-1,"OBV_Trend":0,"Bollinger":-1}),"bearish")
-        self.assertEqual(_indicator_bias({"EMA":1,"RSI":1,"MACD":1,"ADX_DMI":1,
-                                          "VWAP":-1,"OBV_Trend":0,"Bollinger":1}),"neutral")
-        self.assertEqual(_indicator_bias({"EMA":1,"RSI":0,"MACD":1,"ADX_DMI":1}),"neutral")
+    def test_relaxed_direct_rules_need_trend_dmi_and_one_momentum_confirmation(self):
+        self.assertEqual(_indicator_bias({"EMA":1,"RSI":1,"MACD":0,"ADX_DMI":1,
+                                          "VWAP":-1,"OBV_Trend":-1,"Bollinger":-1}),"bullish")
+        self.assertEqual(_indicator_bias({"EMA":-1,"RSI":0,"MACD":-1,"ADX_DMI":-1}),"bearish")
+        self.assertEqual(_indicator_bias({"EMA":1,"RSI":0,"MACD":0,"ADX_DMI":1}),"neutral")
+        self.assertEqual(_indicator_bias({"EMA":1,"RSI":1,"MACD":-1,"ADX_DMI":1}),"bullish")
 
     def test_one_selected_timeframe_generates_an_independent_signal(self):
         with patch("signal_engine.analyze_timeframe",return_value=report("bullish")):
@@ -68,6 +82,8 @@ class EngineTests(unittest.TestCase):
         with patch("signal_engine.analyze_timeframe",side_effect=[report("bullish"),report("bearish")]):
             conflict=analyze_market({"5m":candles(),"15m":candles()})
         self.assertEqual(conflict["signal"],"NO_SIGNAL")
+        self.assertIn("5m:",conflict["reason"])
+        self.assertIn("diagnostics",conflict)
 
     def test_two_or_four_selected_timeframes_are_supported(self):
         with patch("signal_engine.analyze_timeframe",return_value=report("bearish")):

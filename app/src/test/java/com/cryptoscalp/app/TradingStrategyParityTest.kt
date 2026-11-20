@@ -20,9 +20,13 @@ class TradingStrategyParityTest {
         assertEquals("bearish",TradingStrategy.indicatorBias(mapOf(
             "EMA" to -1,"RSI" to -1,"MACD" to -1,"ADX_DMI" to -1,
             "VWAP" to -1,"OBV_Trend" to 0,"Bollinger" to -1)))
-        assertEquals("neutral",TradingStrategy.indicatorBias(mapOf(
+        assertEquals("bullish",TradingStrategy.indicatorBias(mapOf(
             "EMA" to 1,"RSI" to 1,"MACD" to 1,"ADX_DMI" to 1,
-            "VWAP" to -1,"OBV_Trend" to 0,"Bollinger" to 1)))
+            "VWAP" to -1,"OBV_Trend" to -1,"Bollinger" to -1)))
+        assertEquals("bearish",TradingStrategy.indicatorBias(mapOf(
+            "EMA" to -1,"RSI" to 0,"MACD" to -1,"ADX_DMI" to -1)))
+        assertEquals("neutral",TradingStrategy.indicatorBias(mapOf(
+            "EMA" to 1,"RSI" to 0,"MACD" to 0,"ADX_DMI" to 1)))
     }
 
     @Test fun oneSelectedTimeframeIsAnalyzedWithoutRequiringOtherTimeframes() {
@@ -31,8 +35,8 @@ class TradingStrategyParityTest {
         val start=(now/duration)*duration-219*duration
         val rows=series(220,duration,start)
         val result=TradingStrategy.evaluate(mapOf("1m" to rows),rows.last().time+duration+1_000L)
-        assertEquals("WAIT",result.signal) // monotonic fixture has an overbought RSI, so no direction
-        assertTrue(result.reasons.any{it.contains("تحلیل اندیکاتورها")})
+        assertEquals("LONG",result.signal) // RSI above 50 confirms the rising trend even when overbought
+        assertTrue(result.reasons.any{it.startsWith("1m:")})
         assertFalse(result.reasons.any{it.contains("5m")||it.contains("15m")||it.contains("30m")})
     }
 

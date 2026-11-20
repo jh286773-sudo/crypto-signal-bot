@@ -85,7 +85,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     peak = equity
     max_dd = 0.0
     trades = []
-    closed_net_r = {"LONG": [], "SHORT": []}
     loss_streak_indices = []
     entry_gap_skips = 0
     invalid_level_skips = 0
@@ -113,12 +112,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             i += 1
             continue
         # Match the live Android strategy input horizon and bound indicator cost.
-        # The first 30 completed walk-forward trades are a shadow-training window;
-        # only subsequent entries are gated by their strictly prior closed outcomes.
-        history_ready = sum(len(values) for values in closed_net_r.values()) >= 30
-        signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()},
-                                expectancy_stats={side: list(values) for side, values in closed_net_r.items()} if history_ready else {},
-                                research_warmup=True)
+        # Every decision uses the same score-free directional engine as live monitoring.
+        signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()})
         decision_diagnostics["evaluated"] += 1
         side = signal.get("signal")
         if side not in ("LONG", "SHORT"):
@@ -135,15 +130,12 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                     "decision_time": decision_time,
                     "reasons": [str(reason) for reason in reasons],
                     "reason": signal.get("reason"),
-                    "combined_score": signal.get("combined_score"),
                     "timeframes": {
                         tf: {
                             "valid": report.get("valid"),
-                            "score": report.get("score"),
                             "bias": report.get("bias"),
                             "market_regime": report.get("market_regime"),
                             "high_volatility": report.get("high_volatility"),
-                            "family_scores": report.get("family_scores"),
                             "indicator_votes": report.get("indicator_votes"),
                             "smc": (report.get("indicators") or {}).get("smc"),
                         }
@@ -156,14 +148,10 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         # Preserve exact as-of indicator evidence for later loss diagnosis.
         # Research telemetry only; it does not alter the signal decision.
         signal_snapshot = {
-            "combined_score": signal.get("combined_score"),
-            "confidence_score": signal.get("confidence_score"),
             "entry_stage": signal.get("entry_stage"),
             "timeframes": {
                 tf: {
-                    "score": report.get("score"),
                     "bias": report.get("bias"),
-                    "family_scores": report.get("family_scores"),
                     "market_regime": report.get("market_regime"),
                     "indicator_votes": report.get("indicator_votes"),
                     "volatility_filter": report.get("volatility_filter"),
@@ -364,8 +352,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         equity += net_pnl
         peak = max(peak, equity)
         max_dd = max(max_dd, (peak-equity)/peak if peak > 0 else 0.0)
-        # Only this now-closed trade may enter the history for subsequent decisions.
-        closed_net_r[side].append(net_pnl / risk_cash if risk_cash > 0 else 0.0)
         trades.append({
             "side": side, "signal_time": decision_time, "entry_time": five[entry_index][0],
             "signal_snapshot": signal_snapshot,
@@ -382,7 +368,6 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             "funding_mode": funding_mode, "net_pnl": net_pnl,
             "net_return_pct": net_pnl/start_equity*100 if start_equity else 0.0,
             "equity_after": equity,
-            "expectancy_warmup": not history_ready,
         })
         i = max(exit_index+1, i+1)
     returns = [t["net_return_pct"] for t in trades]

@@ -36,6 +36,21 @@ import java.util.Collections
 class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
+    private lateinit var diagnostics: TextView
+    private val diagnosticsHandler = Handler(Looper.getMainLooper())
+    private val diagnosticsRefresh = object:Runnable { override fun run() {
+        if (::diagnostics.isInitialized) {
+            val prefs=getSharedPreferences("crypto_monitor",Context.MODE_PRIVATE)
+            val liveStatus=prefs.getString("latest_monitor_status",null)
+            if (::status.isInitialized && !liveStatus.isNullOrBlank()) {
+                status.text=liveStatus.substringBefore("\n")
+            }
+            val message=prefs.getString("latest_signal_diagnostic",null)
+            diagnostics.text=message?.let { "آخرین عیب‌یابی سیگنال:\n"+it }
+                ?: "جزئیات تحلیل پس از اولین دریافت کندل‌ها نمایش داده می‌شود."
+            diagnosticsHandler.postDelayed(this,10_000L)
+        }
+    } }
     private lateinit var coinPickerButton: Button
     private lateinit var timeframePickerButton: Button
     private val selectedTimeframes = linkedSetOf("5m", "15m", "30m")
@@ -90,7 +105,19 @@ class MainActivity : Activity() {
     private val panel = Color.rgb(22, 23, 27)
     private val muted = Color.rgb(166, 160, 145)
 
+    override fun onResume() {
+        super.onResume()
+        diagnosticsHandler.removeCallbacks(diagnosticsRefresh)
+        diagnosticsHandler.post(diagnosticsRefresh)
+    }
+
+    override fun onPause() {
+        diagnosticsHandler.removeCallbacks(diagnosticsRefresh)
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        diagnosticsHandler.removeCallbacks(diagnosticsRefresh)
         logoExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -197,6 +224,11 @@ class MainActivity : Activity() {
             setShadowLayer(dp(5).toFloat(), 0f, dp(1).toFloat(), Color.rgb(174, 128, 36))
         }
         hero.addView(status)
+        diagnostics = text("جزئیات تحلیل پس از بسته‌شدن کندل بعدی نمایش داده می‌شود.", 10, goldLight).apply {
+            setPadding(0, dp(8), 0, 0)
+            maxLines = 8
+        }
+        hero.addView(diagnostics)
         root.addView(hero, marginParams(bottom = 15))
 
         // Market intelligence card: quote, chart and timeframe controls remain prominent.

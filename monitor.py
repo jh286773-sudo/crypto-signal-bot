@@ -4,7 +4,6 @@ import requests
 
 from toobit_api import ToobitAPI
 from signal_engine import analyze_market
-from shadow_trading import ShadowLedger
 
 MAJOR_BASE_ASSETS = ("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK", "AVAX")
 MAX_SYMBOLS = min(10, max(1, int(os.getenv("MAX_SYMBOLS", "10"))))
@@ -30,75 +29,62 @@ def notify(title, message, priority="default"):
 
 def _analysis_reasons(result):
     parts = []
-    for tf in ("5m", "15m", "30m"):
-        report = result.get("timeframes", {}).get(tf, {})
-        if not report:
-            continue
-        parts.append(f"{tf}: bias={report.get('bias', 'unknown')}, score={report.get('score', 'n/a')}")
-        families = report.get("family_scores", {})
-        if families:
-            parts.append("families=" + ", ".join(f"{k}:{v}" for k, v in families.items()))
+    for tf, report in result.get("timeframes", {}).items():
+        bias = report.get("bias", "unknown")
         votes = report.get("indicator_votes", {})
-        active = [f"{k}:{'+' if v > 0 else ''}{v}" for k, v in votes.items() if v]
+        active = [f"{name}:{'+' if value > 0 else ''}{value}"
+                  for name, value in votes.items() if value]
+        detail = f"{tf}: {bias}"
         if active:
-            parts.append("votes=" + ", ".join(active))
-    return "؛ ".join(parts) or result.get("reason", "اجماع شاخص‌ها")
+            detail += " (" + ", ".join(active) + ")"
+        parts.append(detail)
+    return "؛ ".join(parts) or result.get("reason", "No directional confirmation")
 
 
 def main():
     api = ToobitAPI()
-    shadow = ShadowLedger()
     symbols = api.get_futures_symbols(limit=MAX_SYMBOLS, preferred_bases=MAJOR_BASE_ASSETS)
-    logging.info("Scanning %d supported major-coin USDT perpetual contracts: %s", len(symbols), ", ".join(symbols))
+    logging.info("Scanning %d supported major-coin USDT perpetual contracts: %s",
+                 len(symbols), ", ".join(symbols))
 
     checked = 0
     alerts = 0
     for symbol in symbols:
         try:
             candles = api.get_multi_timeframe(symbol)
-            # Candidate analysis is isolated from alerts and feeds only the persistent shadow ledger.
-            candidate = analyze_market(candles, expectancy_stats={}, research_warmup=True)
-            shadow.process(symbol, candles["5m"][-1], candidate)
-            # Live alerts remain fail-closed until this symbol AND direction prove positive net expectancy.
-            result = analyze_market(candles, expectancy_stats=shadow.stats(symbol))
+            # The same no-score, selected-timeframe unanimous engine is used for
+            # every Python monitor cycle. No expectancy/score gate is applied.
+            result = analyze_market(candles)
             signal = result.get("signal", "NO_SIGNAL")
             reports = result.get("timeframes", {})
-            five = reports.get("5m", {})
-            price = result.get("entry") or five.get("close")
+            entry_tf = result.get("entry_timeframe") or next(iter(reports), None)
+            entry_report = reports.get(entry_tf, {}) if entry_tf else {}
+            price = result.get("entry") or entry_report.get("close")
             checked += 1
 
-            logging.info(
-                "%s | price=%s | signal=%s | combined_score=%s | confidence=%s",
-                symbol, price, signal, result.get("combined_score"), result.get("confidence_score"),
-            )
+            logging.info("%s | price=%s | signal=%s | reason=%s",
+                         symbol, price, signal, result.get("reason", ""))
             if signal not in ("LONG", "SHORT"):
                 continue
-            if not price or float(price) <= 0:
-                logging.warning("%s: missing price; alert skipped", symbol)
+            if price is None or float(price) <= 0:
+                logging.warning("%s: missing valid entry price; alert skipped", symbol)
                 continue
 
-            indicators = five.get("indicators", {})
-            atr = float(indicators.get("atr") or 0)
+            atr = float(entry_report.get("indicators", {}).get("atr") or 0.0)
             risk = max(atr * 1.5, float(price) * 0.001)
-            stop = result.get("stop_loss")
-            targets = result.get("take_profits") or []
-            if stop is None:
-                stop = float(price) - risk if signal == "LONG" else float(price) + risk
-            if len(targets) < 2:
-                sign = 1 if signal == "LONG" else -1
-                targets = [float(price) + sign * risk, float(price) + sign * 2 * risk]
+            stop = float(price) - risk if signal == "LONG" else float(price) + risk
+            sign = 1 if signal == "LONG" else -1
+            targets = [float(price) + sign * risk, float(price) + sign * 2 * risk]
 
             signal_fa = "خرید (لانگ)" if signal == "LONG" else "فروش (شورت)"
-            score = result.get("confidence_score", result.get("combined_score", "نامشخص"))
             reasons = _analysis_reasons(result)
             message = (
                 f"جفت‌ارز: {symbol}\n"
                 f"نوع سیگنال: {signal_fa}\n"
                 f"قیمت ورود پیشنهادی: {float(price):.8g}\n"
-                f"حد ضرر: {float(stop):.8g}\n"
-                f"حد سود ۱: {float(targets[0]):.8g}\n"
-                f"حد سود ۲: {float(targets[1]):.8g}\n"
-                f"امتیاز اطمینان مدل: {score}\n"
+                f"حد ضرر محاسباتی: {stop:.8g}\n"
+                f"حد سود ۱: {targets[0]:.8g}\n"
+                f"حد سود ۲: {targets[1]:.8g}\n"
                 f"دلایل: {reasons}\n"
                 "فقط سیگنال است؛ هیچ سفارشی ثبت نشده است."
             )

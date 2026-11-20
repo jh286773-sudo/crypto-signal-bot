@@ -14,7 +14,7 @@ object TradingStrategy {
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
     private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null, val previousSwingHigh: Double? = null, val previousSwingLow: Double? = null, val retestLong: Boolean = false, val retestShort: Boolean = false, val falseBreakout: Boolean = false, val retestLevel: Double? = null, val entryDistanceAtr: Double? = null, val equalHighLevel: Double? = null, val equalLowLevel: Double? = null)
-    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val ema21: Double? = null, val indicatorVotes: Map<String,Int> = emptyMap(), val notes: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null)
+    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val bias: String = "neutral", val structure: Structure = Structure("none","none"), val atr: Double? = null, val ema21: Double? = null, val indicatorVotes: Map<String,Int> = emptyMap(), val notes: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null)
 
     private fun ema(v: List<Double>, n: Int): Double? {
         if (v.size < n) return null
@@ -268,8 +268,10 @@ object TradingStrategy {
             indicatorVotes[name]=value
             if(value!=0)notes.add(name+":"+(if(value>0)"+" else "")+value)
         }
-        vote("EMA",if(e20>e50&&e50>e200)1 else if(e20<e50&&e50<e200)-1 else 0)
-        vote("RSI",if(r!=null&&r>52&&r<70)1 else if(r!=null&&r>30&&r<48)-1 else 0)
+        // Trend direction uses EMA20/50 alignment with price relative to EMA200.
+        vote("EMA",if(e20>e50&&price>e200)1 else if(e20<e50&&price<e200)-1 else 0)
+        // RSI midpoint momentum; overbought/oversold extremes do not veto a trend.
+        vote("RSI",if(r!=null&&r>=50.0)1 else if(r!=null&&r<50.0)-1 else 0)
         vote("MACD",mc.third?.let{if(it>0)1 else if(it<0)-1 else 0}?:0)
         // DI+/DI- directly identify directional pressure.
         vote("ADX_DMI",if(dx!=null&&dx.plus>dx.minus)1 else if(dx!=null&&dx.minus>dx.plus)-1 else 0)
@@ -277,15 +279,42 @@ object TradingStrategy {
         vote("OBV_Trend",ov)
         vote("Bollinger",if(bands!=null&&price>bands.second)1 else if(bands!=null&&price<bands.second)-1 else 0)
         val bias=indicatorBias(indicatorVotes)
-        return Report(true,price=price,bias=bias,atr=a,ema21=e20,indicatorVotes=indicatorVotes,notes=notes,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value)
+        val smc=structure(c)
+        return Report(true,price=price,bias=bias,structure=smc,atr=a,ema21=e20,indicatorVotes=indicatorVotes,notes=notes,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value)
     }
 
     internal fun indicatorBias(votes:Map<String,Int>):String {
-        val coreLong=listOf("EMA","RSI","MACD","ADX_DMI").all{votes[it]==1}
-        val coreShort=listOf("EMA","RSI","MACD","ADX_DMI").all{votes[it]==-1}
-        val supportLong=listOf("VWAP","OBV_Trend","Bollinger").all{(votes[it]?:0)>=0}
-        val supportShort=listOf("VWAP","OBV_Trend","Bollinger").all{(votes[it]?:0)<=0}
-        return when{coreLong&&supportLong->"bullish";coreShort&&supportShort->"bearish";else->"neutral"}
+        // No score or vote count: trend and directional pressure must agree;
+        // either RSI midpoint or MACD momentum must confirm.
+        val longMomentum = votes["RSI"]==1 || votes["MACD"]==1
+        val shortMomentum = votes["RSI"]==-1 || votes["MACD"]==-1
+        return when {
+            votes["EMA"]==1 && votes["ADX_DMI"]==1 && longMomentum -> "bullish"
+            votes["EMA"]==-1 && votes["ADX_DMI"]==-1 && shortMomentum -> "bearish"
+            else -> "neutral"
+        }
+    }
+
+    private fun voteLabel(value:Int?):String = when(value) {
+        1 -> "مثبت"; -1 -> "منفی"; else -> "خنثی"
+    }
+    private fun timeframeDiagnostic(tf:String,report:Report):String {
+        val v=report.indicatorVotes
+        val direction=if(report.bias=="bullish") "LONG" else if(report.bias=="bearish") "SHORT" else "بدون تأیید"
+        return tf+": "+direction+" | EMA "+voteLabel(v["EMA"])+", RSI "+voteLabel(v["RSI"])+", MACD "+voteLabel(v["MACD"])+", DMI "+voteLabel(v["ADX_DMI"])+
+            " | پشتیبان‌ها: VWAP "+voteLabel(v["VWAP"])+", OBV "+voteLabel(v["OBV_Trend"])+", Bollinger "+voteLabel(v["Bollinger"])
+    }
+
+    /** SMC is a separate structural entry confirmation, never a weighted vote. */
+    private fun smcConfirms(s:Structure, direction:String):Boolean {
+        if(s.falseBreakout)return false
+        return when(direction) {
+            "LONG" -> (s.orderBlockType!="bearish") &&
+                (s.event=="BOS_up" || s.event=="CHoCH_up" || s.retestLong || s.sweep=="sell_side")
+            "SHORT" -> (s.orderBlockType!="bullish") &&
+                (s.event=="BOS_down" || s.event=="CHoCH_down" || s.retestShort || s.sweep=="buy_side")
+            else -> false
+        }
     }
 
     /** Each selected timeframe is analyzed independently; multi-timeframe signals require unanimity. */
@@ -304,9 +333,11 @@ object TradingStrategy {
         if(missing.isNotEmpty()) return StrategyResult("WAIT",0.0,
             listOf("داده تایم‌فریم انتخاب‌شده موجود نیست: "+missing.joinToString("، ")))
         val raw = selected.associateWith { timeframes[it].orEmpty() }
-        if(selected.any { !validSeries(raw.getValue(it),durations.getValue(it)) }) {
+        val invalidSeries=selected.filter { !validSeries(raw.getValue(it),durations.getValue(it)) }
+        if(invalidSeries.isNotEmpty()) {
             return StrategyResult("WAIT",raw[selected.first()]?.lastOrNull()?.close?:0.0,
-                listOf("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود"))
+                listOf("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود")+
+                    invalidSeries.map { "$it: حداقل ۲۰۰ کندل مرتب و پیوسته با زمان‌بندی معتبر لازم است" })
         }
         val latestCommonClose = selected.minOf { tf -> raw.getValue(tf).last().time + durations.getValue(tf) }
         val freshnessWindow = selected.maxOf { durations.getValue(it) }
@@ -330,13 +361,17 @@ object TradingStrategy {
         val invalid=reports.filterValues{!it.valid}.keys
         val price=reports[selected.first()]?.price?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",price,
-            listOf("اطلاعات کافی/معتبر نیست: "+invalid.joinToString("، ")+"؛ سیگنالی صادر نمی‌شود"))
+            listOf("اطلاعات کافی/معتبر نیست؛ سیگنالی صادر نمی‌شود")+
+                invalid.map { tf -> "$tf: "+(reports[tf]?.reason?: "داده نامعتبر") })
         val allBullish=reports.values.all{it.bias=="bullish"}
         val allBearish=reports.values.all{it.bias=="bearish"}
         val direction=when { allBullish->"LONG"; allBearish->"SHORT"; else->"WAIT" }
+        val diagnostics=reports.map { (tf,report) -> timeframeDiagnostic(tf,report) }
         if(direction=="WAIT") return StrategyResult("WAIT",price,
-            listOf("تحلیل اندیکاتورها در تمام تایم‌فریم‌های انتخاب‌شده باید هم‌جهت باشد؛ اختلاف یا حالت خنثی، سیگنال را متوقف می‌کند"))
-        val reasons=mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "))
+            listOf("شرط‌های جهت‌دار در همه تایم‌فریم‌های انتخاب‌شده تأیید نشد؛ EMA و DMI باید هم‌جهت باشند و RSI یا MACD یکی از آن‌ها را تأیید کند.",
+                "اندیکاتورهای پشتیبان فقط برای اطلاع نمایش داده می‌شوند و به‌تنهایی سیگنال را مسدود نمی‌کنند.")+diagnostics)
+        val reasons=(mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "),
+            "قانون ورود بدون وزن‌دهی: EMA و DMI هم‌جهت، به‌علاوه تأیید RSI یا MACD.")+diagnostics).toMutableList()
         if(selected.size==1) reasons.add("سیگنال مستقل تایم‌فریم ${selected.first()}")
         else reasons.add("اجماع کامل "+selected.size+" تایم‌فریم انتخاب‌شده")
         reasons.add(if(direction=="LONG")"تمام تایم‌فریم‌ها LONG؛ سیگنال لانگ" else "تمام تایم‌فریم‌ها SHORT؛ سیگنال شورت")

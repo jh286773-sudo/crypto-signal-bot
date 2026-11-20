@@ -65,6 +65,7 @@ class CryptoMonitorService : Service() {
             var failed=0
             var analyzed=0
             var firstError=""
+            var lastDiagnostic=""
             val now=System.currentTimeMillis()
             for(symbol in list)try{
                 // Keep a tracked position open until an opposite confirmed signal arrives.
@@ -90,13 +91,20 @@ class CryptoMonitorService : Service() {
                 val key="last_analysis_candle_${symbol}_$selectionKey"
                 val previousCandleTime=prefs.getLong(key,-1L)
                 if(previousCandleTime<0L){
-                    // First launch establishes a baseline instead of issuing a delayed historical signal.
+                    // Establish a baseline without sending a delayed historical alert,
+                    // but still analyze once so the user immediately sees per-timeframe diagnostics.
+                    val baseline=TradingStrategy.evaluate(candleMap,marketAsOfMs)
+                    recordSuccessfulAnalysis()
+                    analyzed++
+                    val candleCounts=selectedTimeframes.joinToString("، ") { tf -> "$tf=${candleMap.getValue(tf).size}" }
+                    lastDiagnostic=symbol+" • تحلیل اولیه انجام شد (بدون اعلان تاریخی) • کندل‌ها: "+candleCounts+" • "+baseline.reasons.joinToString(" ؛ ")
                     prefs.edit().putLong(key,latestClosedCandleTime).apply()
                 } else if(latestClosedCandleTime>previousCandleTime){
-                    val candidate=TradingStrategy.evaluate(candleMap,marketAsOfMs)
-                    closeShadowOnReversal(symbol,candidate.signal,candidate.entry)
-                    if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
                     val r=TradingStrategy.evaluate(candleMap,marketAsOfMs)
+                    recordSuccessfulAnalysis()
+                    lastDiagnostic=symbol+" • تحلیل کندل جدید • تایم‌فریم‌ها: "+selectedTimeframes.joinToString("، ")+" • "+r.reasons.joinToString(" ؛ ")
+                    closeShadowOnReversal(symbol,r.signal,r.entry)
+                    if(isDirectionalSignal(r.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,r,latestClosedCandleTime)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
@@ -123,18 +131,33 @@ class CryptoMonitorService : Service() {
                     prefs.edit().putString("last_signal_$symbol",r.signal)
                         .putLong(key,latestClosedCandleTime).apply()
                     analyzed++
+                } else {
+                    lastDiagnostic=symbol+" • داده‌های تایم‌فریم‌های "+selectedTimeframes.joinToString("، ")+" دریافت شد؛ منتظر بسته‌شدن کندل مشترک جدید هستیم. آخرین مرز مشترک: "+latestClosedCandleTime
                 }
                 ok++
             }catch(e:Exception){
                 failed++
-                if(firstError.isBlank()) firstError="$symbol: ${e.message ?: e.javaClass.simpleName}"
+                val errorText="$symbol: ${e.message ?: e.javaClass.simpleName}"
+                if(firstError.isBlank()) firstError=errorText
+                lastDiagnostic="خطای دریافت/تحلیل $errorText"
             }
             scanning=false
             handler.post{
+                val totalAnalyses=prefs.getInt("analysis_count_total",0)
+                val lastAnalysisAt=prefs.getLong("last_successful_analysis_at",0L)
                 val detail=if(failed>0) " • خطا $failed: $firstError" else ""
-                updateStatus("توبیت • پایش $ok از ${list.size} نماد • تحلیل جدید: $analyzed • پایش قیمت هر ۶۰ ثانیه$detail")
+                val waiting=if(analyzed==0 && failed==0) " • هنوز کندل بسته‌شده مشترک جدید نرسیده" else ""
+                val lastAt=if(lastAnalysisAt>0L) " • آخرین تحلیل: $lastAnalysisAt" else ""
+                val statusLine="توبیت • پایش $ok از ${list.size} نماد • تحلیل موفق این چرخه: $analyzed • کل تحلیل‌ها: $totalAnalyses • پایش هر ۶۰ ثانیه$detail$waiting$lastAt"
+                if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
+                updateStatus(statusLine+(if(lastDiagnostic.isNotBlank()) "\n"+lastDiagnostic else ""))
             }
         }
+    }
+    private fun recordSuccessfulAnalysis(){
+        val total=prefs.getInt("analysis_count_total",0)+1
+        prefs.edit().putInt("analysis_count_total",total)
+            .putLong("last_successful_analysis_at",System.currentTimeMillis()).apply()
     }
     // WAIT is an internal no-trade state only; user-facing entry alerts are LONG or SHORT.
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
@@ -213,7 +236,11 @@ class CryptoMonitorService : Service() {
     }
     private fun notificationBuilder(channel:String):Notification.Builder = if(Build.VERSION.SDK_INT>=26) Notification.Builder(this,channel) else Notification.Builder(this)
     private fun serviceNotification(message:String)=notificationBuilder(serviceChannel).setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("Crypto Scalp • پایش فعال").setContentText(message).setOngoing(true).build()
-    private fun updateStatus(message:String){(getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(9100,serviceNotification(message))}
+    private fun updateStatus(message:String){
+        prefs.edit().putString("latest_monitor_status",message)
+            .putLong("latest_monitor_status_at",System.currentTimeMillis()).apply()
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(9100,serviceNotification(message))
+    }
     companion object{
         const val ACTION_START="com.cryptoscalp.app.START_MONITOR"
         const val ACTION_STOP="com.cryptoscalp.app.STOP_MONITOR"

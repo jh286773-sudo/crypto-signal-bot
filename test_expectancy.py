@@ -9,12 +9,15 @@ class ExpectancyRemovalTests(unittest.TestCase):
         py = (root / "signal_engine.py").read_text()
         kt = (root / "app/src/main/java/com/cryptoscalp/app/TradingStrategy.kt").read_text()
         service = (root / "app/src/main/java/com/cryptoscalp/app/CryptoMonitorService.kt").read_text()
+        backtest = (root / "walk_forward.py").read_text()
         for obsolete in ("expectancy_allows", "expectancy_stats", "research_warmup", "net_expectancy_gate"):
             self.assertNotIn(obsolete, py)
         for obsolete in ("ExpectancyPolicy", "expectancyStats", "enforceExpectancy"):
             self.assertNotIn(obsolete, kt)
         for obsolete in ("loadExpectancyStats", "expectancyKey", "shadow_closed_net_r_"):
             self.assertNotIn(obsolete, service)
+        for obsolete in ("combined_score", "confidence_score", "family_scores", "expectancy_stats", "research_warmup", "closed_net_r", '"score"'):
+            self.assertNotIn(obsolete, backtest)
 
 
 if __name__ == "__main__":
