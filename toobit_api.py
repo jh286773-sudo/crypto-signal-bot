@@ -190,7 +190,7 @@ class ToobitAPI:
             # cannot be displaced by newer rows from the same response.
             page_end = min(expected_last + step, cursor_start + page_size * step)
             page = self._get("/quote/v1/klines", {
-                "symbol": symbol, "interval": interval, "startTime": cursor_start,
+                "symbol": symbol, "interval": interval, "startTime": max(0, cursor_start - 1),
                 "endTime": page_end, "limit": page_size
             })
             page_number += 1
