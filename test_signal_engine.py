@@ -10,6 +10,23 @@ def candles(n=100, trend=1.0):
     return rows
 
 class EngineTests(unittest.TestCase):
+    def test_optimized_macd_and_stoch_rsi_match_reference_calculation(self):
+        from signal_engine import _macd, _stoch_rsi, _ema, _rsi
+        values = [100.0 + math.sin(i/4.0)*2.0 + i*0.03 for i in range(120)]
+        old_values = []
+        for end in range(26, len(values)+1):
+            old_values.append(_ema(values[:end],12)-_ema(values[:end],26))
+        old_line = _ema(values,12)-_ema(values,26)
+        old_signal = _ema(old_values,9)
+        actual = _macd(values)
+        self.assertAlmostEqual(actual["line"], old_line, places=12)
+        self.assertAlmostEqual(actual["signal"], old_signal, places=12)
+        old_rsis = [_rsi(values[:end],14) for end in range(15,len(values)+1)]
+        old_rsis = [value for value in old_rsis if value is not None]
+        window = old_rsis[-14:]
+        expected = 0.0 if max(window)==min(window) else 100*(window[-1]-min(window))/(max(window)-min(window))
+        self.assertAlmostEqual(_stoch_rsi(values), expected, places=12)
+
     def test_indicator_report(self):
         r=analyze_timeframe(candles())
         self.assertTrue(r["valid"])
