@@ -14,9 +14,9 @@ class ToobitClosedCandleTests(unittest.TestCase):
         five = [{"open_time": 1_500_000}]
         fifteen = [{"open_time": 900_000}, {"open_time": 1_800_000}]
         thirty = [{"open_time": 0}, {"open_time": 1_800_000}]
-        with patch.object(api, "server_time", return_value={"serverTime": 1_800_000}), \\
-             patch.object(api, "get_klines", side_effect=[five, fifteen, thirty]) as get:
-            result = api.get_multi_timeframe("BTC-SWAP-USDT")
+        with patch.object(api, "server_time", return_value={"serverTime": 1_800_000}) as clock:
+            with patch.object(api, "get_klines", side_effect=[five, fifteen, thirty]) as get:
+                result = api.get_multi_timeframe("BTC-SWAP-USDT")
         self.assertEqual(get.call_args_list[0].kwargs["as_of_ms"], 1_800_000)
         self.assertEqual(get.call_args_list[1].kwargs["as_of_ms"], 1_800_000)
         self.assertEqual(get.call_args_list[2].kwargs["as_of_ms"], 1_800_000)
