@@ -500,7 +500,7 @@ def _entry_not_chasing(price: float, ema21: Optional[float], atr: Optional[float
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: Optional[Dict[str,List[float]]] = None, research_warmup: bool = False, selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
     """Analyze only selected timeframes; every selected timeframe must agree."""
-    selected_tfs = tuple(dict.fromkeys(selected_timeframes or REQUIRED_TFS))
+    selected_tfs = tuple(dict.fromkeys(REQUIRED_TFS if selected_timeframes is None else selected_timeframes))
     if not selected_tfs or any(tf not in SUPPORTED_TFS for tf in selected_tfs):
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Invalid or empty selected timeframe list","trade_enabled":False}
     missing = [tf for tf in selected_tfs if not timeframes.get(tf)]
