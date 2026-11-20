@@ -153,7 +153,7 @@ object TradingStrategy {
         val swingLows=lo.filter{it<w.size-4}.map{it to lows[it]}
         val last=w.last()
         val structureAtr=atr(w)
-        val atrRef=structureAtr?:max(last.close*.001,1e-12)
+        val atrRef=(structureAtr?.takeIf{it>0.0})?:max(last.close*.001,1e-12)
         val tolerance=max(atrRef*.20,last.close*.0005)
         val breakBuffer=atrRef*.10
         val span=max(last.high-last.low,1e-12)
@@ -198,7 +198,7 @@ object TradingStrategy {
         val retestShort=(priorDown&&last.high>=sl-tolerance&&last.close<sl&&bearCandle)||(sweep=="buy_side"&&bearCandle)
         val falseBreakout=(priorUp&&last.close<sh-tolerance)||(priorDown&&last.close>sl+tolerance)
         var obType="none";var obLow:Double?=null;var obHigh:Double?=null
-        for(j in w.size-2 downTo max(0,w.size-21)){
+        for(j in w.size-2 downTo max(0,w.size-20)){
             val x=w[j];val next=w[j+1];val nextRange=max(next.high-next.low,1e-12)
             if(x.close<x.open&&next.close>x.high&&next.close>=next.high-nextRange*.25){obType="bullish";obLow=x.low;obHigh=x.high;break}
             if(x.close>x.open&&next.close<x.low&&next.close<=next.low+nextRange*.25){obType="bearish";obLow=x.low;obHigh=x.high;break}
