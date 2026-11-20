@@ -52,6 +52,7 @@ class EngineTests(unittest.TestCase):
     def test_indicator_report_contains_technical_indicators_without_score_fields(self):
         result=analyze_timeframe(candles())
         self.assertTrue(result["valid"])
+        self.assertEqual(result["bias"],"bullish")  # RSI above 70 does not veto an aligned uptrend.
         for key in ("ema","rsi","macd","bollinger","adx_dmi","atr","vwap","obv"):
             self.assertIn(key,result["indicators"])
         self.assertEqual(set(result["indicator_votes"]),
