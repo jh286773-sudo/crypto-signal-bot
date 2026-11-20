@@ -59,14 +59,12 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn("score",result)
         self.assertNotIn("family_scores",result)
 
-    def test_direct_indicator_rule_requires_core_alignment_and_no_supporting_opposition(self):
-        self.assertEqual(_indicator_bias({"EMA":1,"RSI":1,"MACD":1,"ADX_DMI":1,
-                                          "VWAP":1,"OBV_Trend":0,"Bollinger":1}),"bullish")
-        self.assertEqual(_indicator_bias({"EMA":-1,"RSI":-1,"MACD":-1,"ADX_DMI":-1,
-                                          "VWAP":-1,"OBV_Trend":0,"Bollinger":-1}),"bearish")
-        self.assertEqual(_indicator_bias({"EMA":1,"RSI":1,"MACD":1,"ADX_DMI":1,
-                                          "VWAP":-1,"OBV_Trend":0,"Bollinger":1}),"neutral")
-        self.assertEqual(_indicator_bias({"EMA":1,"RSI":0,"MACD":1,"ADX_DMI":1}),"neutral")
+    def test_relaxed_direct_rules_need_trend_dmi_and_one_momentum_confirmation(self):
+        self.assertEqual(_indicator_bias({"EMA":1,"RSI":1,"MACD":0,"ADX_DMI":1,
+                                          "VWAP":-1,"OBV_Trend":-1,"Bollinger":-1}),"bullish")
+        self.assertEqual(_indicator_bias({"EMA":-1,"RSI":0,"MACD":-1,"ADX_DMI":-1}),"bearish")
+        self.assertEqual(_indicator_bias({"EMA":1,"RSI":0,"MACD":0,"ADX_DMI":1}),"neutral")
+        self.assertEqual(_indicator_bias({"EMA":1,"RSI":1,"MACD":-1,"ADX_DMI":1}),"bullish")
 
     def test_one_selected_timeframe_generates_an_independent_signal(self):
         with patch("signal_engine.analyze_timeframe",return_value=report("bullish")):
