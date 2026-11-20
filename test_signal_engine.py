@@ -92,8 +92,10 @@ class EngineTests(unittest.TestCase):
         rows = candles(30)
         for row in rows:
             row["volume"] = 100.0
+        for row in rows[-5:]:
+            row["volume"] = 200.0
         rows[-1].update({"open": 100.0, "low": 99.8, "high": 101.0,
-                         "close": 100.9, "volume": 200.0})
+                         "close": 100.9})
         self.assertEqual(_volume_impulse(rows, 0.5), 1)
 
     def test_divergence_requires_enough_closed_candles(self):
