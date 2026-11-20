@@ -612,6 +612,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                        "reason":"Abnormal volatility filter blocked: "+", ".join(blocked),
                        "high_volatility_block":blocked})
         return result
+    non_trending = [tf for tf in REQUIRED_TFS if reports[tf].get("market_regime") != "trending"]
+    if non_trending:
+        result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                       "reason":"Market regime is ranging, transitional or unconfirmed: "+", ".join(non_trending),
+                       "blocked_market_regime":non_trending})
+        return result
     if signal in ("LONG","SHORT"):
         side_history = expectancy_stats.get(signal, []) if isinstance(expectancy_stats, dict) else []
         allowed, expectancy = (expectancy_allows(expectancy_stats, signal)
