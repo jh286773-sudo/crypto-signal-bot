@@ -38,6 +38,13 @@ class EngineTests(unittest.TestCase):
     def test_bad_input_safe(self):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])
 
+    def test_invalid_old_candle_is_rejected_before_recursive_indicators(self):
+        rows = candles(100)
+        rows[0]["open"] = float("nan")
+        result = analyze_timeframe(rows)
+        self.assertFalse(result["valid"])
+        self.assertIn("invalid OHLCV", result["reason"])
+
     def test_high_volatility_filter_blocks_signal(self):
         bullish={"valid":True,"score":60.0,"bias":"bullish","high_volatility":True,"indicators":{"atr":1.0},"close":100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
