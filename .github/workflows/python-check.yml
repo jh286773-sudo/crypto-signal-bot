@@ -11,6 +11,7 @@ on:
       - smc-entry-risk-parity-v3
       - aurum-x/advanced-smc-entry-backtest
       - aurum-x-loss-reduction
+      - aurum-x/expectancy-timestamp-parity-v1
   workflow_dispatch:
 
 permissions:
