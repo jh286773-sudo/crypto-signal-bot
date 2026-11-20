@@ -1,4 +1,4 @@
-"""Run a comparable 10-day Toobit walk-forward on at least N liquid USDT perpetuals."""
+"""Run a comparable 10-day Toobit walk-forward on crypto-only USDT perpetuals."""
 import argparse
 import json
 import math
@@ -6,6 +6,17 @@ from datetime import datetime, timezone
 
 from backtest import run_backtest
 from toobit_api import ToobitAPI
+
+
+# Research-only allowlist: excludes tokenized equities, indices, metals and other
+# non-crypto underlyings that may also be listed as USDT perpetual contracts.
+CRYPTO_BASES = (
+    "BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "LINK", "AVAX",
+    "DOT", "LTC", "BCH", "TRX", "SUI", "TON", "NEAR", "APT", "ARB",
+    "OP", "PEPE", "WIF", "FIL", "ATOM", "UNI", "ETC", "XLM", "HBAR",
+    "AAVE", "INJ", "SEI", "ICP", "TIA", "RENDER", "SHIB", "1000SHIB",
+    "1000PEPE", "FLOKI", "MKR", "CRV", "GRT", "MANA", "SAND", "EGLD",
+)
 
 
 def finite_json(value):
@@ -22,7 +33,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=10)
     parser.add_argument("--min-symbols", type=int, default=10)
-    parser.add_argument("--candidates", type=int, default=30)
+    parser.add_argument("--candidates", type=int, default=50,
+                        help="Maximum liquid crypto contracts to inspect")
     parser.add_argument("--slippage-bps", type=float, default=1.0,
                         help="Assumed adverse slippage per fill; not measured")
     parser.add_argument("--equity-per-symbol", type=float, default=10000.0)
@@ -32,7 +44,7 @@ def main():
     if not 2 <= args.days <= 30:
         raise SystemExit("--days must be between 2 and 30 (funding endpoint history cap)")
     if args.min_symbols < 10 or args.candidates < args.min_symbols:
-        raise SystemExit("At least 10 symbols are required and candidates must cover min-symbols")
+        raise SystemExit("At least 10 crypto symbols are required and candidates must cover min-symbols")
     if args.slippage_bps < 0:
         raise SystemExit("--slippage-bps cannot be negative")
 
@@ -40,7 +52,11 @@ def main():
     end_ms = int(api.server_time()["serverTime"])
     end_ms = (end_ms // 300000) * 300000
     start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000
-    candidates = api.get_futures_symbols(limit=args.candidates)
+    # This allowlist is strictly for backtest sampling; it does not alter the app's
+    # selectable symbols or the live signal scanner.
+    candidates = api.get_futures_symbols(
+        limit=args.candidates, preferred_bases=CRYPTO_BASES
+    )
     results, failures = [], []
 
     # All symbols use the same UTC window, fee schedule, slippage and risk model.
@@ -83,7 +99,7 @@ def main():
 
     if len(results) < args.min_symbols:
         raise RuntimeError(
-            f"Only {len(results)} symbols completed; at least {args.min_symbols} required. "
+            f"Only {len(results)} crypto symbols completed; at least {args.min_symbols} required. "
             f"Failures: {failures}"
         )
 
@@ -117,8 +133,9 @@ def main():
             "days_requested": args.days,
         },
         "methodology": {
-            "strategy": "same 5m/15m/30m closed-candle strategy on every symbol",
-            "symbol_selection": "highest 24h quote-volume active Toobit USDT-margined perpetuals",
+            "strategy": "same 5m/15m/30m closed-candle strategy on every crypto symbol",
+            "symbol_selection": "highest 24h quote-volume active Toobit USDT perpetuals filtered by explicit crypto-underlying allowlist",
+            "crypto_base_allowlist": list(CRYPTO_BASES),
             "minimum_symbols": args.min_symbols,
             "slippage_bps_per_fill": args.slippage_bps,
             "slippage_is_measured": False,
@@ -127,6 +144,7 @@ def main():
             "starting_equity_per_symbol": args.equity_per_symbol,
             "funding": "historical Toobit settlement events",
             "same_utc_window_for_all_symbols": True,
+            "production_symbol_universe_changed": False,
         },
         "pooled_summary": pooled,
         "per_symbol": results,
