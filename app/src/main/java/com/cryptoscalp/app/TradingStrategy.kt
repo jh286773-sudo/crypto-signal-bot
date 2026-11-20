@@ -303,8 +303,8 @@ object TradingStrategy {
         val activeWeights=if(regime=="ranging")familyWeights+mapOf("trend" to .8,"structure" to 1.6,"divergence" to 1.2) else familyWeights
         val den=families.keys.sumOf{activeWeights[it]?:0.0}
         val score=if(den==0.0)0.0 else 100*families.entries.sumOf{it.value*(activeWeights[it.key]?:0.0)}/den
-        val up=families.values.count{it>.20};val down=families.values.count{it<-.20}
-        val bias=if(score>=22&&up>=4)"bullish" else if(score<=-22&&down>=4)"bearish" else "neutral"
+        val up=families.values.count{it>0.0};val down=families.values.count{it<0.0}
+        val bias=if(up>down)"bullish" else if(down>up)"bearish" else "neutral"
         val smc=mutableListOf<String>()
         if(sm.event=="BOS_up")smc.add("BOS صعودی")
         if(sm.event=="BOS_down")smc.add("BOS نزولی")
