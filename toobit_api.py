@@ -230,7 +230,7 @@ class ToobitAPI:
             bars_by_open = {row["timestamp"]: row for row in five}
             for event in events:
                 settle = event["settle_time"]
-                if settle < start_ms or settle > end_ms:
+                if settle <= start_ms or settle > end_ms:
                     continue
                 candle_open = ((settle - 1) // self.INTERVALS["5m"]) * self.INTERVALS["5m"]
                 bar = bars_by_open.get(candle_open)
