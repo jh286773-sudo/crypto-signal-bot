@@ -558,16 +558,18 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                 "timeframes":reports,"trade_enabled":False}
     weights={"5m":0.25,"15m":0.35,"30m":0.40}
     combined=sum(reports[tf]["score"]*weights[tf] for tf in REQUIRED_TFS)
-    longs=sum(reports[tf]["bias"]=="bullish" for tf in REQUIRED_TFS)
-    shorts=sum(reports[tf]["bias"]=="bearish" for tf in REQUIRED_TFS)
-    # Each timeframe derives its own bias from its indicator families.
-    # Require unanimous direction; retain protection against major indicator conflicts.
-    side = "LONG" if longs == 3 else "SHORT" if shorts == 3 else None
+    long_tfs=[tf for tf in REQUIRED_TFS if reports[tf]["bias"]=="bullish"]
+    short_tfs=[tf for tf in REQUIRED_TFS if reports[tf]["bias"]=="bearish"]
+    longs, shorts = len(long_tfs), len(short_tfs)
+    # Majority consensus: any two independently aligned timeframes can establish direction.
+    # A neutral or dissenting third timeframe no longer vetoes the majority.
+    side = "LONG" if longs >= 2 else "SHORT" if shorts >= 2 else None
+    aligned_tfs = long_tfs if side == "LONG" else short_tfs if side == "SHORT" else []
     major_conflicts_clear = bool(side) and all(
-        _no_major_indicator_conflict(reports[tf], side) for tf in REQUIRED_TFS
+        _no_major_indicator_conflict(reports[tf], side) for tf in aligned_tfs
     )
-    if longs == 3 and major_conflicts_clear: signal="LONG"
-    elif shorts == 3 and major_conflicts_clear: signal="SHORT"
+    if longs >= 2 and major_conflicts_clear: signal="LONG"
+    elif shorts >= 2 and major_conflicts_clear: signal="SHORT"
     else: signal="NO_SIGNAL"
     confidence=min(99,round(abs(combined)*0.75+max(longs,shorts)*8,1))
     result={"signal":signal,"status":signal,"confidence_score":confidence,
@@ -576,9 +578,9 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
             "note":"Read-only analysis; confidence is a model score, not a probability or guarantee."}
     rejection_reasons = []
     if signal == "NO_SIGNAL":
-        if longs != 3 and shorts != 3:
-            rejection_reasons.append("three_timeframe_directional_alignment")
-        if not major_conflicts_clear and (longs == 3 or shorts == 3):
+        if longs < 2 and shorts < 2:
+            rejection_reasons.append("two_of_three_timeframe_directional_alignment")
+        if not major_conflicts_clear and (longs >= 2 or shorts >= 2):
             rejection_reasons.append("major_indicator_conflict")
         if not rejection_reasons:
             rejection_reasons.append("directional_candidate_not_formed")
@@ -652,7 +654,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
         result["entry_stage"] = "ENTRY"
     else:
         smc = reports["5m"]["indicators"].get("smc", {})
-        direction = "LONG" if longs == 3 and major_conflicts_clear else "SHORT" if shorts == 3 and major_conflicts_clear else None
+        direction = "LONG" if longs >= 2 and major_conflicts_clear else "SHORT" if shorts >= 2 and major_conflicts_clear else None
         confirmation = bool(direction and (
             smc.get("structure_event") in (("BOS_up","CHoCH_up") if direction=="LONG" else ("BOS_down","CHoCH_down"))
             or smc.get("liquidity_sweep") == ("sell_side" if direction=="LONG" else "buy_side")
@@ -660,7 +662,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
         retest_key = "retest_long" if direction=="LONG" else "retest_short"
         retest_ready = bool(direction and smc.get(retest_key))
         result["entry_stage"] = "ENTRY" if retest_ready else "CONFIRMATION" if confirmation else "PREPARATION" if direction else "WAIT"
-        result["reason"]="Retest confirmed; waiting for full indicator consensus" if retest_ready else "Multi-timeframe indicator consensus or confirmed retest not complete"
+        result["reason"]="Retest confirmed; waiting for entry safeguards" if retest_ready else "Two-of-three timeframe consensus or confirmed retest not complete"
     return result
 
 
