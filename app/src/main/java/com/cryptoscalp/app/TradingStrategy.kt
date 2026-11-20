@@ -327,9 +327,10 @@ object TradingStrategy {
             reasons.add(if(signal=="LONG")"تأیید کامل سه تایم‌فریم؛ لانگ" else "تأیید کامل سه تایم‌فریم؛ شورت")
         } else if(higherLong||higherShort) {
             reasons.add("مرحله آماده‌سازی: جهت تایم‌فریم‌های ۱۵ و ۳۰ دقیقه همسو است")
-            val confirmation=sm5?.event=="BOS_up"||sm5?.event=="CHoCH_up"||sm5?.event=="BOS_down"||sm5?.event=="CHoCH_down"||sm5?.sweep!="none"
-            reasons.add(if(confirmation)"مرحله تأیید: شکست ساختاری یا Sweep شناسایی شد؛ منتظر Retest هستیم" else "مرحله تأیید: هنوز شکست معتبر یا Sweep تأیید نشده است")
-            reasons.add("مرحله ورود: فقط پس از بازگشت و تثبیت قیمت روی سطح شکست")
+            val confirmation=sm5?.event=="BOS_up"||sm5?.event=="CHoCH_up"||sm5?.event=="BOS_down"||sm5?.event=="CHoCH_down"||(sm5?.sweep?.let{it!="none"}==true)
+            val retestReady=if(higherLong)sm5?.retestLong==true else sm5?.retestShort==true
+            reasons.add(if(confirmation)"مرحله تأیید: شکست ساختاری یا Sweep شناسایی شد" else "مرحله تأیید: هنوز شکست معتبر یا Sweep تأیید نشده است")
+            reasons.add(if(retestReady)"مرحله ورود: Retest تأیید شد؛ منتظر تکمیل امتیاز ترکیبی هستیم" else "مرحله ورود: فقط پس از بازگشت و تثبیت قیمت روی سطح شکست")
         }
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
         return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc)
