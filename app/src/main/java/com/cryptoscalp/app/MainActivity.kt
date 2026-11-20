@@ -246,7 +246,7 @@ class MainActivity : Activity() {
             timeframeRow.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(5) })
         }
         visualCard.addView(timeframeRow)
-        visualCard.addView(text("برای هر دارایی انتخاب‌شده، نمودار مستقل کندل‌های تکمیل‌شده Toobit نمایش داده می‌شود.", 9, muted))
+        visualCard.addView(text("نمودارهای فشرده دارایی‌های انتخاب‌شده • کندل‌های تکمیل‌شده Toobit", 9, muted))
         root.addView(visualCard, marginParams(bottom = 15))
 
         val exchangeCard = card().apply {
