@@ -43,8 +43,11 @@ class ShadowLedgerTests(unittest.TestCase):
         self.ledger.process("BTC-SWAP-USDT", self.candle(300000, 100, 101, 99, 100), self.candidate("LONG"))
         self.ledger.process("BTC-SWAP-USDT", self.candle(600000, 100, 116, 101, 114), {"signal": "NO_SIGNAL"})
         self.ledger.process("BTC-SWAP-USDT", self.candle(900000, 100, 110, 99, 100), {"signal": "NO_SIGNAL"})
+        self.ledger.process("BTC-SWAP-USDT", self.candle(1200000, 100, 101, 99, 100), self.candidate("SHORT"))
+        self.ledger.process("BTC-SWAP-USDT", self.candle(1500000, 100, 101, 84, 86), {"signal": "NO_SIGNAL"})
+        self.ledger.process("BTC-SWAP-USDT", self.candle(1800000, 100, 101, 90, 100), {"signal": "NO_SIGNAL"})
         self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["LONG"]), 1)
-        self.assertEqual(self.ledger.stats("BTC-SWAP-USDT")["SHORT"], [])
+        self.assertEqual(len(self.ledger.stats("BTC-SWAP-USDT")["SHORT"]), 1)
 
     def test_duplicate_candle_does_not_duplicate_entry_or_exit(self):
         bar = self.candle(300000, 100, 101, 99, 100)
