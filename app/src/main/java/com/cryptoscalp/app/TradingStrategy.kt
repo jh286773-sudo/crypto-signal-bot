@@ -152,7 +152,16 @@ object TradingStrategy {
             val prior=c.takeLast(21).dropLast(1)
             if(prior.size<10)return Structure("none","none")
             val ph=prior.maxOf{it.high};val pl=prior.minOf{it.low};val last=c.last()
-            val event=if(last.close>ph)"BOS_up" else if(last.close<pl)"BOS_down" else "none"
+            val range=max(last.high-last.low,1e-12)
+            val body=abs(last.close-last.open)
+            val closeLocation=(last.close-last.low)/range
+            val structureAtr=atr(w)?:0.0
+            val displacement=structureAtr>0.0&&body>=structureAtr*.35
+            val event=when {
+                last.close>ph&&displacement&&closeLocation>=.70->"BOS_up"
+                last.close<pl&&displacement&&closeLocation<=.30->"BOS_down"
+                else->"none"
+            }
             val sweep=if(last.low<pl&&last.close>pl)"sell_side" else if(last.high>ph&&last.close<ph)"buy_side" else "none"
             return Structure(event,sweep)
         }
