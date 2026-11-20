@@ -6,7 +6,7 @@ when the exchange explicitly supplies it.
 """
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
-from math import sqrt
+from math import isfinite, sqrt
 
 REQUIRED_TFS = ("5m", "15m", "30m")
 
@@ -380,8 +380,18 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
     if len(candles)<60:
         return {"valid":False,"reason":"At least 60 candles required for stable indicator calculation"}
     try:
-        for x in candles[-60:]:
-            for k in ("open","high","low","close","volume"): float(x[k])
+        # Every candle participates in recursive indicators; validating only
+        # the last 60 bars can let an older NaN/invalid OHLC value poison the
+        # entire EMA/ATR history while the current tail appears valid.
+        for index, x in enumerate(candles):
+            o, h, low, close_value, volume = (
+                float(x[k]) for k in ("open", "high", "low", "close", "volume")
+            )
+            if (not all(isfinite(v) for v in (o, h, low, close_value, volume))
+                    or min(o, h, low, close_value) <= 0 or volume < 0
+                    or h < max(o, close_value) or low > min(o, close_value)
+                    or h < low):
+                raise ValueError(f"invalid OHLCV values at candle index {index}")
         c=candles; close=_series(c,"close"); price=close[-1]
         e9=_ema(close,9); e21=_ema(close,21); e50=_ema(close,50)
         s20=_sma(close,20); s50=_sma(close,50)
