@@ -29,7 +29,8 @@ class TradingStrategyParityTest {
         val now=System.currentTimeMillis()
         val duration=60_000L
         val start=(now/duration)*duration-219*duration
-        val result=TradingStrategy.evaluate(mapOf("1m" to series(220,duration,start)),now)
+        val rows=series(220,duration,start)
+        val result=TradingStrategy.evaluate(mapOf("1m" to rows),rows.last().time+duration+1_000L)
         assertEquals("WAIT",result.signal) // monotonic fixture has an overbought RSI, so no direction
         assertTrue(result.reasons.any{it.contains("تحلیل اندیکاتورها")})
         assertFalse(result.reasons.any{it.contains("5m")||it.contains("15m")||it.contains("30m")})
