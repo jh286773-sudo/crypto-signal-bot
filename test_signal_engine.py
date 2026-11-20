@@ -38,4 +38,17 @@ class EngineTests(unittest.TestCase):
     def test_bad_input_safe(self):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])
 
+    def test_high_volatility_filter_blocks_signal(self):
+        bullish={"valid":True,"score":60.0,"bias":"bullish","high_volatility":True,"indicators":{"atr":1.0},"close":100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result=analyze_market({tf:candles() for tf in ("5m","15m","30m")})
+        self.assertEqual(result["signal"],"NO_SIGNAL")
+        self.assertEqual(result["high_volatility_block"],["5m","15m","30m"])
+
+    def test_volatility_filter_reports_baseline(self):
+        r=analyze_timeframe(candles(),"5m")
+        self.assertIn("volatility_filter",r)
+        self.assertIn("baseline_atr_pct",r["volatility_filter"])
+
+
 if __name__=="__main__": unittest.main()
