@@ -601,7 +601,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
                     "reason":"Retest is missing or overextended (>0.50 ATR); skip late entry.",
                     "trade_enabled":False}
         ema21 = reports["5m"].get("ema21")
-        if ema21 is not None and not _entry_not_chasing(p, ema21, a):
+        if not _entry_not_chasing(p, ema21, a):
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "entry_stage":"WAIT",
                     "reason":"Entry is overextended from EMA21 (>0.80 ATR); skip chasing the move.",
