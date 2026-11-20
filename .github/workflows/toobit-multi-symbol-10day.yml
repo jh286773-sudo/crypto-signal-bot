@@ -54,7 +54,7 @@ jobs:
             --min-symbols "$MIN_SYMBOLS" \
             --candidates "$CANDIDATES" \
             --slippage-bps "$SLIPPAGE_BPS" \
-            --output toobit_multi_symbol_10day.json
+            --output toobit_multi_crypto_30day.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
