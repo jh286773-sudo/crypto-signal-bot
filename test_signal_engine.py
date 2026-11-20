@@ -30,8 +30,8 @@ class EngineTests(unittest.TestCase):
         with patch("signal_engine.analyze_timeframe", side_effect=[bullish,bullish,bearish]):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"NO_SIGNAL")
-    def test_all_three_aligned_can_signal(self):
-        bullish={"valid":True,"score":60.0,"bias":"bullish","indicators":{"atr":1.0},"close":100.0}
+    def test_all_three_aligned_can_signal_after_confirmed_retest(self):
+        bullish={"valid":True,"score":60.0,"bias":"bullish","indicators":{"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up","previous_swing_low":98.0}},"close":100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
             result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
         self.assertEqual(result["signal"],"LONG")
@@ -101,6 +101,30 @@ class EngineTests(unittest.TestCase):
     def test_divergence_requires_enough_closed_candles(self):
         from signal_engine import _divergence
         self.assertEqual(_divergence(candles(60)), "none")
+
+
+    def test_directional_consensus_without_retest_is_blocked(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "indicators": {"atr": 1.0, "smc": {"structure_event": "BOS_up",
+                       "retest_long": False}}, "close": 100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertEqual(result["entry_stage"], "CONFIRMATION")
+        self.assertFalse(result["entry_context"]["retest_confirmed"])
+
+    def test_adaptive_levels_use_structure_and_reward_risk_multiples(self):
+        from signal_engine import _levels
+        levels = _levels("LONG", 100.0, 1.0, {"previous_swing_low": 98.0})
+        self.assertAlmostEqual(levels["stop_loss"], 97.85)
+        self.assertEqual(levels["risk_reward"], [1.5, 2.5, 3.5])
+        self.assertGreater(levels["take_profits"][1], levels["take_profits"][0])
+
+    def test_market_structure_exposes_retest_and_false_breakout_state(self):
+        rows = candles(120)
+        structure = _market_structure(rows)
+        for key in ("retest_long", "retest_short", "false_breakout", "breakout_quality"):
+            self.assertIn(key, structure)
 
 
 if __name__=="__main__": unittest.main()
