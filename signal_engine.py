@@ -192,7 +192,7 @@ def _divergence(c, lookback=48):
 
 
 def _market_structure(c, lookback=60):
-    """Confirmed swing structure, BOS/CHoCH, liquidity pools, sweeps and OBs."""
+    """Causal swing/liquidity model: confirmed pivots, close-confirmed breaks and fresh retests."""
     if len(c) < max(lookback, 30):
         return {}
     w = c[-lookback:]
@@ -201,106 +201,117 @@ def _market_structure(c, lookback=60):
     ph, pl = _confirmed_pivots(highs, 2, 2)
     swing_highs = [(i, highs[i]) for i in ph]
     swing_lows = [(i, lows[i]) for i in pl]
+    atr = _atr(w)
+    last = w[-1]
+    op, close = float(last["open"]), float(last["close"])
+    high, low = float(last["high"]), float(last["low"])
+    span = max(high-low, 1e-12)
+    body = abs(close-op)
+    close_pos = (close-low)/span
+    atr_ref = atr or max(close*0.001, 1e-12)
+    displacement = body >= atr_ref*0.35
+    tolerance = max(atr_ref*0.20, close*0.0005)
+    break_buffer = atr_ref*0.10
+
+    # Conservative fallback when the sample has no confirmed two-sided fractals.
     if not swing_highs or not swing_lows:
-        # Monotonic markets may not form two-sided fractal pivots yet.
-        # Use the prior 20 closed candles as a conservative provisional range.
         prior = c[-21:-1]
         if len(prior) < 10:
             return {}
         reference = prior[:-6] if len(prior) >= 16 else prior
+        sh = max(float(x["high"]) for x in reference)
+        sl = min(float(x["low"]) for x in reference)
         recent = prior[-6:]
-        ph = max(float(x["high"]) for x in reference)
-        pl = min(float(x["low"]) for x in reference)
-        last = c[-1]
-        close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
-        atr_value = _atr(w)
-        span = max(high - low, 1e-12)
-        body = abs(close - float(last["open"]))
-        close_location = (close - low) / span
-        displacement = atr_value is not None and body >= atr_value * 0.35
-        event = ("BOS_up" if close > ph and displacement and close_location >= 0.70
-                 else "BOS_down" if close < pl and displacement and close_location <= 0.30
-                 else "none")
-        sweep = "sell_side" if low < pl and close > pl else "buy_side" if high > ph and close < ph else "none"
-        tolerance = max((atr_value or close*0.001)*0.25, close*0.0005)
-        prior_break_up = any(float(x["close"]) > ph for x in recent)
-        prior_break_down = any(float(x["close"]) < pl for x in recent)
-        prior_sell_sweep = any(float(x["low"]) < pl and float(x["close"]) > pl for x in recent)
-        prior_buy_sweep = any(float(x["high"]) > ph and float(x["close"]) < ph for x in recent)
-        retest_long = ((prior_break_up and low <= ph+tolerance and close > ph)
-                       or (prior_sell_sweep and low <= pl+tolerance and close > pl)) and close > float(last["open"])
-        retest_short = ((prior_break_down and high >= pl-tolerance and close < pl)
-                        or (prior_buy_sweep and high >= ph-tolerance and close < ph)) and close < float(last["open"])
-        return {"previous_swing_high":ph,"previous_swing_low":pl,
-                "structure_event":event,"market_structure":"range",
-                "liquidity_sweep":sweep,"equal_high_liquidity":False,
-                "equal_low_liquidity":False,"order_blocks":[],
-                "false_breakout": sweep != "none" and not (retest_long or retest_short),
-                "retest_long": retest_long, "retest_short": retest_short,
-                "breakout_quality": "retest_confirmed" if retest_long or retest_short else "false" if sweep != "none" else "unconfirmed" if event != "none" else "none"}
-    last = w[-1]
-    close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
-    last_high_i, last_high = swing_highs[-1]
-    last_low_i, last_low = swing_lows[-1]
-    prior_highs = [x[1] for x in swing_highs[:-1]]
-    prior_lows = [x[1] for x in swing_lows[:-1]]
-    up_trend = len(prior_highs) and len(prior_lows) and last_high > prior_highs[-1] and last_low > prior_lows[-1]
-    down_trend = len(prior_highs) and len(prior_lows) and last_high < prior_highs[-1] and last_low < prior_lows[-1]
+        high_pivots, low_pivots = [(0, sh)], [(0, sl)]
+    else:
+        sh, sl = swing_highs[-1][1], swing_lows[-1][1]
+        recent = w[-7:-1]
+        high_pivots, low_pivots = swing_highs, swing_lows
+
+    up_trend = (len(swing_highs) >= 2 and len(swing_lows) >= 2
+                and swing_highs[-1][1] > swing_highs[-2][1]
+                and swing_lows[-1][1] > swing_lows[-2][1])
+    down_trend = (len(swing_highs) >= 2 and len(swing_lows) >= 2
+                  and swing_highs[-1][1] < swing_highs[-2][1]
+                  and swing_lows[-1][1] < swing_lows[-2][1])
+
+    # A break requires a candle close beyond the confirmed swing plus displacement.
     event = "none"
-    atr = _atr(w)
-    candle_range = max(high - low, 1e-12)
-    body = abs(close - float(last["open"]))
-    close_location = (close - low) / candle_range
-    displacement = atr is not None and body >= atr * 0.35
-    if close > last_high and displacement and close_location >= 0.70:
+    if close > sh + break_buffer and displacement and close_pos >= 0.70:
         event = "CHoCH_up" if down_trend else "BOS_up"
-    elif close < last_low and displacement and close_location <= 0.30:
+    elif close < sl - break_buffer and displacement and close_pos <= 0.30:
         event = "CHoCH_down" if up_trend else "BOS_down"
+
+    # Liquidity sweep: wick takes a known pool, but the candle closes back inside it.
     sweep = "none"
-    if low < last_low and close > last_low:
+    if low < sl - tolerance*0.10 and close > sl and close_pos >= 0.55:
         sweep = "sell_side"
-    elif high > last_high and close < last_high:
+    elif high > sh + tolerance*0.10 and close < sh and close_pos <= 0.45:
         sweep = "buy_side"
-    tolerance = max((atr or close * 0.001) * 0.15, close * 0.0005)
-    equal_highs = [v for _, v in swing_highs[-5:] if abs(v-last_high) <= tolerance]
-    equal_lows = [v for _, v in swing_lows[-5:] if abs(v-last_low) <= tolerance]
+
+    # Equal-high/low pools are grouped by ATR-scaled proximity, not exact equality.
+    recent_highs = [v for _, v in high_pivots[-6:]]
+    recent_lows = [v for _, v in low_pivots[-6:]]
+    equal_highs = [v for v in recent_highs if abs(v-sh) <= tolerance]
+    equal_lows = [v for v in recent_lows if abs(v-sl) <= tolerance]
+
+    # Only a breakout from the immediately preceding six bars can qualify for retest.
+    prior_up = any(float(x["close"]) > sh + break_buffer for x in recent)
+    prior_down = any(float(x["close"]) < sl - break_buffer for x in recent)
+    bull_candle = close > op and close_pos >= 0.60
+    bear_candle = close < op and close_pos <= 0.40
+    retest_long = bool((prior_up and low <= sh+tolerance and close > sh and bull_candle)
+                       or (sweep == "sell_side" and bull_candle))
+    retest_short = bool((prior_down and high >= sl-tolerance and close < sl and bear_candle)
+                        or (sweep == "buy_side" and bear_candle))
+
+    # A close back through the broken level invalidates the breakout; a wick-only sweep
+    # is separately reported and may become a reversal setup after a directional close.
+    failed_up = prior_up and close < sh - tolerance
+    failed_down = prior_down and close > sl + tolerance
+    false_breakout = bool(failed_up or failed_down)
     order_blocks = []
-    # Keep the latest confirmed displacement-origin candle so later retests remain visible.
     for j in range(len(w)-2, max(-1, len(w)-21), -1):
         x, nxt = w[j], w[j+1]
         xo, xc = float(x["open"]), float(x["close"])
         nh, nl, nc = float(nxt["high"]), float(nxt["low"]), float(nxt["close"])
-        if xc < xo and nc > float(x["high"]) and nc > nh - (nh-nl)*0.25:
+        nr = max(nh-nl, 1e-12)
+        if xc < xo and nc > float(x["high"]) and nc >= nh-nr*0.25:
             order_blocks.append({"type":"bullish","low":float(x["low"]),"high":float(x["high"])})
             break
-        if xc > xo and nc < float(x["low"]) and nc < nl + (nh-nl)*0.25:
+        if xc > xo and nc < float(x["low"]) and nc <= nl+nr*0.25:
             order_blocks.append({"type":"bearish","low":float(x["low"]),"high":float(x["high"])})
             break
-    tolerance = max((atr or close*0.001)*0.25, close*0.0005)
-    prior_bars = w[-7:-1]
-    retest_long = (
-        any(any(float(x["close"]) > level + (atr or 0)*0.10 for x in prior_bars)
-            and low <= level+tolerance and close > level for _, level in reversed(swing_highs))
-        or any(any(float(x["low"]) < level and float(x["close"]) > level for x in prior_bars)
-               and low <= level+tolerance and close > level for _, level in reversed(swing_lows))
-    ) and close > float(last["open"])
-    retest_short = (
-        any(any(float(x["close"]) < level - (atr or 0)*0.10 for x in prior_bars)
-            and high >= level-tolerance and close < level for _, level in reversed(swing_lows))
-        or any(any(float(x["high"]) > level and float(x["close"]) < level for x in prior_bars)
-               and high >= level-tolerance and close < level for _, level in reversed(swing_highs))
-    ) and close < float(last["open"])
-    false_breakout = sweep != "none" and not (retest_long or retest_short)
+
+    if retest_long:
+        entry_level = sh if prior_up else sl
+        entry_distance_atr = max(0.0, (close-entry_level)/atr_ref)
+    elif retest_short:
+        entry_level = sl if prior_down else sh
+        entry_distance_atr = max(0.0, (entry_level-close)/atr_ref)
+    else:
+        entry_level, entry_distance_atr = None, None
+
+    quality = ("false" if false_breakout else "retest_confirmed" if retest_long or retest_short
+               else "sweep" if sweep != "none" else "valid_breakout" if event != "none"
+               else "none")
     return {
-        "previous_swing_high": last_high, "previous_swing_low": last_low,
-        "structure_event": event, "market_structure": "bullish" if up_trend else "bearish" if down_trend else "range",
-        "liquidity_sweep": sweep, "equal_high_liquidity": len(equal_highs) >= 2,
-        "equal_low_liquidity": len(equal_lows) >= 2, "order_blocks": order_blocks,
-        "swing_high_count": len(swing_highs), "swing_low_count": len(swing_lows),
-        "false_breakout": false_breakout, "retest_long": retest_long,
-        "retest_short": retest_short,
-        "breakout_quality": "retest_confirmed" if retest_long or retest_short else "false" if false_breakout else "unconfirmed" if event != "none" else "none"
+        "previous_swing_high":sh, "previous_swing_low":sl,
+        "structure_event":event,
+        "market_structure":"bullish" if up_trend else "bearish" if down_trend else "range",
+        "liquidity_sweep":sweep,
+        "equal_high_liquidity":len(equal_highs)>=2,
+        "equal_low_liquidity":len(equal_lows)>=2,
+        "equal_high_level":sh if len(equal_highs)>=2 else None,
+        "equal_low_level":sl if len(equal_lows)>=2 else None,
+        "order_blocks":order_blocks,
+        "swing_high_count":len(swing_highs), "swing_low_count":len(swing_lows),
+        "false_breakout":false_breakout,
+        "retest_long":retest_long, "retest_short":retest_short,
+        "retest_level":entry_level, "entry_distance_atr":entry_distance_atr,
+        "breakout_quality":quality
     }
+
 
 
 def _adx_regime(ad):
@@ -499,6 +510,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
         if smc and not smc.get(retest_key):
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "reason":"Setup is not entry-ready: wait for confirmed retest; do not chase the breakout.",
+                    "trade_enabled":False}
+        distance = smc.get("entry_distance_atr")
+        if distance is not None and distance > 0.80:
+            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                    "entry_stage":"WAIT",
+                    "reason":"Retest is overextended (>0.80 ATR); skip late entry.",
                     "trade_enabled":False}
         result.update(_levels(signal,p,a,smc))
         result["entry_stage"] = "ENTRY"
