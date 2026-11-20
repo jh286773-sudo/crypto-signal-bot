@@ -83,7 +83,7 @@ class CryptoMonitorService : Service() {
                 } else if(latestClosedCandleTime>previousCandleTime){
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m",marketAsOfMs)
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m",marketAsOfMs)
-                    val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs)
+                    val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol))
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
@@ -94,11 +94,13 @@ class CryptoMonitorService : Service() {
                             notifySignal(symbol,r)
                         }
                         SignalDecision.REVERSE -> {
+                            recordVirtualClose(symbol,r.entry)
                             clearOpen(symbol)
                             saveOpen(symbol,r)
                             notifyReversal(symbol,openSide.orEmpty(),r)
                         }
                         SignalDecision.CLOSE_ONLY -> {
+                            recordVirtualClose(symbol,r.entry)
                             clearOpen(symbol)
                             notifyExit(symbol,"بستن موقعیت قبلی • $symbol",
                                 "سیگنال مخالف $r.signal تأیید شد؛ موقعیت $openSide بسته شد. به‌دلیل دوره توقف ریسک، موقعیت جدید باز نشد.")
@@ -127,8 +129,27 @@ class CryptoMonitorService : Service() {
 
     private fun saveOpen(symbol:String,r:StrategyResult){
         // Track direction only. SL/TP are not part of this hold-until-reversal mode.
-        val o=JSONObject().put("side",r.signal).put("openedAt",System.currentTimeMillis())
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("openedAt",System.currentTimeMillis())
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
+    }
+    private fun expectancyKey(symbol:String,side:String)="closed_net_r_${symbol}_$side"
+    private fun loadExpectancyStats(symbol:String):Map<String,List<Double>> = mapOf("LONG","SHORT").associateWith { side ->
+        prefs.getString(expectancyKey(symbol,side),"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(200)
+    }
+    private fun recordVirtualClose(symbol:String,exit:Double){
+        val raw=prefs.getString("open_setup_$symbol",null)?:return
+        val o=try{JSONObject(raw)}catch(_:Exception){return}
+        val side=o.optString("side");val entry=o.optDouble("entry",0.0);val stop=o.optDouble("stop",0.0)
+        val risk=kotlin.math.abs(entry-stop)
+        if((side!="LONG"&&side!="SHORT")||entry<=0.0||risk<=0.0||exit<=0.0)return
+        val direction=if(side=="LONG")1.0 else -1.0
+        val grossR=direction*(exit-entry)/risk
+        // Conservative modeled round-trip fee + slippage: 10 bps each side.
+        val costsR=(entry+exit)*0.001/risk
+        val netR=grossR-costsR
+        val key=expectancyKey(symbol,side)
+        val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
+        prefs.edit().putString(key,(prior+netR).joinToString(",")).apply()
     }
     private fun manageOpen(symbol:String,price:Double){
         val raw=prefs.getString("open_setup_$symbol",null)?:return
