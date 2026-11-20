@@ -12,7 +12,7 @@ data class StrategyResult(val signal: String, val score: Int, val entry: Double,
 /** AURUM X 0.3.0 read-only engine: selected 10-indicator suite and 5m/15m/30m consensus. */
 object TradingStrategy {
     private const val MIN_CANDLES = 200
-    private val tfWeights = mapOf("5m" to .25, "15m" to .35, "30m" to .40)
+    private val tfWeights = mapOf("1m" to .15, "3m" to .20, "5m" to .25, "15m" to .35, "30m" to .40, "1h" to .45, "4h" to .50)
     private val familyWeights = mapOf("trend" to 1.5, "momentum" to 1.3, "strength" to 1.1, "volume" to 1.0, "volatility" to .8)
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
@@ -317,7 +317,7 @@ object TradingStrategy {
     }
 
     internal fun noMajorIndicatorConflict(votes:Map<String,Int>,direction:Int):Boolean {
-        val core=setOf("EMA","Ichimoku","RSI","MACD","StochRSI","ADX_DMI","VWAP","OBV_Trend","Bollinger")
+        val core=setOf("EMA","Ichimoku","RSI","MACD","StochRSI","ADX_DMI","OBV_Trend","Bollinger")
         val opposingCore=core.count{(votes[it]?:0)*direction<0}
         val opposingMinor=votes.count{(it.key !in core)&&it.value*direction<0}
         return opposingCore==0&&opposingMinor<=1
@@ -369,7 +369,8 @@ object TradingStrategy {
         val price=reports[selected.first()]?.price?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,
             listOf("اطلاعات کافی/معتبر نیست: "+invalid.joinToString("، ")+"؛ سیگنالی صادر نمی‌شود"),emptyList())
-        val combined=reports.values.sumOf{it.score}/reports.size
+        val weightTotal=selected.sumOf { tfWeights[it] ?: 0.0 }
+        val combined=reports.entries.sumOf{it.value.score*(tfWeights[it.key]?:0.0)/weightTotal}
         val volatilityBlocked=reports.filterValues{it.highVolatility}.keys
         if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,
             listOf("فیلتر نوسان غیرعادی در "+volatilityBlocked.joinToString("، ")+" فعال است؛ سیگنالی صادر نمی‌شود"),emptyList())
