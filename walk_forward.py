@@ -7,9 +7,11 @@ when open_time + timeframe_duration <= decision_time. Entry occurs at the next
 from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
+from math import isfinite
 from signal_engine import REQUIRED_TFS, analyze_market
 
 DURATION_MS = {"5m": 300_000, "15m": 900_000, "30m": 1_800_000}
+MAX_ENTRY_GAP_ATR = 0.25
 
 
 def _timestamp(row: Dict[str, Any]) -> int:
@@ -83,7 +85,9 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     peak = equity
     max_dd = 0.0
     trades = []
-    full_stop_indices = []
+    loss_streak_indices = []
+    entry_gap_skips = 0
+    invalid_level_skips = 0
     cooldown_until_index = -1
     cooldown_events = 0
     cooldown_skipped_bars = 0
@@ -119,13 +123,39 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         if stop_signal is None or len(targets_signal) < 3:
             i += 1
             continue
-        risk_distance = abs(signal_close - float(stop_signal))
-        if risk_distance <= 0 or entry <= 0:
+        atr = (signal.get("timeframes", {}).get("5m", {})
+               .get("indicators", {}).get("atr"))
+        if (atr is None or not isfinite(float(atr)) or float(atr) <= 0
+                or not isfinite(entry) or not isfinite(signal_close) or entry <= 0):
+            invalid_level_skips += 1
             i += 1
             continue
-        stop = entry - risk_distance if side == "LONG" else entry + risk_distance
-        targets = [entry + abs(float(t)-signal_close) * (1 if side == "LONG" else -1)
-                   for t in targets_signal[:3]]
+        atr = float(atr)
+        entry_gap_atr = abs(entry - signal_close) / atr
+        # A signal is calculated on the just-closed candle. If the next candle
+        # opens too far away, do not chase it or silently translate its levels.
+        if entry_gap_atr > MAX_ENTRY_GAP_ATR:
+            entry_gap_skips += 1
+            i += 1
+            continue
+        stop = float(stop_signal)
+        targets = [float(t) for t in targets_signal[:3]]
+        levels_finite = isfinite(stop) and all(isfinite(t) for t in targets)
+        if side == "LONG":
+            levels_ordered = stop < entry < targets[0] < targets[1] < targets[2]
+        else:
+            levels_ordered = stop > entry > targets[0] > targets[1] > targets[2]
+        if not levels_finite or not levels_ordered:
+            # Keep the signal's absolute structural levels. If the next-open
+            # price has already invalidated them, skip rather than re-anchor.
+            invalid_level_skips += 1
+            i += 1
+            continue
+        risk_distance = abs(entry - stop)
+        if risk_distance <= 0:
+            invalid_level_skips += 1
+            i += 1
+            continue
         risk_cash = equity * risk_fraction
         # Include both-side fees and adverse slippage in the sizing denominator.
         # This is an estimate at the modeled stop price; gaps/market impact can
@@ -258,18 +288,20 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         funding = funding_bps_total if funding_events_applied else None
         funding_cash = funding_cash if funding_events_applied else None
         net_pnl = realized - fees - (funding_cash or 0.0)
-        if exit_reason == "stop" and net_pnl < 0:
-            full_stop_indices = [
-                index for index in full_stop_indices
+        # Count every consecutive net losing trade, including a loss after
+        # TP1/TP2 protected-stop exits and losses caused by fees/funding.
+        if net_pnl < 0:
+            loss_streak_indices = [
+                index for index in loss_streak_indices
                 if exit_index - index <= loss_cooldown_bars
             ]
-            full_stop_indices.append(exit_index)
-            if len(full_stop_indices) >= loss_streak_limit:
+            loss_streak_indices.append(exit_index)
+            if len(loss_streak_indices) >= loss_streak_limit:
                 cooldown_until_index = max(cooldown_until_index, exit_index + loss_cooldown_bars)
                 cooldown_events += 1
-                full_stop_indices = []
+                loss_streak_indices = []
         else:
-            full_stop_indices = []
+            loss_streak_indices = []
         start_equity = equity
         equity += net_pnl
         peak = max(peak, equity)
@@ -280,6 +312,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             "exit_reason": exit_reason, "targets_hit": [f"TP{x+1}" for x in sorted(hit_targets)],
             "position_quantity": quantity, "initial_notional": initial_notional,
             "risk_cash": risk_cash, "risk_fraction": risk_fraction,
+            "entry_gap_atr": entry_gap_atr, "stop_loss": stop,
+            "take_profits": targets,
             "estimated_stop_loss_per_unit": estimated_loss_per_unit,
             "estimated_risk_cash_including_costs": quantity * estimated_loss_per_unit,
             "fees_cash": fees, "slippage_cash": slippage,
@@ -322,7 +356,12 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         "loss_guard": {"loss_streak_limit": loss_streak_limit,
                        "cooldown_bars": loss_cooldown_bars,
                        "cooldown_events": cooldown_events,
-                       "cooldown_skipped_bars": cooldown_skipped_bars},
+                       "cooldown_skipped_bars": cooldown_skipped_bars,
+                       "counted_losses": "all_negative_net_pnl_including_protected_stops"},
+        "entry_filter": {"max_entry_gap_atr": MAX_ENTRY_GAP_ATR,
+                         "entry_gap_skips": entry_gap_skips,
+                         "invalid_level_skips": invalid_level_skips,
+                         "levels_policy": "preserve_signal_levels; never_reanchor_after_gap"},
         "max_drawdown_pct": max_dd*100, "risk_fraction": risk_fraction,
         "fee_bps_open": fee_bps_open, "fee_bps_close": fee_bps_close,
         "slippage_bps_per_side": slippage_bps_per_side,
