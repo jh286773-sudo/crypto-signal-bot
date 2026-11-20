@@ -30,13 +30,13 @@ class EngineTests(unittest.TestCase):
     def test_indicator_report(self):
         r=analyze_timeframe(candles())
         self.assertTrue(r["valid"])
-        for key in ("ema","rsi","macd","bollinger","stoch_rsi","adx_dmi","ichimoku","atr","vwap","obv","smc"):
+        for key in ("ema","rsi","macd","bollinger","adx_dmi","atr","vwap","obv","smc"):
             self.assertIn(key,r["indicators"])
         self.assertEqual(set(r["indicators"]["ema"]), {"20","50","200"})
         self.assertNotIn("sma", r["indicators"])
         self.assertNotIn("mfi", r["indicators"])
         self.assertNotIn("taker_flow", r["indicators"])
-        self.assertEqual(set(r["indicator_votes"]), {"EMA","Ichimoku","RSI","MACD","StochRSI","ADX_DMI","VWAP","OBV_Trend","Bollinger"})
+        self.assertEqual(set(r["indicator_votes"]), {"EMA","RSI","MACD","ADX_DMI","VWAP","OBV_Trend","Bollinger"})
     def test_requires_all_timeframes(self):
         r=analyze_market({"5m":candles(),"15m":candles()})
         self.assertEqual(r["signal"],"NO_SIGNAL")
@@ -307,7 +307,7 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"LegacyMinor":-1}}, "LONG"))
         self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":-1,"MACD":1,"VWAP":1}}, "LONG"))
         self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"VWAP":-1,"OBV_Trend":-1}}, "LONG"))
-        self.assertTrue(_no_major_indicator_conflict({"indicator_votes":{"EMA":-1,"RSI":-1,"MACD":-1,"VWAP":1}}, "SHORT"))
+        self.assertFalse(_no_major_indicator_conflict({"indicator_votes":{"EMA":-1,"RSI":-1,"MACD":-1,"VWAP":1}}, "SHORT"))
 
     def test_indicator_family_conflict_blocks_directional_signal(self):
         conflicted = {"valid": True, "score": 60.0, "bias": "bullish",

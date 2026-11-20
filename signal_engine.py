@@ -421,7 +421,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         c=candles; close=_series(c,"close"); price=close[-1]
         e20=_ema(close,20); e50=_ema(close,50); e200=_ema(close,200)
         r=_rsi(close); m=_macd(close); bb=_bollinger(close)
-        st=_stoch_rsi(close); ad=_adx(c); ichi=_ichimoku(c); a=_atr(c)
+        ad=_adx(c); a=_atr(c)
         vw=_vwap(c); obv=_obv_trend(c); structure=_market_structure(c)
         volatility=_volatility_status(c,timeframe,a)
         regime=_adx_regime(ad)
@@ -433,10 +433,8 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
             details[name]=value
 
         vote("trend","EMA",1 if e20>e50>e200 else -1 if e20<e50<e200 else 0,1.2)
-        vote("trend","Ichimoku",1 if ichi and price>max(ichi["span_a"],ichi["span_b"]) and ichi["tenkan"]>ichi["kijun"] else -1 if ichi and price<min(ichi["span_a"],ichi["span_b"]) and ichi["tenkan"]<ichi["kijun"] else 0,1.2)
         vote("momentum","RSI",1 if r is not None and r>52 and r<70 else -1 if r is not None and r>30 and r<48 else 0)
         vote("momentum","MACD",1 if m["histogram"] is not None and m["histogram"]>0 else -1 if m["histogram"] is not None and m["histogram"]<0 else 0,1.2)
-        vote("momentum","StochRSI",1 if st is not None and st>55 else -1 if st is not None and st<45 else 0)
         # ADX measures strength; DI+/DI- supply direction. ADX magnitude is not a direction gate.
         vote("strength","ADX_DMI",1 if ad and ad.get("plus_di",0)>ad.get("minus_di",0) else -1 if ad and ad.get("minus_di",0)>ad.get("plus_di",0) else 0,1.2)
         vote("volume","VWAP",1 if vw and price>vw else -1 if vw and price<vw else 0)
@@ -464,8 +462,8 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
                 "ema21":e20,
                 "indicators":{
                     "ema":{"20":e20,"50":e50,"200":e200},
-                    "rsi":r,"macd":m,"bollinger":bb,"stoch_rsi":st,"adx_dmi":ad,
-                    "ichimoku":ichi,"atr":a,"vwap":vw,"obv":obv,"smc":structure}}
+                    "rsi":r,"macd":m,"bollinger":bb,"adx_dmi":ad,
+                    "atr":a,"vwap":vw,"obv":obv,"smc":structure}}
     except (KeyError,TypeError,ValueError,ZeroDivisionError) as exc:
         return {"valid":False,"reason":f"Invalid candle data: {exc}"}
 
@@ -483,7 +481,7 @@ def _no_major_indicator_conflict(report: Dict[str, Any], side: str) -> bool:
     if not isinstance(votes, dict) or not votes:
         return True  # Compatibility for synthetic/legacy reports; live analysis always supplies votes.
     direction = 1 if side == "LONG" else -1
-    core = {"EMA", "Ichimoku", "RSI", "MACD", "StochRSI", "ADX_DMI", "OBV_Trend", "Bollinger"}
+    core = {"EMA", "RSI", "MACD", "ADX_DMI", "VWAP", "OBV_Trend", "Bollinger"}
     opposing_core = sum(1 for name in core if int(votes.get(name, 0)) * direction < 0)
     opposing_minor = sum(1 for name, value in votes.items()
                          if name not in core and int(value) * direction < 0)

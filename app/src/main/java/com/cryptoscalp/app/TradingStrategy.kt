@@ -9,7 +9,7 @@ import kotlin.math.roundToInt
 data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L, val takerBuyVolume: Double? = null)
 data class StrategyResult(val signal: String, val score: Int, val entry: Double, val reasons: List<String>, val smc: List<String>)
 
-/** AURUM X 0.3.0 read-only engine: selected 10-indicator suite and 5m/15m/30m consensus. */
+/** AURUM X 0.3.0 read-only engine: seven-indicator suite and 5m/15m/30m consensus. */
 object TradingStrategy {
     private const val MIN_CANDLES = 200
     private val tfWeights = mapOf("1m" to .15, "3m" to .20, "5m" to .25, "15m" to .35, "30m" to .40, "1h" to .45, "4h" to .50)
@@ -264,7 +264,7 @@ object TradingStrategy {
         val v=c.map{it.close};val price=v.last()
         val e20=ema(v,20)!!;val e50=ema(v,50)!!;val e200=ema(v,200)!!
         val r=rsi(v);val mc=macd(v);val bands=bb(v)
-        val st=stochRsi(v);val dx=adx(c);val ichi=ichimoku(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obvTrend(c)
+        val dx=adx(c);val a=atr(c);val vol=volatility(c,timeframe,a);val vw=vwap(c);val ov=obvTrend(c)
         val sm=structure(c)
         val regime=when{dx==null->"unknown";dx.value>=25->"trending";dx.value<18->"ranging";else->"transition"}
         val groups=linkedMapOf<String,MutableList<Pair<Double,Double>>>();val notes=mutableListOf<String>();val indicatorVotes=linkedMapOf<String,Int>()
@@ -274,10 +274,8 @@ object TradingStrategy {
             if(value!=0)notes.add(name+":"+(if(value>0)"+" else "")+value)
         }
         vote("trend","EMA",if(e20>e50&&e50>e200)1 else if(e20<e50&&e50<e200)-1 else 0,1.2)
-        vote("trend","Ichimoku",if(ichi!=null&&price>max(ichi.spanA,ichi.spanB)&&ichi.tenkan>ichi.kijun)1 else if(ichi!=null&&price<min(ichi.spanA,ichi.spanB)&&ichi.tenkan<ichi.kijun)-1 else 0,1.2)
         vote("momentum","RSI",if(r!=null&&r>52&&r<70)1 else if(r!=null&&r>30&&r<48)-1 else 0)
         vote("momentum","MACD",mc.third?.let{if(it>0)1 else if(it<0)-1 else 0}?:0,1.2)
-        vote("momentum","StochRSI",if(st!=null&&st>55)1 else if(st!=null&&st<45)-1 else 0)
         // ADX measures strength; DI+/DI- provide direction without an ADX magnitude gate.
         vote("strength","ADX_DMI",if(dx!=null&&dx.plus>dx.minus)1 else if(dx!=null&&dx.minus>dx.plus)-1 else 0,1.2)
         vote("volume","VWAP",if(vw!=null&&price>vw)1 else if(vw!=null&&price<vw)-1 else 0)
@@ -317,7 +315,7 @@ object TradingStrategy {
     }
 
     internal fun noMajorIndicatorConflict(votes:Map<String,Int>,direction:Int):Boolean {
-        val core=setOf("EMA","Ichimoku","RSI","MACD","StochRSI","ADX_DMI","OBV_Trend","Bollinger")
+        val core=setOf("EMA","RSI","MACD","ADX_DMI","VWAP","OBV_Trend","Bollinger")
         val opposingCore=core.count{(votes[it]?:0)*direction<0}
         val opposingMinor=votes.count{(it.key !in core)&&it.value*direction<0}
         return opposingCore==0&&opposingMinor<=1
