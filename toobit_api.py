@@ -157,7 +157,7 @@ class ToobitAPI:
         }
 
     def get_klines_range(self, symbol, interval, start_ms, end_ms, limit=1000):
-        """Download a complete contiguous kline range by paging backward from the end."""
+        """Download a complete contiguous kline range by paging forward from its start."""
         if interval not in self.INTERVALS:
             raise ValueError("Invalid interval")
         step = self.INTERVALS[interval]
@@ -167,12 +167,12 @@ class ToobitAPI:
         page_size = max(1, min(int(limit), 1000))
         expected_first = (start_ms // step) * step
         expected_last = ((end_ms - 1) // step) * step
-        cursor_end = end_ms
+        cursor_start = expected_first
         rows_by_time = {}
-        while cursor_end > start_ms:
+        while cursor_start <= expected_last:
             page = self._get("/quote/v1/klines", {
-                "symbol": symbol, "interval": interval, "startTime": start_ms,
-                "endTime": cursor_end, "limit": page_size
+                "symbol": symbol, "interval": interval, "startTime": cursor_start,
+                "endTime": end_ms, "limit": page_size
             })
             if not isinstance(page, list) or not page:
                 break
@@ -181,7 +181,7 @@ class ToobitAPI:
                 if len(row) < 6:
                     continue
                 opened = int(row[0])
-                if opened < start_ms or opened >= cursor_end:
+                if opened < cursor_start or opened > expected_last:
                     continue
                 page_opens.append(opened)
                 item = {
@@ -194,20 +194,17 @@ class ToobitAPI:
                     item["taker_buy_volume"] = float(row[9])
                 rows_by_time[opened] = item
             if not page_opens:
-                raise RuntimeError(
-                    f"Toobit kline pagination returned no candles before cursor {cursor_end}"
-                )
-            oldest_open = min(page_opens)
-            if oldest_open <= expected_first:
                 break
-            next_cursor_end = oldest_open - 1
-            if next_cursor_end >= cursor_end:
-                raise RuntimeError("Toobit kline pagination did not move backward")
-            cursor_end = next_cursor_end
-            # Continue even when a page is shorter than the requested limit.
+            newest_open = max(page_opens)
+            if newest_open >= expected_last:
+                break
+            next_cursor_start = newest_open + step
+            if next_cursor_start <= cursor_start:
+                raise RuntimeError("Toobit kline pagination did not move forward")
+            cursor_start = next_cursor_start
             time.sleep(0.05)
 
-        # Retry internal gaps with exact, narrow exchange queries. Never synthesize bars.
+        # Retry small internal gaps with exact exchange queries. Never synthesize bars.
         ordered_times = sorted(rows_by_time)
         missing_opens = []
         for left, right in zip(ordered_times, ordered_times[1:]):
