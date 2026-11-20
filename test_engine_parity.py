@@ -58,11 +58,15 @@ class CrossEngineContractTests(unittest.TestCase):
         self.assertIn('allBullish&&sm5?.retestLong==true->"LONG"',kt)
         self.assertIn('allBearish&&sm5?.retestShort==true->"SHORT"',kt)
         for obsolete in ("combined>=34", "combined<=-34", 'score"]>=26', 'score"]<=-26',
-                         'score"]>=24', 'score"]<=-24'):
+                         'score"]>=24', 'score"]<=-24', "score>=22", "score<=-22",
+                         "bullish>=4", "bearish>=4", "directionalQuality"):
             self.assertNotIn(obsolete,py)
         for obsolete in ("combined>=34", "combined<=-34", "score>=26", "score<=-26",
-                         "score>=24", "score<=-24", "directionalQuality"):
+                         "score>=24", "score<=-24", "score>=22", "score<=-22",
+                         "up>=4", "down>=4", "directionalQuality"):
             self.assertNotIn(obsolete,kt)
+        self.assertIn('float(value) > 0.0', py)
+        self.assertIn('if(up>down)"bullish"', kt)
 
 
 if __name__ == "__main__":
