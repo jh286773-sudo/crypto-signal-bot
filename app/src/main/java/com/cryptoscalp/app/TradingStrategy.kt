@@ -137,7 +137,7 @@ object TradingStrategy {
         vote("trend","SMA",if(s20!=null&&s50!=null&&price>s20&&s20>s50)1 else if(s20!=null&&s50!=null&&price<s20&&s20<s50)-1 else 0)
         vote("trend","Ichimoku",if(ichi!=null&&price>max(ichi.spanA,ichi.spanB)&&ichi.tenkan>ichi.kijun)1 else if(ichi!=null&&price<min(ichi.spanA,ichi.spanB)&&ichi.tenkan<ichi.kijun)-1 else 0,1.2)
         vote("momentum","RSI",if(r!=null&&r>52&&r<70)1 else if(r!=null&&r>30&&r<48)-1 else 0)
-        vote("momentum","MACD",if(mc.third!=null&&mc.third>0)1 else if(mc.third!=null&&mc.third<0)-1 else 0,1.2)
+        vote("momentum","MACD",mc.third?.let{if(it>0)1 else if(it<0)-1 else 0}?:0,1.2)
         vote("momentum","StochRSI",if(st!=null&&st>55)1 else if(st!=null&&st<45)-1 else 0)
         vote("strength","ADX_DMI",if(dx!=null&&dx.value>=20&&dx.plus>dx.minus)1 else if(dx!=null&&dx.value>=20&&dx.minus>dx.plus)-1 else 0,1.2)
         vote("volume","VWAP",if(vw!=null&&price>vw)1 else if(vw!=null&&price<vw)-1 else 0)
