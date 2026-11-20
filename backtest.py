@@ -127,6 +127,7 @@ def run_backtest(timeframes: Dict[str, list], holding_bars: int = 3,
             "gross_return_pct": round(gross * 100.0, 5),
             "net_return_pct": round(net * 100.0, 5),
             "funding_cost_bps": round(funding_cost, 4),
+            "estimated_funding_bps": round(funding_cost, 4),  # backwards-compatible alias
             "funding_source": funding_source,
         })
         i = exit_index + 1
@@ -159,6 +160,7 @@ def run_backtest(timeframes: Dict[str, list], holding_bars: int = 3,
         "round_trip_fee_bps": round(2.0 * fee_bps, 3),
         "round_trip_slippage_bps": round(2.0 * slippage_bps, 3),
         "estimated_total_funding_bps": round(total_funding, 4),
+        "estimated_funding_bps": round(total_funding, 4),  # backwards-compatible alias
         "funding_mode": ("historical_per_candle" if any(
             row.get("funding_rate") is not None for row in candles
         ) else "configured_estimate" if funding_bps_per_8h else "not_supplied"),
