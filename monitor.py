@@ -1,34 +1,12 @@
 import logging
 import math
 import os
-import requests
 
 from toobit_api import ToobitAPI
 from signal_engine import analyze_market
 
 MAJOR_BASE_ASSETS = ("BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK", "AVAX")
 MAX_SYMBOLS = min(10, max(1, int(os.getenv("MAX_SYMBOLS", "10"))))
-NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
-NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh").rstrip(" /")
-
-
-def notify(title, message, priority="default"):
-    if not NTFY_TOPIC:
-        logging.warning("NTFY_TOPIC is not configured; phone notification skipped.")
-        return False
-    if "/" in NTFY_TOPIC or not NTFY_TOPIC.replace("-", "").replace("_", "").isalnum():
-        raise ValueError("NTFY_TOPIC must be a simple topic name.")
-    response = requests.post(
-        f"{NTFY_SERVER}/{NTFY_TOPIC}",
-        data=message.encode("utf-8"),
-        headers={"Title": title, "Priority": priority, "Tags": "chart_with_upwards_trend"},
-        timeout=20,
-    )
-    response.raise_for_status()
-    logging.info("Phone notification sent: %s", title)
-    return True
-
-
 def format_signal_alert(price, signal):
     if signal not in ("LONG", "SHORT"):
         raise ValueError("Only LONG and SHORT can be sent as entry alerts.")
@@ -52,7 +30,7 @@ def main():
                  len(symbols), ", ".join(symbols))
 
     checked = 0
-    alerts = 0
+    signals_detected = 0
     for symbol in symbols:
         try:
             candles = api.get_multi_timeframe(symbol)
@@ -74,13 +52,13 @@ def main():
                 logging.warning("%s: missing valid entry price; alert skipped", symbol)
                 continue
 
-            message = format_signal_alert(price, signal)
-            if notify(symbol, message, "high"):
-                alerts += 1
+            format_signal_alert(price, signal)  # Validate the same compact alert format used by the Android app.
+            signals_detected += 1
+            logging.info("%s | directional signal detected; delivery is handled only by the Android app", symbol)
         except Exception:
             logging.exception("Analysis failed for %s; continuing with next contract", symbol)
 
-    logging.info("Scan complete: %d contracts checked, %d alerts sent", checked, alerts)
+    logging.info("Scan complete: %d contracts checked, %d directional signals detected; no push notifications sent", checked, signals_detected)
 
 
 if __name__ == "__main__":
