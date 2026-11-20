@@ -178,6 +178,9 @@ class CryptoMonitorService : Service() {
             recordShadowClose(symbol,o,fill,fraction)
             if(prefs.getString("shadow_setup_$symbol",null)==null||i<2)return
         }
+        if(bar.time-o.optLong("openedBar",bar.time)>=72L*300_000L){
+            recordShadowClose(symbol,o,bar.close,o.optDouble("remaining",1.0))
+        }
     }
     private fun recordVirtualClose(symbol:String,exit:Double){
         val raw=prefs.getString("open_setup_$symbol",null)?:return
