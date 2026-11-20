@@ -90,7 +90,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     entry_gap_skips = 0
     invalid_level_skips = 0
     decision_diagnostics = {"evaluated": 0, "no_signal": 0, "long_candidates": 0,
-                            "short_candidates": 0, "invalid_market_data": 0}
+                            "short_candidates": 0, "invalid_market_data": 0,
+                            "rejection_reason_counts": {}, "rejected_decision_samples": []}
     cooldown_until_index = -1
     cooldown_events = 0
     cooldown_skipped_bars = 0
@@ -124,6 +125,31 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             decision_diagnostics["no_signal"] += 1
             if any(not report.get("valid", False) for report in signal.get("timeframes", {}).values()):
                 decision_diagnostics["invalid_market_data"] += 1
+            reasons = signal.get("rejection_reasons") or [signal.get("reason") or "unspecified_no_signal"]
+            for reason in reasons:
+                key = str(reason)
+                counts = decision_diagnostics["rejection_reason_counts"]
+                counts[key] = counts.get(key, 0) + 1
+            if len(decision_diagnostics["rejected_decision_samples"]) < 500:
+                decision_diagnostics["rejected_decision_samples"].append({
+                    "decision_time": decision_time,
+                    "reasons": [str(reason) for reason in reasons],
+                    "reason": signal.get("reason"),
+                    "combined_score": signal.get("combined_score"),
+                    "timeframes": {
+                        tf: {
+                            "valid": report.get("valid"),
+                            "score": report.get("score"),
+                            "bias": report.get("bias"),
+                            "market_regime": report.get("market_regime"),
+                            "high_volatility": report.get("high_volatility"),
+                            "family_scores": report.get("family_scores"),
+                            "indicator_votes": report.get("indicator_votes"),
+                            "smc": (report.get("indicators") or {}).get("smc"),
+                        }
+                        for tf, report in signal.get("timeframes", {}).items()
+                    },
+                })
             i += 1
             continue
         decision_diagnostics["long_candidates" if side == "LONG" else "short_candidates"] += 1
