@@ -57,7 +57,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                      slippage_bps_per_side: float, initial_equity: float = 10_000.0,
                      risk_fraction: float = 0.005, max_holding_bars: int = 72,
                      loss_streak_limit: int = 2, loss_cooldown_bars: int = 288,
-                     allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3)) -> Dict[str, Any]:
+                     allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3),
+                     adx_policy: str = "strict") -> Dict[str, Any]:
     """Causal portfolio backtest with timestamp as-of alignment and three TP exits.
 
     Position quantity is sized so the estimated stop loss INCLUDING opening/
@@ -89,7 +90,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     loss_streak_indices = []
     entry_gap_skips = 0
     invalid_level_skips = 0
-    decision_diagnostics = {"evaluated": 0, "no_signal": 0, "long_candidates": 0,
+    decision_diagnostics = {"adx_policy": adx_policy, "evaluated": 0, "no_signal": 0, "long_candidates": 0,
                             "short_candidates": 0, "invalid_market_data": 0,
                             "rejection_reason_counts": {}, "rejected_decision_samples": []}
     cooldown_until_index = -1
@@ -118,7 +119,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         history_ready = sum(len(values) for values in closed_net_r.values()) >= 30
         signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()},
                                 expectancy_stats={side: list(values) for side, values in closed_net_r.items()} if history_ready else {},
-                                research_warmup=True)
+                                research_warmup=True, adx_policy=adx_policy)
         decision_diagnostics["evaluated"] += 1
         side = signal.get("signal")
         if side not in ("LONG", "SHORT"):
