@@ -75,8 +75,11 @@ class CryptoMonitorService : Service() {
                 val selectedTimeframes=prefs.getStringSet("selected_timeframes",setOf("5m","15m","30m"))
                     ?.filter { it in ExchangeMarketData.supportedTimeframes }.orEmpty()
                 if(selectedTimeframes.isEmpty()) throw IllegalStateException("هیچ تایم‌فریمی انتخاب نشده است.")
+                val slowestDuration=selectedTimeframes.maxOf { ExchangeMarketData.durationMs(it) }
                 val candleMap=selectedTimeframes.associateWith { tf ->
-                    ExchangeMarketData.candles(exchange,symbol,tf,marketAsOfMs)
+                    val duration=ExchangeMarketData.durationMs(tf)
+                    val historyLimit=(slowestDuration/duration+220L).coerceAtLeast(260L).coerceAtMost(1000L).toInt()
+                    ExchangeMarketData.candles(exchange,symbol,tf,marketAsOfMs,historyLimit)
                 }
                 val latestClosedCandleTime=selectedTimeframes.minOf { tf ->
                     candleMap.getValue(tf).last().time + ExchangeMarketData.durationMs(tf)
