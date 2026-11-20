@@ -91,7 +91,8 @@ class BacktestTests(unittest.TestCase):
         with patch("backtest.analyze_market",return_value={"signal":"SHORT"}):
             result=run_backtest(data,holding_bars=1,fee_bps=0,slippage_bps=0)
         self.assertAlmostEqual(result["trades"][0]["funding_cost_bps"],-30.0)
-        self.assertGreater(result["trades"][0]["net_return_pct"],0.0)
+        self.assertGreater(result["trades"][0]["net_return_pct"],
+                           result["trades"][0]["gross_return_pct"])
 
 
 if __name__ == "__main__":
