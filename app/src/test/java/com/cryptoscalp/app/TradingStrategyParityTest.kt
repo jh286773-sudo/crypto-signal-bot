@@ -39,15 +39,18 @@ class TradingStrategyParityTest {
             .find(raw)?.groupValues?.get(1)?.toDouble() ?: error("Missing base_price")
         fun candles(tf: String, duration: Long): List<MarketCandle> {
             val count = number(tf).toInt()
+            val alignedStart = (start / duration) * duration
             return (0 until count).map { i ->
                 val close = base + i * 0.02 + sin(i * 0.3) * 0.03
                 MarketCandle(close - 0.02, close + 0.15, close - 0.15,
-                    close, 100.0 + i, start + i * duration)
+                    close, 100.0 + i, alignedStart + i * duration)
             }
         }
-        val result = TradingStrategy.evaluate(
-            candles("5m", 300_000L), candles("15m", 900_000L), candles("30m", 1_800_000L)
-        )
+        val five = candles("5m", 300_000L)
+        val fifteen = candles("15m", 900_000L)
+        val thirty = candles("30m", 1_800_000L)
+        val decisionTime = five.last().time + 300_000L
+        val result = TradingStrategy.evaluate(five, fifteen, thirty, decisionTime + 1_000L)
         val normalized = if (result.signal == "WAIT") "NO_SIGNAL" else result.signal
         assertEquals(expected("expected_signal"), normalized)
         assertEquals(number("expected_score").toInt(), result.score)
