@@ -20,31 +20,36 @@ def finite_json(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--days", type=int, default=30)
-    parser.add_argument("--min-symbols", type=int, default=10,
-                        help="Minimum successful symbols required; does not stop the full-universe scan")
-    parser.add_argument("--candidates", type=int, default=10000,
-                        help="Maximum active USDT perpetual contracts to inspect (default: all)")
+    parser.add_argument("--days", type=int, default=30, help="Maximum lookback; actual start is the common earliest available 5m candle")
+    parser.add_argument("--symbols", required=True, help="Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT")
+    
     parser.add_argument("--slippage-bps", type=float, default=1.0,
                         help="Assumed adverse slippage per fill; not measured")
     parser.add_argument("--equity-per-symbol", type=float, default=10000.0)
     parser.add_argument("--risk", type=float, default=0.005)
     parser.add_argument("--output", default="toobit_multi_crypto_30day.json")
     args = parser.parse_args()
-    if not 2 <= args.days <= 30:
-        raise SystemExit("--days must be between 2 and 30 (funding endpoint history cap)")
-    if args.min_symbols < 10 or args.candidates < args.min_symbols:
-        raise SystemExit("At least 10 symbols are required and candidates must cover min-symbols")
+    if not 1 <= args.days <= 30:
+        raise SystemExit("--days must be between 1 and 30")
+    selected_symbols = list(dict.fromkeys(s.strip().upper() for s in args.symbols.split(",") if s.strip()))
+    if not selected_symbols:
+        raise SystemExit("--symbols must contain at least one symbol")
     if args.slippage_bps < 0:
         raise SystemExit("--slippage-bps cannot be negative")
 
     api = ToobitAPI()
     end_ms = int(api.server_time()["serverTime"])
     end_ms = (end_ms // 300000) * 300000
-    start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000
-    # Enumerate the complete active USDT-margined linear perpetual universe.
-    # This research-only scan does not alter app symbol selection or live scanning.
-    candidates = api.get_futures_symbols(limit=args.candidates, preferred_bases=None)
+    requested_start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000
+    # Use only user-selected symbols; determine a common start from real available 5m history.
+    active_symbols = set(api.get_futures_symbols(limit=10000, preferred_bases=None))
+    invalid = [symbol for symbol in selected_symbols if symbol not in active_symbols]
+    if invalid:
+        raise SystemExit("Selected symbols are not active Toobit USDT perpetuals: " + ", ".join(invalid))
+    available_starts = {symbol: api.get_first_available_candle_open(symbol, "5m", end_ms)
+                        for symbol in selected_symbols}
+    start_ms = max(requested_start_ms, max(available_starts.values()))
+    candidates = selected_symbols
     results, failures = [], []
 
     # All symbols use the same UTC window, fee schedule, slippage and risk model.
@@ -110,15 +115,19 @@ def main():
         "period_utc": {
             "start": datetime.fromtimestamp(start_ms / 1000, timezone.utc).isoformat(),
             "end": datetime.fromtimestamp(end_ms / 1000, timezone.utc).isoformat(),
-            "days_requested": args.days,
+            "days_requested_max": args.days,
+            "actual_days": round((end_ms - start_ms) / 86400000, 4),
+            "window_basis": "common earliest available closed 5m candle across selected symbols, capped by requested lookback",
         },
         "methodology": {
             "strategy": "same 5m/15m/30m closed-candle strategy on every eligible contract",
-            "symbol_selection": "all active Toobit USDT-margined linear perpetual contracts returned by exchangeInfo, ranked by 24h quote volume",
+            "symbol_selection": "only user-selected active Toobit USDT-margined linear perpetual contracts",
+            "available_5m_start_by_symbol_utc": {symbol: datetime.fromtimestamp(value / 1000, timezone.utc).isoformat() for symbol, value in available_starts.items()},
+            "common_start_utc": datetime.fromtimestamp(start_ms / 1000, timezone.utc).isoformat(),
             "candidate_contracts": len(candidates),
             "successfully_tested_contracts": len(results),
             "universe_scope": "crypto underlyings listed in Toobit exchangeInfo coins; USDT linear perpetuals only; excludes TradFi, inverse and non-USDT contracts",
-            "minimum_symbols": args.min_symbols,
+            "minimum_symbols": 1,
             "slippage_bps_per_fill": args.slippage_bps,
             "slippage_is_measured": False,
             "fee_source": "published Toobit VIP-0 taker fee, 6 bps each side",
@@ -143,10 +152,10 @@ def main():
                                   "failed_symbols": failures,
                                   "full_universe_data_complete": report["methodology"]["full_universe_data_complete"],
                                   "output": args.output}), indent=2), flush=True)
-    if len(results) < args.min_symbols or failures:
+    if len(results) != len(candidates) or failures:
         raise RuntimeError(
-            f"Full-universe {args.days}-day backtest is incomplete: {len(results)}/{len(candidates)} "
-            f"contracts completed, {len(failures)} failed. Detailed report saved to {args.output}."
+            f"Selected-symbol backtest is incomplete: {len(results)}/{len(candidates)} "
+            f"symbols completed, {len(failures)} failed. Detailed report saved to {args.output}."
         )
 
 
