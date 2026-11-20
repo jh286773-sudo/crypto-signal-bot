@@ -87,7 +87,7 @@ class CryptoMonitorService : Service() {
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m",marketAsOfMs)
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m",marketAsOfMs)
                     val candidate=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,emptyMap(),false)
-                    if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate)
+                    if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
                     val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol),true)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
@@ -95,7 +95,7 @@ class CryptoMonitorService : Service() {
                     val lossCooldownActive = isLossCooldownActive(symbol,System.currentTimeMillis())
                     when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,lossCooldownActive)) {
                         SignalDecision.OPEN -> {
-                            saveOpen(symbol,r)
+                            saveOpen(symbol,r,latestClosedCandleTime)
                             notifySignal(symbol,r)
                         }
                         SignalDecision.REVERSE -> {
@@ -132,17 +132,17 @@ class CryptoMonitorService : Service() {
     // WAIT is an internal no-trade state only; user-facing entry alerts are LONG or SHORT.
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
 
-    private fun saveOpen(symbol:String,r:StrategyResult){
-        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3).put("tp1Done",false).put("tp2Done",false).put("openedAt",System.currentTimeMillis())
+    private fun saveOpen(symbol:String,r:StrategyResult,barTime:Long){
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3).put("tp1Done",false).put("tp2Done",false).put("openedAt",System.currentTimeMillis()).put("openedBar",barTime)
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
     }
     private fun expectancyKey(symbol:String,side:String)="shadow_closed_net_r_"+symbol+"_"+side
     private fun loadExpectancyStats(symbol:String):Map<String,List<Double>> = listOf("LONG","SHORT").associateWith { side ->
         prefs.getString(expectancyKey(symbol,side),"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(200)
     }
-    private fun saveShadow(symbol:String,r:StrategyResult){
+    private fun saveShadow(symbol:String,r:StrategyResult,barTime:Long){
         val risk=kotlin.math.abs(r.entry-r.stop); if(risk<=0.0||!risk.isFinite())return
-        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("initialRisk",risk).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3).put("remaining",1.0).put("grossR",0.0).put("entryCostR",r.entry*.0007/risk).put("tp1Done",false).put("tp2Done",false)
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("initialRisk",risk).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3).put("remaining",1.0).put("grossR",0.0).put("entryCostR",r.entry*.0007/risk).put("tp1Done",false).put("tp2Done",false).put("openedBar",barTime).put("lastBar",barTime)
         prefs.edit().putString("shadow_setup_$symbol",o.toString()).apply()
     }
     private fun recordShadowClose(symbol:String,o:JSONObject,exit:Double,fraction:Double){
@@ -161,7 +161,10 @@ class CryptoMonitorService : Service() {
     private fun manageShadow(symbol:String,bar:MarketCandle){
         val raw=prefs.getString("shadow_setup_$symbol",null)?:return
         val o=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("shadow_setup_$symbol").apply();return}
-        val long=o.optString("side")=="LONG"; val stop=o.optDouble("stop",0.0)
+        val long=o.optString("side")=="LONG"
+        if(bar.time<=o.optLong("lastBar",o.optLong("openedBar",0L)))return
+        o.put("lastBar",bar.time)
+        val stop=o.optDouble("stop",0.0)
         val stopped=if(long)bar.low<=stop else bar.high>=stop
         if(stopped){val fill=if(long)minOf(bar.open,stop) else maxOf(bar.open,stop);recordShadowClose(symbol,o,fill,o.optDouble("remaining",1.0));return}
         for(i in 0..2){
@@ -196,6 +199,8 @@ class CryptoMonitorService : Service() {
         val raw=prefs.getString("open_setup_$symbol",null)?:return
         val s=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("open_setup_$symbol").apply();return}
         val long=s.optString("side")=="LONG"
+        if(bar.time<=s.optLong("openedBar",0L))return
+        s.put("openedBar",bar.time)
         // Migrate setups saved by older app versions, which tracked only TP1/TP2.
         if(!s.has("tp3"))s.put("tp3",s.optDouble("tp2"))
         if(!s.has("tp2Done"))s.put("tp2Done",false)
