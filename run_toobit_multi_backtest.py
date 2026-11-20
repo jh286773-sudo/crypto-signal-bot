@@ -20,7 +20,7 @@ def finite_json(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--days", type=int, default=10)
+    parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--min-symbols", type=int, default=10,
                         help="Minimum successful symbols required; does not stop the full-universe scan")
     parser.add_argument("--candidates", type=int, default=10000,
@@ -85,7 +85,7 @@ def main():
 
     if len(results) < args.min_symbols:
         raise RuntimeError(
-            f"Only {len(results)} crypto symbols completed; at least {args.min_symbols} required. "
+            f"Only {len(results)} perpetual contracts completed; at least {args.min_symbols} required. "
             f"Failures: {failures}"
         )
 
