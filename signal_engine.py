@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Sequence
 from math import isfinite, sqrt
 
 SUPPORTED_TFS = ("1m", "3m", "5m", "15m", "30m", "1h", "4h")
-REQUIRED_TFS = ("5m", "15m", "30m")  # backward-compatible default
 MIN_INDICATOR_CANDLES = 200
 
 
@@ -437,11 +436,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         vote("VWAP",1 if vw is not None and price>vw else -1 if vw is not None and price<vw else 0)
         vote("OBV_Trend",obv)
         vote("Bollinger",1 if bb and price>bb["middle"] else -1 if bb and price<bb["middle"] else 0)
-        core_long=all(details.get(name)==1 for name in ("EMA","RSI","MACD","ADX_DMI"))
-        core_short=all(details.get(name)==-1 for name in ("EMA","RSI","MACD","ADX_DMI"))
-        support_long=all(details.get(name,0)>=0 for name in ("VWAP","OBV_Trend","Bollinger"))
-        support_short=all(details.get(name,0)<=0 for name in ("VWAP","OBV_Trend","Bollinger"))
-        bias="bullish" if core_long and support_long else "bearish" if core_short and support_short else "neutral"
+        bias=_indicator_bias(details)
         return {"valid":True,"close":price,"bias":bias,
                 "indicator_votes":details,"volatility_filter":volatility,"high_volatility":volatility["high_volatility"],
                 "market_regime":regime,"ema21":e20,
@@ -478,6 +473,19 @@ def _levels(side, entry, atr, structure=None):
         risk = stop - entry
         targets = [entry - risk * multiple for multiple in (1.5, 2.5, 3.5)]
     return {"stop_loss": stop, "take_profits": targets, "risk_reward": [1.5, 2.5, 3.5]}
+
+def _indicator_bias(indicator_directions: Dict[str, int]) -> str:
+    """Use explicit indicator conditions, never weights, sums, or numeric scores."""
+    core_long = all(indicator_directions.get(name) == 1 for name in ("EMA", "RSI", "MACD", "ADX_DMI"))
+    core_short = all(indicator_directions.get(name) == -1 for name in ("EMA", "RSI", "MACD", "ADX_DMI"))
+    support_long = all(indicator_directions.get(name, 0) >= 0 for name in ("VWAP", "OBV_Trend", "Bollinger"))
+    support_short = all(indicator_directions.get(name, 0) <= 0 for name in ("VWAP", "OBV_Trend", "Bollinger"))
+    if core_long and support_long:
+        return "bullish"
+    if core_short and support_short:
+        return "bearish"
+    return "neutral"
+
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
     """Analyze only selected timeframes; one timeframe is independent, several require unanimity."""
