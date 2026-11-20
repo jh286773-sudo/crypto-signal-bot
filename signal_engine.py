@@ -556,8 +556,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
     reports={tf:analyze_timeframe(analysis_timeframes.get(tf,[]),tf) for tf in selected_tfs}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
-        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Insufficient/invalid candles: "+", ".join(invalid),
-                "timeframes":reports,"trade_enabled":False}
+        detail = "; ".join(
+            f"{tf}: {reports[tf].get('reason', 'invalid candle data')}" for tf in invalid)
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                "reason":"Insufficient/invalid candles: "+detail,
+                "timeframes":reports,"diagnostics":{tf: reports[tf].get("reason", "invalid candle data") for tf in invalid},
+                "trade_enabled":False}
     all_bullish=all(reports[tf]["bias"]=="bullish" for tf in selected_tfs)
     all_bearish=all(reports[tf]["bias"]=="bearish" for tf in selected_tfs)
     side="LONG" if all_bullish else "SHORT" if all_bearish else None
