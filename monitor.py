@@ -54,7 +54,8 @@ def main():
     for symbol in symbols:
         try:
             candles = api.get_multi_timeframe(symbol)
-            result = analyze_market(candles)
+            # Live Python monitor has no trusted closed-trade ledger; fail closed until one is supplied.
+            result = analyze_market(candles, expectancy_stats={})
             signal = result.get("signal", "NO_SIGNAL")
             reports = result.get("timeframes", {})
             five = reports.get("5m", {})
