@@ -45,5 +45,20 @@ class BacktestTests(unittest.TestCase):
             run_backtest(data,fee_bps=-1)
 
 
+    def test_intrabar_stop_and_target_same_bar_resolves_to_stop(self):
+        data={tf:flat_candles(80) for tf in ("5m","15m","30m")}
+        data["5m"][59].update({"open":100.0,"high":100.5,"low":99.5,"close":100.0})
+        data["5m"][60].update({"open":100.0,"high":100.5,"low":99.5,"close":100.0})
+        data["5m"][61].update({"open":100.0,"high":104.0,"low":98.0,"close":102.0})
+        with patch("backtest.analyze_market", return_value={
+            "signal":"LONG","stop_loss":99.0,"take_profits":[101.0,103.0,105.0]
+        }):
+            result=run_backtest(data,holding_bars=2,fee_bps=0,slippage_bps=0)
+        first=result["trades"][0]
+        self.assertEqual(first["exit_reason"],"stop_ambiguous_bar")
+        self.assertEqual(first["exit"],99.0)
+        self.assertEqual(first["exit_index"],61)
+
+
 if __name__ == "__main__":
     unittest.main()
