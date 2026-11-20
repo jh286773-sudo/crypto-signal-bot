@@ -25,7 +25,7 @@ class TradingStrategyParityTest {
         val raw = javaClass.getResourceAsStream("/strategy_parity_fixture.json")!!
             .bufferedReader().use { it.readText() }
         val fixture = JSONObject(raw)
-        val start = fixture.getLong("start_ms")
+        val start = fixture.getDouble("start_ms").toLong()
         val base = fixture.getDouble("base_price")
         val bars = fixture.getJSONObject("bars")
         fun candles(tf: String, duration: Long): List<MarketCandle> {
