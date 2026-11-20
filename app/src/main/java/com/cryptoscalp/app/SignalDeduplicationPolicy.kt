@@ -1,8 +1,12 @@
 package com.cryptoscalp.app
 
-enum class SignalDecision { NONE, OPEN, REVERSE, CLOSE_ONLY }
+enum class SignalDecision { NONE, OPEN, CLOSE_ONLY }
 
-/** Pure decision policy for one notification per directional setup. */
+/**
+ * LONG-only position policy:
+ * - LONG opens a position only while flat and outside the loss cooldown.
+ * - SHORT only closes an existing LONG; it never opens a SHORT.
+ */
 object SignalDeduplicationPolicy {
     fun decide(
         openSide: String?,
@@ -11,12 +15,19 @@ object SignalDeduplicationPolicy {
         cooldownActive: Boolean
     ): SignalDecision {
         if (signal != "LONG" && signal != "SHORT") return SignalDecision.NONE
-        if (openSide == null) {
-            if (cooldownActive || lastSignal == signal) return SignalDecision.NONE
-            return SignalDecision.OPEN
+
+        if (openSide == "LONG") {
+            return if (signal == "SHORT") SignalDecision.CLOSE_ONLY else SignalDecision.NONE
         }
-        if (openSide != "LONG" && openSide != "SHORT") return SignalDecision.NONE
-        if (openSide == signal) return SignalDecision.NONE
-        return if (cooldownActive) SignalDecision.CLOSE_ONLY else SignalDecision.REVERSE
+
+        // Clean up legacy SHORT positions when a LONG arrives, but never create
+        // another SHORT position. A fresh LONG may be opened on a later candle.
+        if (openSide == "SHORT") {
+            return if (signal == "LONG") SignalDecision.CLOSE_ONLY else SignalDecision.NONE
+        }
+
+        if (openSide != null) return SignalDecision.NONE
+        if (signal != "LONG" || cooldownActive || lastSignal == "LONG") return SignalDecision.NONE
+        return SignalDecision.OPEN
     }
 }
