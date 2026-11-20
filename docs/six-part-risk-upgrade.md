@@ -26,7 +26,7 @@ No strategy guarantees loss-free trades. This is a signal/alert system, not an o
 ## Additional loss-reduction controls
 
 - Default walk-forward risk per signal is reduced from 1.0% to 0.5% of current equity. This changes simulated position sizing; it does not guarantee positive expectancy.
-- The walk-forward engine pauses new entries for 288 five-minute bars (24 hours) after two full stop-loss exits within a rolling 24-hour window, then resets the full-stop counter. The report includes cooldown count and skipped bars.
+- No entry cooldown is applied after losing trades; each new LONG is evaluated whenever no position is open.
 - The Android monitor applies per-symbol protection: after two full stop-loss exits within a rolling 24-hour window, new alerts for that symbol are paused for 24 hours. Stops reached after TP1 are not counted as full-stop losses; a completed TP3 resets the streak.
 - The Toobit range loader retries missing candle timestamps using the exchange endpoint only. It never fabricates candles; unrecoverable gaps still fail the backtest.
-- The live Android app remains a signal/alert monitor. The cooldown can suppress alerts, but it cannot close exchange positions or guarantee a stop order was filled.
+- The live Android app remains a signal/alert monitor and does not suppress new LONG alerts based on prior losing trades.
