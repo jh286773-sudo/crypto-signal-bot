@@ -76,7 +76,6 @@ class CryptoMonitorService : Service() {
                 val five=ExchangeMarketData.candles(exchange,symbol,"5m",marketAsOfMs)
                 val latestBar=five.last()
                 // Open positions are not evaluated against price exits; only opposite signals close them.
-                val hadShadowAtBarStart=prefs.getString("shadow_setup_$symbol",null)!=null
                 // Shadow positions also follow signal-reversal exits only.
                 val latestClosedCandleTime=latestBar.time
                 val key="last_analysis_candle_$symbol"
@@ -89,7 +88,7 @@ class CryptoMonitorService : Service() {
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m",marketAsOfMs)
                     val candidate=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,emptyMap(),false)
                     closeShadowOnReversal(symbol,candidate.signal,candidate.entry)
-                    if(!hadShadowAtBarStart && isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
+                    if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
                     val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol),true)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
@@ -160,13 +159,6 @@ class CryptoMonitorService : Service() {
             val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
             prefs.edit().putString(key,(prior+net).joinToString(",")).remove("shadow_setup_$symbol").apply()
         }else prefs.edit().remove("shadow_setup_$symbol").apply()
-    }
-    private fun manageShadow(symbol:String,bar:MarketCandle){
-        val raw=prefs.getString("shadow_setup_$symbol",null)?:return
-        val o=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("shadow_setup_$symbol").apply();return}
-        if(bar.time<=o.optLong("lastBar",o.optLong("openedBar",0L)))return
-        o.put("lastBar",bar.time)
-        prefs.edit().putString("shadow_setup_$symbol",o.toString()).apply()
     }
     private fun recordVirtualClose(symbol:String,exit:Double){
         val raw=prefs.getString("open_setup_$symbol",null)?:return
