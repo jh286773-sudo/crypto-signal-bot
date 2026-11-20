@@ -58,10 +58,10 @@ class WalkForwardTests(unittest.TestCase):
 
     def test_distinct_entry_exit_fees_and_funding_settlement_once(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
-        for row in data["5m"][60:64]:
+        for row in data["5m"][360:364]:
             row["low"]=100.0; row["high"]=100.5
-        data["5m"][61]["funding_rate"]=0.001
-        data["5m"][61]["funding_settle_time"]=62*DURATION_MS["5m"]
+        data["5m"][361]["funding_rate"]=0.001
+        data["5m"][361]["funding_settle_time"]=362*DURATION_MS["5m"]
         with patch("walk_forward.analyze_market",return_value={
             "signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]
         }):
