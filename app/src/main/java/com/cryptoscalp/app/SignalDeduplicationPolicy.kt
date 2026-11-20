@@ -23,7 +23,7 @@ object SignalDeduplicationPolicy {
         // Clean up legacy SHORT positions when a LONG arrives, but never create
         // another SHORT position. A fresh LONG may be opened on a later candle.
         if (openSide == "SHORT") {
-            return if (signal == "LONG") SignalDecision.CLOSE_ONLY else SignalDecision.NONE
+            return SignalDecision.CLOSE_ONLY
         }
 
         if (openSide != null) return SignalDecision.NONE
