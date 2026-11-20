@@ -76,9 +76,9 @@ class WalkForwardTests(unittest.TestCase):
     def test_tp1_then_same_bar_breakeven_touch_closes_remainder_conservatively(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][60:]:
-            row["low"]=100.0
+            row["low"]=100.5
             row["high"]=103.0
-        signal={"signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]}
+        signal=make_signal(100.0,[102.0,103.0,104.0])
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
                                     initial_equity=10000,risk_fraction=.01,max_holding_bars=2)
@@ -107,7 +107,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_tp2_locks_tp1_for_remaining_position(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         # Entry is 100; targets are 101.5R, 102.5R, 103.5R for a 1.0 risk.
-        data["5m"][360].update({"low":100.6,"high":102.0})
+        data["5m"][360].update({"low":100.5,"high":103.0})
         data["5m"][361].update({"open":100.6,"low":100.5,"high":101.0,"close":100.8})
         signal=make_signal(100.0,[101.5,102.5,103.5])
         with patch("walk_forward.analyze_market",return_value=signal):
@@ -116,7 +116,7 @@ class WalkForwardTests(unittest.TestCase):
         trade=result["trades"][0]
         self.assertEqual(trade["targets_hit"],["TP1","TP2"])
         self.assertEqual(trade["exit_reason"],"stop_after_tp2")
-        self.assertAlmostEqual(trade["exit"],100.5)
+        self.assertAlmostEqual(trade["exit"],101.5)
 
     def test_default_risk_is_half_percent_and_two_losses_trigger_cooldown(self):
         data={tf:bars(tf,800) for tf in DURATION_MS}
@@ -134,7 +134,7 @@ class WalkForwardTests(unittest.TestCase):
 
     def test_full_stops_more_than_24_hours_apart_do_not_trigger_cooldown(self):
         data={tf:bars(tf,800) for tf in DURATION_MS}
-        signal={"signal":"LONG","stop_loss":99.0,"take_profits":[102.0,103.0,104.0]}
+        signal=make_signal(99.0,[102.0,103.0,104.0])
         def sparse_signals(history):
             index=history["5m"][-1]["timestamp"] // DURATION_MS["5m"]
             return signal if index in (359,649) else {"signal":"NO_SIGNAL"}
@@ -172,7 +172,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_distinct_entry_exit_fees_and_funding_settlement_once(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][360:364]:
-            row["low"]=100.0; row["high"]=100.5
+            row["low"]=100.5; row["high"]=100.5
         data["5m"][361]["funding_rate"]=0.001
         data["5m"][361]["funding_settle_time"]=362*DURATION_MS["5m"]
         with patch("walk_forward.analyze_market",return_value={
