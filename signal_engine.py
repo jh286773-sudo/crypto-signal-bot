@@ -483,7 +483,7 @@ def _no_major_indicator_conflict(report: Dict[str, Any], side: str) -> bool:
     if not isinstance(votes, dict) or not votes:
         return True  # Compatibility for synthetic/legacy reports; live analysis always supplies votes.
     direction = 1 if side == "LONG" else -1
-    core = {"EMA", "Ichimoku", "RSI", "MACD", "StochRSI", "ADX_DMI", "VWAP", "OBV_Trend", "Bollinger"}
+    core = {"EMA", "Ichimoku", "RSI", "MACD", "StochRSI", "ADX_DMI", "OBV_Trend", "Bollinger"}
     opposing_core = sum(1 for name in core if int(votes.get(name, 0)) * direction < 0)
     opposing_minor = sum(1 for name, value in votes.items()
                          if name not in core and int(value) * direction < 0)
@@ -539,7 +539,9 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
     if invalid:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Insufficient/invalid candles: "+", ".join(invalid),
                 "timeframes":reports,"trade_enabled":False}
-    weights={tf:1.0/len(selected_tfs) for tf in selected_tfs}
+    base_weights={"1m":0.15,"3m":0.20,"5m":0.25,"15m":0.35,"30m":0.40,"1h":0.45,"4h":0.50}
+    weight_total=sum(base_weights[tf] for tf in selected_tfs)
+    weights={tf:base_weights[tf]/weight_total for tf in selected_tfs}
     combined=sum(reports[tf]["score"]*weights[tf] for tf in selected_tfs)
     long_tfs=[tf for tf in selected_tfs if reports[tf]["bias"]=="bullish"]
     short_tfs=[tf for tf in selected_tfs if reports[tf]["bias"]=="bearish"]
