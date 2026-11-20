@@ -123,7 +123,7 @@ def main():
             "symbol_selection": "all active Toobit USDT-margined linear perpetual contracts returned by exchangeInfo, ranked by 24h quote volume",
             "candidate_contracts": len(candidates),
             "successfully_tested_contracts": len(results),
-            "universe_scope": "USDT linear perpetuals; excludes inverse and non-USDT contracts",
+            "universe_scope": "crypto underlyings listed in Toobit exchangeInfo coins; USDT linear perpetuals only; excludes TradFi, inverse and non-USDT contracts",
             "minimum_symbols": args.min_symbols,
             "slippage_bps_per_fill": args.slippage_bps,
             "slippage_is_measured": False,
