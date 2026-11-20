@@ -156,4 +156,9 @@ class ShadowLedger:
         if net_r == net_r and abs(net_r) != float("inf"):
             db.execute("INSERT INTO shadow_closed(symbol,side,net_r,closed_at) VALUES(?,?,?,?)",
                        (symbol, state["side"], net_r, stamp))
+        db.execute(
+            "DELETE FROM shadow_closed WHERE symbol=? AND side=? AND id NOT IN "
+            "(SELECT id FROM shadow_closed WHERE symbol=? AND side=? ORDER BY id DESC LIMIT 200)",
+            (symbol, state["side"], symbol, state["side"]),
+        )
         db.execute("DELETE FROM shadow_open WHERE symbol=?", (symbol,))
