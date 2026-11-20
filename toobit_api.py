@@ -227,16 +227,19 @@ class ToobitAPI:
             if len(events) >= 1000 and events[0]["settle_time"] > int(start_ms):
                 raise RuntimeError("Toobit funding history reached the 1000-event page cap; shorten the backtest window to avoid missing funding settlements")
             five = data["5m"]
+            bars_by_open = {row["timestamp"]: row for row in five}
             for event in events:
                 settle = event["settle_time"]
                 if settle < start_ms or settle > end_ms:
                     continue
-                index = (settle - int(start_ms) - 1) // self.INTERVALS["5m"]
-                if 0 <= index < len(five):
-                    bar = five[index]
-                    if bar["timestamp"] < settle <= bar["timestamp"] + self.INTERVALS["5m"]:
-                        bar["funding_rate"] = event["funding_rate"]
-                        bar["funding_settle_time"] = settle
+                candle_open = ((settle - 1) // self.INTERVALS["5m"]) * self.INTERVALS["5m"]
+                bar = bars_by_open.get(candle_open)
+                if bar is None:
+                    raise RuntimeError(f"Missing 5m candle covering Toobit funding settlement at {settle}")
+                if not bar["timestamp"] < settle <= bar["timestamp"] + self.INTERVALS["5m"]:
+                    raise RuntimeError(f"Funding settlement timestamp does not align with a 5m candle: {settle}")
+                bar["funding_rate"] = event["funding_rate"]
+                bar["funding_settle_time"] = settle
         return data
 
     def get_historical_multi_timeframe(self, symbol, bars_5m=1000, bars_15m=400, bars_30m=200):
