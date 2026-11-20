@@ -20,7 +20,8 @@ def finite_json(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--days", type=int, default=0, help="0 = all available history from each timeframe first candle; otherwise cap lookback")
+    parser.add_argument("--days", type=int, default=0, help="0 = all available history unless --start-date is set; otherwise cap lookback")
+    parser.add_argument("--start-date", help="Inclusive UTC start date (YYYY-MM-DD), e.g. 2026-11-09")
     parser.add_argument("--symbols", required=True, help="Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT")
     
     parser.add_argument("--slippage-bps", type=float, default=1.0,
@@ -41,19 +42,28 @@ def main():
     end_ms = int(api.server_time()["serverTime"])
     end_ms = (end_ms // 300000) * 300000
     requested_start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000 if args.days else 0
+    if args.start_date:
+        try:
+            requested_start_ms = int(datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
+        except ValueError as exc:
+            raise SystemExit("--start-date must use YYYY-MM-DD") from exc
+        if requested_start_ms >= end_ms:
+            raise SystemExit("--start-date must be earlier than the current backtest end")
     # Only selected symbols are tested. Each timeframe starts at its own first real candle.
     active_symbols = set(api.get_futures_symbols(limit=10000, preferred_bases=None))
     invalid = [symbol for symbol in selected_symbols if symbol not in active_symbols]
     if invalid:
         raise SystemExit("Selected symbols are not active Toobit USDT perpetuals: " + ", ".join(invalid))
-    available_starts = {
+    available_starts = ({
         symbol: {tf: api.get_first_available_candle_open(symbol, tf, end_ms)
                  for tf in ("5m", "15m", "30m")}
         for symbol in selected_symbols
-    }
+    } if not args.start_date else {})
     starts_by_symbol = {
-        symbol: {tf: max(requested_start_ms, start) for tf, start in starts.items()}
-        for symbol, starts in available_starts.items()
+        symbol: ({tf: requested_start_ms for tf in ("5m", "15m", "30m")}
+                 if args.start_date else
+                 {tf: max(requested_start_ms, start) for tf, start in available_starts[symbol].items()})
+        for symbol in selected_symbols
     }
     candidates = selected_symbols
     results, failures = [], []
@@ -121,7 +131,8 @@ def main():
         "period_utc": {
             "end": datetime.fromtimestamp(end_ms / 1000, timezone.utc).isoformat(),
             "days_requested_max": args.days or "all_available",
-            "window_basis": "each timeframe begins at its own earliest available closed candle, optionally capped by lookback",
+            "window_basis": ("fixed inclusive UTC start date" if args.start_date else "each timeframe begins at its own earliest available closed candle, optionally capped by lookback"),
+            "requested_start_date_utc": args.start_date or None,
             "timeframe_start_by_symbol_utc": {
                 symbol: {tf: datetime.fromtimestamp(start / 1000, timezone.utc).isoformat()
                          for tf, start in starts.items()}
