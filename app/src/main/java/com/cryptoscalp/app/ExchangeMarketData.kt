@@ -124,15 +124,16 @@ object ExchangeMarketData {
         candles(exchange, symbol, interval, exchangeTimeMs())
 
     /** Fetch a timeframe against one caller-supplied exchange-clock snapshot. */
-    fun candles(exchange: String, symbol: String, interval: String, asOfMs: Long): List<MarketCandle> {
+    fun candles(exchange: String, symbol: String, interval: String, asOfMs: Long, limit: Int = 260): List<MarketCandle> {
         require(asOfMs > 0L) { "زمان مرجع صرافی نامعتبر است." }
         require(exchange == "Toobit") { "فقط صرافی توبیت پشتیبانی می‌شود." }
         require(interval in supportedTimeframes) { "تایم‌فریم نامعتبر است: $interval" }
         require(symbol.endsWith("-SWAP-USDT")) { "نماد قرارداد توبیت نامعتبر است: $symbol" }
         val now = asOfMs
         val duration = durationMs(interval)
+        val safeLimit = limit.coerceIn(200, 1000)
         val url = "https://api.toobit.com/quote/v1/klines" +
-            "?symbol=$symbol&interval=$interval&startTime=${now - duration * 260}&endTime=$now&limit=260"
+            "?symbol=$symbol&interval=$interval&startTime=${now - duration * safeLimit}&endTime=$now&limit=$safeLimit"
         val rows = JSONArray(get(url))
         val result = mutableListOf<MarketCandle>()
         for (i in 0 until rows.length()) {
