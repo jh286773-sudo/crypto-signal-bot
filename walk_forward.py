@@ -88,6 +88,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     loss_streak_indices = []
     entry_gap_skips = 0
     invalid_level_skips = 0
+    decision_diagnostics = {"evaluated": 0, "no_signal": 0, "long_candidates": 0,
+                            "short_candidates": 0, "invalid_market_data": 0}
     cooldown_until_index = -1
     cooldown_events = 0
     cooldown_skipped_bars = 0
@@ -110,10 +112,34 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             continue
         # Match the live Android strategy input horizon and bound indicator cost.
         signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()})
+        decision_diagnostics["evaluated"] += 1
         side = signal.get("signal")
         if side not in ("LONG", "SHORT"):
+            decision_diagnostics["no_signal"] += 1
+            if any(not report.get("valid", False) for report in signal.get("timeframes", {}).values()):
+                decision_diagnostics["invalid_market_data"] += 1
             i += 1
             continue
+        decision_diagnostics["long_candidates" if side == "LONG" else "short_candidates"] += 1
+        # Preserve exact as-of indicator evidence for later loss diagnosis.
+        # Research telemetry only; it does not alter the signal decision.
+        signal_snapshot = {
+            "combined_score": signal.get("combined_score"),
+            "confidence_score": signal.get("confidence_score"),
+            "entry_stage": signal.get("entry_stage"),
+            "timeframes": {
+                tf: {
+                    "score": report.get("score"),
+                    "bias": report.get("bias"),
+                    "family_scores": report.get("family_scores"),
+                    "market_regime": report.get("market_regime"),
+                    "indicator_votes": report.get("indicator_votes"),
+                    "volatility_filter": report.get("volatility_filter"),
+                    "smc": (report.get("indicators") or {}).get("smc"),
+                }
+                for tf, report in signal.get("timeframes", {}).items()
+            },
+        }
 
         entry_index = i + 1
         entry = float(five[entry_index][1]["open"])
@@ -308,6 +334,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         max_dd = max(max_dd, (peak-equity)/peak if peak > 0 else 0.0)
         trades.append({
             "side": side, "signal_time": decision_time, "entry_time": five[entry_index][0],
+            "signal_snapshot": signal_snapshot,
             "exit_time": five[exit_index][0], "entry": entry, "exit": exit_price,
             "exit_reason": exit_reason, "targets_hit": [f"TP{x+1}" for x in sorted(hit_targets)],
             "position_quantity": quantity, "initial_notional": initial_notional,
@@ -353,6 +380,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         "gross_profit": gross_profit, "gross_loss": gross_loss,
         "side_stats": side_stats,
         "max_consecutive_losses": max_consecutive_losses,
+        "decision_diagnostics": decision_diagnostics,
         "loss_guard": {"loss_streak_limit": loss_streak_limit,
                        "cooldown_bars": loss_cooldown_bars,
                        "cooldown_events": cooldown_events,
