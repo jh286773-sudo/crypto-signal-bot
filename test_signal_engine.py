@@ -126,5 +126,33 @@ class EngineTests(unittest.TestCase):
         for key in ("retest_long", "retest_short", "false_breakout", "breakout_quality"):
             self.assertIn(key, structure)
 
+    def test_smc_reports_atr_distance_and_liquidity_pool_levels(self):
+        structure = _market_structure(candles(140))
+        self.assertIn("entry_distance_atr", structure)
+        self.assertIn("equal_high_level", structure)
+        self.assertIn("equal_low_level", structure)
+
+    def test_failed_breakout_blocks_even_a_retest_flag(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "indicators": {"atr": 1.0, "smc": {"retest_long": True,
+                       "structure_event": "BOS_up", "false_breakout": True,
+                       "entry_distance_atr": 0.2}}, "close": 100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertEqual(result["entry_stage"], "WAIT")
+        self.assertIn("Failed breakout", result["reason"])
+
+    def test_entry_guard_rejects_overextended_retest(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "indicators": {"atr": 1.0, "smc": {"retest_long": True,
+                       "structure_event": "BOS_up", "entry_distance_atr": 1.2,
+                       "previous_swing_low": 98.0}}, "close": 100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertEqual(result["entry_stage"], "WAIT")
+        self.assertIn("overextended", result["reason"])
+
 
 if __name__=="__main__": unittest.main()

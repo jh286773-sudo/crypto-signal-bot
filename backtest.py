@@ -24,6 +24,15 @@ def run_backtest(timeframes: Dict[str, list], holding_bars: int = 3,
     lengths = [len(timeframes[tf]) for tf in REQUIRED_TFS]
     if len(set(lengths)) != 1:
         raise ValueError("Timeframe arrays must be index-aligned and equal length")
+    # If exchange timestamps are supplied, each timeframe must be strictly chronological.
+    # Cross-timeframe timestamps are not compared: candle opens naturally differ by interval.
+    for tf in REQUIRED_TFS:
+        rows = timeframes[tf]
+        key = next((k for k in ("timestamp", "open_time", "time") if rows and k in rows[0]), None)
+        if key:
+            stamps = [float(row[key]) for row in rows]
+            if any(b <= a for a, b in zip(stamps, stamps[1:])):
+                raise ValueError(f"{tf} candles must have strictly increasing {key} values")
     candles = timeframes["5m"]
     n = len(candles)
     if n < 60 + holding_bars + 1:
@@ -89,11 +98,25 @@ def run_backtest(timeframes: Dict[str, list], holding_bars: int = 3,
                 exit_index = j
                 break
         else:
-            held = last_index - entry_index
+            held = last_index - entry_index + 1
 
         gross = ((exit_price - entry) / entry if side == "LONG"
                  else (entry - exit_price) / entry)
-        funding_cost = funding_bps_per_8h * (max(held, 1) * 5.0 / 480.0)
+        # Prefer exchange-supplied per-candle funding_rate (decimal, e.g. 0.0001).
+        # Positive rates are paid by longs and received by shorts; fallback is an
+        # explicitly configured conservative estimate prorated over actual held bars.
+        held_rows = candles[entry_index:exit_index + 1]
+        has_historical_funding = any(row.get("funding_rate") is not None for row in held_rows)
+        if has_historical_funding:
+            funding_cost = sum(
+                float(row.get("funding_rate") or 0.0) * 10000.0 *
+                (1.0 if side == "LONG" else -1.0)
+                for row in held_rows
+            )
+            funding_source = "historical_candle_funding_rate"
+        else:
+            funding_cost = funding_bps_per_8h * (max(held, 1) * 5.0 / 480.0)
+            funding_source = "estimated_configured_rate" if funding_bps_per_8h else "not_supplied"
         total_cost = (2.0 * fee_bps + 2.0 * slippage_bps + funding_cost) / 10000.0
         net = gross - total_cost
         trades.append({
@@ -103,7 +126,9 @@ def run_backtest(timeframes: Dict[str, list], holding_bars: int = 3,
             "stop": stop, "target_2": target,
             "gross_return_pct": round(gross * 100.0, 5),
             "net_return_pct": round(net * 100.0, 5),
-            "estimated_funding_bps": round(funding_cost, 4),
+            "funding_cost_bps": round(funding_cost, 4),
+            "estimated_funding_bps": round(funding_cost, 4),  # backwards-compatible alias
+            "funding_source": funding_source,
         })
         i = exit_index + 1
 
@@ -120,7 +145,7 @@ def run_backtest(timeframes: Dict[str, list], holding_bars: int = 3,
     gains = sum(x for x in returns if x > 0)
     losses = -sum(x for x in returns if x < 0)
     avg_hold = sum(t["holding_bars"] for t in trades) / len(trades) if trades else 0.0
-    total_funding = sum(t["estimated_funding_bps"] for t in trades)
+    total_funding = sum(t["funding_cost_bps"] for t in trades)
     return {
         "trades": trades,
         "trade_count": len(trades),
@@ -135,5 +160,16 @@ def run_backtest(timeframes: Dict[str, list], holding_bars: int = 3,
         "round_trip_fee_bps": round(2.0 * fee_bps, 3),
         "round_trip_slippage_bps": round(2.0 * slippage_bps, 3),
         "estimated_total_funding_bps": round(total_funding, 4),
-        "note": "Historical estimate only. Intrabar ambiguity resolves conservatively to stop first. Supply exchange-specific fees, slippage and funding; liquidation, partial fills and order-book queue position are not modeled.",
+        "estimated_funding_bps": round(total_funding, 4),  # backwards-compatible alias
+        "funding_mode": ("historical_per_candle" if any(
+            row.get("funding_rate") is not None for row in candles
+        ) else "configured_estimate" if funding_bps_per_8h else "not_supplied"),
+        "assumptions": {
+            "fee_bps_per_side": fee_bps,
+            "slippage_bps_per_side": slippage_bps,
+            "funding_bps_per_8h_fallback": funding_bps_per_8h,
+            "entry": "next 5m candle open",
+            "ambiguous_intrabar_exit": "stop first",
+        },
+        "note": "Historical estimate only. Historical funding is used only when funding_rate is supplied on 5m candles; otherwise the configured 8h estimate is prorated. Liquidation, partial fills and order-book queue position are not modeled.",
     }

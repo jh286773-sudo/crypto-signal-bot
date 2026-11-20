@@ -7,7 +7,7 @@ import kotlin.math.sqrt
 import kotlin.math.roundToInt
 
 data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L)
-data class StrategyResult(val signal: String, val score: Int, val entry: Double, val stop: Double, val target1: Double, val target2: Double, val reasons: List<String>, val smc: List<String>)
+data class StrategyResult(val signal: String, val score: Int, val entry: Double, val stop: Double, val target1: Double, val target2: Double, val reasons: List<String>, val smc: List<String>, val target3: Double = target2, val riskReward: List<Double> = listOf(1.5, 2.5, 3.5))
 
 /** AURUM X 0.2.9 read-only engine: eight indicator families and 5m/15m/30m consensus. */
 object TradingStrategy {
@@ -16,7 +16,7 @@ object TradingStrategy {
     private val familyWeights = mapOf("trend" to 1.5, "momentum" to 1.3, "strength" to 1.1, "volume" to 1.0, "volatility" to .6, "structure" to 1.4, "divergence" to .8, "orderflow" to .7)
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
-    private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null, val previousSwingHigh: Double? = null, val previousSwingLow: Double? = null, val retestLong: Boolean = false, val retestShort: Boolean = false, val falseBreakout: Boolean = false)
+    private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null, val previousSwingHigh: Double? = null, val previousSwingLow: Double? = null, val retestLong: Boolean = false, val retestShort: Boolean = false, val falseBreakout: Boolean = false, val retestLevel: Double? = null, val entryDistanceAtr: Double? = null, val equalHighLevel: Double? = null, val equalLowLevel: Double? = null)
     private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val score: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val families: Map<String,Double> = emptyMap(), val notes: List<String> = emptyList(), val smc: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null, val structure: Structure? = null)
 
     private fun ema(v: List<Double>, n: Int): Double? {
@@ -145,77 +145,72 @@ object TradingStrategy {
     }
     private fun structure(c:List<MarketCandle>,n:Int=60):Structure {
         if(c.size<max(n,30))return Structure("none","none")
-        val w=c.takeLast(n);val highs=w.map{it.high};val lows=w.map{it.low}
+        val w=c.takeLast(n)
+        val highs=w.map{it.high};val lows=w.map{it.low}
         val (hi,lo)=confirmedPivots(highs,2,2)
-        val sh=hi.map{it to highs[it]};val sl=lo.map{it to lows[it]}
-        if(sh.isEmpty()||sl.isEmpty()){
+        // Ignore pivots that are not yet confirmed at the decision candle.
+        val swingHighs=hi.filter{it<w.size-4}.map{it to highs[it]}
+        val swingLows=lo.filter{it<w.size-4}.map{it to lows[it]}
+        val last=w.last()
+        val structureAtr=atr(w)
+        val atrRef=(structureAtr?.takeIf{it>0.0})?:max(last.close*.001,1e-12)
+        val tolerance=max(atrRef*.20,last.close*.0005)
+        val breakBuffer=atrRef*.10
+        val span=max(last.high-last.low,1e-12)
+        val closePosition=(last.close-last.low)/span
+        val displacement=abs(last.close-last.open)>=atrRef*.35
+        val sh:Double
+        val sl:Double
+        val recent:List<MarketCandle>
+        val highPivots:List<Pair<Int,Double>>
+        val lowPivots:List<Pair<Int,Double>>
+        if(swingHighs.isEmpty()||swingLows.isEmpty()){
             val prior=c.takeLast(21).dropLast(1)
             if(prior.size<10)return Structure("none","none")
             val reference=if(prior.size>=16)prior.dropLast(6) else prior
-            val recent=prior.takeLast(6)
-            val ph=reference.maxOf{it.high};val pl=reference.minOf{it.low};val last=c.last()
-            val range=max(last.high-last.low,1e-12)
-            val body=abs(last.close-last.open)
-            val closeLocation=(last.close-last.low)/range
-            val structureAtr=atr(w)?:0.0
-            val displacement=structureAtr>0.0&&body>=structureAtr*.35
-            val event=when {
-                last.close>ph&&displacement&&closeLocation>=.70->"BOS_up"
-                last.close<pl&&displacement&&closeLocation<=.30->"BOS_down"
-                else->"none"
-            }
-            val sweep=if(last.low<pl&&last.close>pl)"sell_side" else if(last.high>ph&&last.close<ph)"buy_side" else "none"
-            val tolerance=max(structureAtr*.25,last.close*.0005)
-            val priorBreakUp=recent.any{it.close>ph}
-            val priorBreakDown=recent.any{it.close<pl}
-            val priorSellSweep=recent.any{it.low<pl&&it.close>pl}
-            val priorBuySweep=recent.any{it.high>ph&&it.close<ph}
-            val retestLong=((priorBreakUp&&last.low<=ph+tolerance&&last.close>ph)||(priorSellSweep&&last.low<=pl+tolerance&&last.close>pl))&&last.close>last.open
-            val retestShort=((priorBreakDown&&last.high>=pl-tolerance&&last.close<pl)||(priorBuySweep&&last.high>=ph-tolerance&&last.close<ph))&&last.close<last.open
-            return Structure(event,sweep,previousSwingHigh=ph,previousSwingLow=pl,
-                retestLong=retestLong,retestShort=retestShort,falseBreakout=sweep!="none"&&!retestLong&&!retestShort)
+            sh=reference.maxOf{it.high};sl=reference.minOf{it.low}
+            recent=prior.takeLast(6)
+            highPivots=listOf(0 to sh);lowPivots=listOf(0 to sl)
+        }else{
+            sh=swingHighs.last().second;sl=swingLows.last().second
+            recent=w.dropLast(1).takeLast(6)
+            highPivots=swingHighs;lowPivots=swingLows
         }
-        val last=w.last();val lastHigh=sh.last().second;val lastLow=sl.last().second
-        val up=sh.size>=2&&sl.size>=2&&lastHigh>sh[sh.size-2].second&&lastLow>sl[sl.size-2].second
-        val down=sh.size>=2&&sl.size>=2&&lastHigh<sh[sh.size-2].second&&lastLow<sl[sl.size-2].second
-        val candleRange=max(last.high-last.low,1e-12)
-        val body=abs(last.close-last.open)
-        val closeLocation=(last.close-last.low)/candleRange
-        val structureAtr=atr(w)?:0.0
-        val displacement=structureAtr>0.0&&body>=structureAtr*.35
-        val event=when {
-            last.close>lastHigh&&displacement&&closeLocation>=.70->if(down)"CHoCH_up" else "BOS_up"
-            last.close<lastLow&&displacement&&closeLocation<=.30->if(up)"CHoCH_down" else "BOS_down"
+        val up=swingHighs.size>=2&&swingLows.size>=2&&swingHighs.last().second>swingHighs[swingHighs.size-2].second&&swingLows.last().second>swingLows[swingLows.size-2].second
+        val down=swingHighs.size>=2&&swingLows.size>=2&&swingHighs.last().second<swingHighs[swingHighs.size-2].second&&swingLows.last().second<swingLows[swingLows.size-2].second
+        val event=when{
+            last.close>sh+breakBuffer&&displacement&&closePosition>=.70->if(down)"CHoCH_up" else "BOS_up"
+            last.close<sl-breakBuffer&&displacement&&closePosition<=.30->if(up)"CHoCH_down" else "BOS_down"
             else->"none"
         }
-        val sweep=when{last.low<lastLow&&last.close>lastLow->"sell_side";last.high>lastHigh&&last.close<lastHigh->"buy_side";else->"none"}
-        val a=atr(w)?:last.close*.001;val tol=max(a*.15,last.close*.0005)
-        val equalHighs=sh.takeLast(5).count{abs(it.second-lastHigh)<=tol}>=2
-        val equalLows=sl.takeLast(5).count{abs(it.second-lastLow)<=tol}>=2
-        var obType="none";var obLow:Double?=null;var obHigh:Double?=null
-        // Retain the latest displacement-origin block so later price retests can confirm.
-        for(j in w.size-2 downTo max(0,w.size-21)){
-            val x=w[j];val next=w[j+1]
-            if(x.close<x.open&&next.close>x.high&&next.close>next.high-(next.high-next.low)*.25){
-                obType="bullish";obLow=x.low;obHigh=x.high;break
-            }
-            if(x.close>x.open&&next.close<x.low&&next.close<next.low+(next.high-next.low)*.25){
-                obType="bearish";obLow=x.low;obHigh=x.high;break
-            }
+        val sweep=when{
+            last.low<sl-tolerance*.10&&last.close>sl&&closePosition>=.55->"sell_side"
+            last.high>sh+tolerance*.10&&last.close<sh&&closePosition<=.45->"buy_side"
+            else->"none"
         }
-        val tolerance=max(structureAtr*.25,last.close*.0005)
-        val prior=w.dropLast(1).takeLast(6)
-        val retestLong=(
-            sh.asReversed().any{level->prior.any{it.close>level.second+structureAtr*.10}&&last.low<=level.second+tolerance&&last.close>level.second}||
-            sl.asReversed().any{level->prior.any{it.low<level.second&&it.close>level.second}&&last.low<=level.second+tolerance&&last.close>level.second}
-        )&&last.close>last.open
-        val retestShort=(
-            sl.asReversed().any{level->prior.any{it.close<level.second-structureAtr*.10}&&last.high>=level.second-tolerance&&last.close<level.second}||
-            sh.asReversed().any{level->prior.any{it.high>level.second&&it.close<level.second}&&last.high>=level.second-tolerance&&last.close<level.second}
-        )&&last.close<last.open
-        return Structure(event,sweep,if(up)"bullish" else if(down)"bearish" else "range",equalHighs,equalLows,obType,obLow,obHigh,lastHigh,lastLow,retestLong,retestShort,sweep!="none"&&!retestLong&&!retestShort)
+        val equalHighs=highPivots.takeLast(6).count{abs(it.second-sh)<=tolerance}>=2
+        val equalLows=lowPivots.takeLast(6).count{abs(it.second-sl)<=tolerance}>=2
+        val priorUp=recent.any{it.close>sh+breakBuffer}
+        val priorDown=recent.any{it.close<sl-breakBuffer}
+        val bullCandle=last.close>last.open&&closePosition>=.60
+        val bearCandle=last.close<last.open&&closePosition<=.40
+        val retestLong=(priorUp&&last.low<=sh+tolerance&&last.close>sh&&bullCandle)||(sweep=="sell_side"&&bullCandle)
+        val retestShort=(priorDown&&last.high>=sl-tolerance&&last.close<sl&&bearCandle)||(sweep=="buy_side"&&bearCandle)
+        val falseBreakout=(priorUp&&last.close<sh-tolerance)||(priorDown&&last.close>sl+tolerance)
+        var obType="none";var obLow:Double?=null;var obHigh:Double?=null
+        for(j in w.size-2 downTo max(0,w.size-20)){
+            val x=w[j];val next=w[j+1];val nextRange=max(next.high-next.low,1e-12)
+            if(x.close<x.open&&next.close>x.high&&next.close>=next.high-nextRange*.25){obType="bullish";obLow=x.low;obHigh=x.high;break}
+            if(x.close>x.open&&next.close<x.low&&next.close<=next.low+nextRange*.25){obType="bearish";obLow=x.low;obHigh=x.high;break}
+        }
+        val retestLevel=when{retestLong->if(priorUp)sh else sl;retestShort->if(priorDown)sl else sh;else->null}
+        val distance=retestLevel?.let{level->max(0.0,if(retestLong)(last.close-level)/atrRef else (level-last.close)/atrRef)}
+        return Structure(event=event,sweep=sweep,marketTrend=if(up)"bullish" else if(down)"bearish" else "range",
+            equalHighs=equalHighs,equalLows=equalLows,orderBlockType=obType,orderBlockLow=obLow,orderBlockHigh=obHigh,
+            previousSwingHigh=sh,previousSwingLow=sl,retestLong=retestLong,retestShort=retestShort,
+            falseBreakout=falseBreakout,retestLevel=retestLevel,entryDistanceAtr=distance,
+            equalHighLevel=if(equalHighs)sh else null,equalLowLevel=if(equalLows)sl else null)
     }
-
     private data class Volatility(val atrPct:Double,val baselinePct:Double,val ratio:Double,val blocked:Boolean)
     private fun volatility(c:List<MarketCandle>,timeframe:String,currentAtr:Double?):Volatility? {
         if(currentAtr==null||currentAtr<=0.0||c.isEmpty()||c.last().close<=0.0)return null
@@ -309,6 +304,14 @@ object TradingStrategy {
         val a=reports["5m"]?.atr?:0.0
         if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
         val sm=reports["5m"]?.structure
+        if(signal!="WAIT"&&(sm?.entryDistanceAtr?:0.0)>.80){
+            return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+                listOf("Retest بیش از ۰٫۸ ATR از سطح ورود فاصله دارد؛ از ورود دیرهنگام صرف‌نظر شد"),reports.values.flatMap{it.smc}.distinct())
+        }
+        if(signal!="WAIT"&&sm?.falseBreakout==true){
+            return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+                listOf("شکست جعلی شناسایی شد؛ ساختار فعلی نامعتبر است و باید منتظر ساختار تازه ماند"),reports.values.flatMap{it.smc}.distinct())
+        }
         val atrRisk=max(a*1.5,price*.001)
         val structuralStop=if(signal=="LONG")sm?.previousSwingLow?.minus(a*.15) else sm?.previousSwingHigh?.plus(a*.15)
         val candidate=structuralStop?:if(signal=="LONG")price-atrRisk else price+atrRisk
@@ -317,6 +320,7 @@ object TradingStrategy {
         val stop=if(signal=="LONG")price-risk else if(signal=="SHORT")price+risk else price
         val tp1=if(signal=="LONG")price+1.5*risk else if(signal=="SHORT")price-1.5*risk else price
         val tp2=if(signal=="LONG")price+2.5*risk else if(signal=="SHORT")price-2.5*risk else price
+        val tp3=if(signal=="LONG")price+3.5*risk else if(signal=="SHORT")price-3.5*risk else price
         val reasons=mutableListOf("موتور تحلیل نسخه ۰.۲.۹: هشت خانواده شاخص","امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
         for((tf,rep) in reports){
             // User-facing explanations must not expose neutral/ranging market labels.
@@ -337,6 +341,6 @@ object TradingStrategy {
             reasons.add(if(retestReady)"مرحله ورود: Retest تأیید شد؛ منتظر تکمیل امتیاز ترکیبی هستیم" else "مرحله ورود: فقط پس از بازگشت و تثبیت قیمت روی سطح شکست")
         }
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
-        return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc)
+        return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc,tp3,listOf(1.5,2.5,3.5))
     }
 }
