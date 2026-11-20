@@ -38,7 +38,7 @@ class ToobitHistoryPaginationTests(unittest.TestCase):
     def test_range_fetch_splits_wide_history_into_bounded_pages(self):
         api = ToobitAPI()
         step = ToobitAPI.INTERVALS["5m"]
-        start, end = 0, 2200 * step
+        start, end = 100 * step, 2300 * step
         calls = []
 
         def fake_get(_endpoint, params):
@@ -55,8 +55,8 @@ class ToobitHistoryPaginationTests(unittest.TestCase):
         self.assertEqual(len(calls), 3)
         self.assertEqual(calls[0]["endTime"] - calls[0]["startTime"], 1000 * step + 1)
         self.assertEqual(calls[0]["startTime"], start - 1)
-        self.assertEqual(calls[1]["startTime"], 1000 * step)
-        self.assertEqual(calls[2]["startTime"], 2000 * step)
+        self.assertEqual(calls[1]["startTime"], 1100 * step - 1)
+        self.assertEqual(calls[2]["startTime"], 2100 * step - 1)
 
 
 if __name__ == "__main__":
