@@ -290,7 +290,7 @@ object TradingStrategy {
     }
 
     /** SMC is a separate structural entry confirmation, never a weighted vote. */
-    internal fun smcConfirms(s:Structure, direction:String):Boolean {
+    private fun smcConfirms(s:Structure, direction:String):Boolean {
         if(s.falseBreakout)return false
         return when(direction) {
             "LONG" -> (s.orderBlockType!="bearish") &&
