@@ -239,6 +239,22 @@ class ToobitAPI:
                 candle_open = ((settle - 1) // self.INTERVALS["5m"]) * self.INTERVALS["5m"]
                 bar = bars_by_open.get(candle_open)
                 if bar is None:
+                    # A paged public kline response can occasionally omit one row.
+                    # Retry the exact settlement candle before failing the backtest;
+                    # never silently discard a real funding event.
+                    for _ in range(3):
+                        retry_rows = self.get_klines_range(
+                            symbol, "5m", candle_open, candle_open + self.INTERVALS["5m"]
+                        )
+                        bar = next((row for row in retry_rows
+                                    if int(row["timestamp"]) == candle_open), None)
+                        if bar is not None:
+                            bars_by_open[candle_open] = bar
+                            five.append(bar)
+                            five.sort(key=lambda row: row["timestamp"])
+                            break
+                        time.sleep(0.15)
+                if bar is None:
                     raise RuntimeError(f"Missing 5m candle covering Toobit funding settlement at {settle}")
                 if not bar["timestamp"] < settle <= bar["timestamp"] + self.INTERVALS["5m"]:
                     raise RuntimeError(f"Funding settlement timestamp does not align with a 5m candle: {settle}")
