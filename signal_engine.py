@@ -181,7 +181,21 @@ def _market_structure(c, lookback=60):
     swing_highs = [(i, highs[i]) for i in ph]
     swing_lows = [(i, lows[i]) for i in pl]
     if not swing_highs or not swing_lows:
-        return {}
+        # Monotonic markets may not form two-sided fractal pivots yet.
+        # Use the prior 20 closed candles as a conservative provisional range.
+        prior = c[-21:-1]
+        if len(prior) < 10:
+            return {}
+        ph = max(float(x["high"]) for x in prior)
+        pl = min(float(x["low"]) for x in prior)
+        last = c[-1]
+        close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
+        event = "BOS_up" if close > ph else "BOS_down" if close < pl else "none"
+        sweep = "sell_side" if low < pl and close > pl else "buy_side" if high > ph and close < ph else "none"
+        return {"previous_swing_high":ph,"previous_swing_low":pl,
+                "structure_event":event,"market_structure":"range",
+                "liquidity_sweep":sweep,"equal_high_liquidity":False,
+                "equal_low_liquidity":False,"order_blocks":[]}
     last = w[-1]
     close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
     last_high_i, last_high = swing_highs[-1]
