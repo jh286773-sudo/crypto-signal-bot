@@ -236,7 +236,11 @@ class CryptoMonitorService : Service() {
     }
     private fun notificationBuilder(channel:String):Notification.Builder = if(Build.VERSION.SDK_INT>=26) Notification.Builder(this,channel) else Notification.Builder(this)
     private fun serviceNotification(message:String)=notificationBuilder(serviceChannel).setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle("Crypto Scalp • پایش فعال").setContentText(message).setOngoing(true).build()
-    private fun updateStatus(message:String){(getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(9100,serviceNotification(message))}
+    private fun updateStatus(message:String){
+        prefs.edit().putString("latest_monitor_status",message)
+            .putLong("latest_monitor_status_at",System.currentTimeMillis()).apply()
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(9100,serviceNotification(message))
+    }
     companion object{
         const val ACTION_START="com.cryptoscalp.app.START_MONITOR"
         const val ACTION_STOP="com.cryptoscalp.app.STOP_MONITOR"
