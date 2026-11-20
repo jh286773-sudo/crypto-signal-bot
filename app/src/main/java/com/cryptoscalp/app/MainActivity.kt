@@ -572,9 +572,9 @@ class MainActivity : Activity() {
 
             thread(name = "toobit-chart-$base") {
                 try {
-                    val candles = ExchangeMarketData.candles("Toobit", symbol, timeframe)
+                    val candles = ExchangeMarketData.markPriceCandles("Toobit", symbol, timeframe)
                     val last = candles.last()
-                    val livePrice = ExchangeMarketData.lastPrice("Toobit", symbol)
+                    val livePrice = ExchangeMarketData.markPrice("Toobit", symbol)
                     val first = candles[max(0, candles.size - 13)]
                     val change = if (first.close == 0.0) 0.0
                         else (last.close - first.close) / first.close * 100.0
