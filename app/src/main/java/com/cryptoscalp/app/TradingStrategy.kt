@@ -302,7 +302,7 @@ object TradingStrategy {
         val structuralStop=if(signal=="LONG")sm?.previousSwingLow?.minus(a*.15) else sm?.previousSwingHigh?.plus(a*.15)
         val candidate=structuralStop?:if(signal=="LONG")price-atrRisk else price+atrRisk
         val structuralRisk=abs(price-candidate)
-        val risk=if(candidate>0&&structuralRisk<=3.0*a&&structuralRisk>=a*.25)structuralRisk else atrRisk
+        val risk=if(candidate>0&&(if(signal=="LONG")candidate<price else candidate>price)&&structuralRisk<=3.0*a&&structuralRisk>=a*.25)structuralRisk else atrRisk
         val stop=if(signal=="LONG")price-risk else if(signal=="SHORT")price+risk else price
         val tp1=if(signal=="LONG")price+1.5*risk else if(signal=="SHORT")price-1.5*risk else price
         val tp2=if(signal=="LONG")price+2.5*risk else if(signal=="SHORT")price-2.5*risk else price
