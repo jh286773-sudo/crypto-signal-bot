@@ -12,7 +12,7 @@
 - Core directional conditions must all agree: EMA20/50/200 alignment, RSI directional range, MACD histogram direction, and DMI direction (DI+ versus DI-).
 - Supporting conditions from VWAP, OBV trend, and the Bollinger middle band must not oppose the candidate direction.
 - If core conditions do not align or a supporting indicator opposes them, the timeframe is neutral and emits no direction.
-- SMC/retest data is diagnostic only and is not an additional entry gate.
+- SMC/retest structures are not used to decide or gate LONG/SHORT signals.
 
 ## Runtime behavior
 - Decisions use closed candles only. For multiple selected timeframes, data is aligned to a shared closed-candle decision boundary.
