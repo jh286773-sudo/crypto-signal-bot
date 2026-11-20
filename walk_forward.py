@@ -182,14 +182,19 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                 remaining -= close_qty
                 hit_targets.append(k)
                 if k == 0:
-                    # Once TP1 is filled, the stop moves to entry. OHLC bars do
-                    # not reveal whether the post-TP1 adverse move happened before
-                    # TP2/TP3, so if the same bar also crosses breakeven, close
-                    # the remainder there instead of optimistically filling later
-                    # targets. This is deliberately conservative.
                     stop = entry
-                    breakeven_hit = low <= stop if side == "LONG" else h >= stop
-                    if breakeven_hit and remaining > quantity*1e-10:
+                    stop_label = "stop_after_tp1"
+                elif k == 1:
+                    # TP2 locks the first target for the remaining position.
+                    stop = targets[0]
+                    stop_label = "stop_after_tp2"
+                else:
+                    stop_label = "stop_after_tp2" if 1 in hit_targets else "stop_after_tp1"
+                if k in (0, 1):
+                    # OHLC cannot order target and stop touches inside one candle;
+                    # resolve an ambiguous same-bar stop conservatively.
+                    protected_hit = low <= stop if side == "LONG" else h >= stop
+                    if protected_hit and remaining > quantity*1e-10:
                         raw_stop = min(o, stop) if side == "LONG" else max(o, stop)
                         stop_fill = raw_stop * (
                             1 - slippage_bps_per_side/10000 if side == "LONG"
@@ -199,7 +204,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                         fees += abs(stop_fill*remaining)*fee_bps_close/10000
                         slippage += abs(stop_fill-raw_stop)*remaining
                         remaining = 0.0
-                        exit_index, exit_price, exit_reason = j, stop_fill, "stop_after_tp1"
+                        exit_index, exit_price, exit_reason = j, stop_fill, stop_label
                         break
                 if remaining <= quantity*1e-10:
                     remaining = 0.0
@@ -259,11 +264,34 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         i = max(exit_index+1, i+1)
     returns = [t["net_return_pct"] for t in trades]
     wins = sum(t["net_pnl"] > 0 for t in trades)
+    side_stats = {}
+    for side in ("LONG", "SHORT"):
+        rows = [t for t in trades if t["side"] == side]
+        side_wins = sum(t["net_pnl"] > 0 for t in rows)
+        side_stats[side] = {
+            "trade_count": len(rows), "wins": side_wins,
+            "losses": len(rows) - side_wins,
+            "win_rate_pct": side_wins / len(rows) * 100 if rows else 0.0,
+            "net_pnl": sum(t["net_pnl"] for t in rows),
+        }
+    max_consecutive_losses = current_losses = 0
+    for trade in trades:
+        if trade["net_pnl"] < 0:
+            current_losses += 1
+            max_consecutive_losses = max(max_consecutive_losses, current_losses)
+        else:
+            current_losses = 0
+    gross_profit = sum(max(0.0, t["net_pnl"]) for t in trades)
+    gross_loss = sum(min(0.0, t["net_pnl"]) for t in trades)
     return {
         "trades": trades, "trade_count": len(trades),
         "initial_equity": initial_equity, "final_equity": equity,
         "net_return_pct": (equity/initial_equity-1)*100,
         "win_rate_pct": wins/len(trades)*100 if trades else 0.0,
+        "profit_factor": gross_profit / abs(gross_loss) if gross_loss else (float("inf") if gross_profit else 0.0),
+        "gross_profit": gross_profit, "gross_loss": gross_loss,
+        "side_stats": side_stats,
+        "max_consecutive_losses": max_consecutive_losses,
         "max_drawdown_pct": max_dd*100, "risk_fraction": risk_fraction,
         "fee_bps_open": fee_bps_open, "fee_bps_close": fee_bps_close,
         "slippage_bps_per_side": slippage_bps_per_side,

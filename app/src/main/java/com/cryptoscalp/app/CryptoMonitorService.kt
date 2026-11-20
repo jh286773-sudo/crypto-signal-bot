@@ -140,9 +140,13 @@ class CryptoMonitorService : Service() {
         }
         val tp2=if(long)price>=s.optDouble("tp2") else price<=s.optDouble("tp2")
         if(tp2&&!s.optBoolean("tp2Done")){
-            s.put("tp2Done",true);prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
-            notifyExit(symbol,"مرحله دوم حد سود لمس شد",
-                "قیمت فعلی: ${fmt(price)} • هدف سوم: ${fmt(s.optDouble("tp3"))} • یادآوری خروج پله‌ای؛ سفارش خودکار اجرا نمی‌شود")
+            s.put("tp2Done",true)
+            // Lock TP1 for the remaining setup after TP2; this is notification state only.
+            val lockedStop=s.optDouble("tp1",s.optDouble("entry"))
+            s.put("stop",lockedStop)
+            prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
+            notifyExit(symbol,"مرحله دوم حد سود لمس شد • سود مرحله اول محافظت شد",
+                "قیمت فعلی: ${fmt(price)} • حد ضرر حفاظتی جدید: ${fmt(lockedStop)} • هدف سوم: ${fmt(s.optDouble("tp3"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
         }
         val tp3=if(long)price>=s.optDouble("tp3") else price<=s.optDouble("tp3")
         if(tp3)closeOpen(symbol,"حد سود سوم فعال شد • قیمت ${fmt(price)}")
