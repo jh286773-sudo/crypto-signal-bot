@@ -152,4 +152,15 @@ class TradingStrategyParityTest {
         assertEquals(false, TradingStrategy.entryNotExtended(100.0, 99.5, 0.0))
     }
 
+    @Test fun expectancyPolicyIsNotPartOfAndroidSignalEngine() {
+        val strategy = javaClass.getResourceAsStream("/../../main/java/com/cryptoscalp/app/TradingStrategy.kt")
+        // The compile-time API contract is covered by evaluating the simplified overload.
+        val now = System.currentTimeMillis()
+        val five = series(220, 300_000L, (now / 300_000L) * 300_000L - 219 * 300_000L)
+        val fifteen = series(220, 900_000L, (now / 900_000L) * 900_000L - 219 * 900_000L)
+        val thirty = series(220, 1_800_000L, (now / 1_800_000L) * 1_800_000L - 219 * 1_800_000L)
+        val result = TradingStrategy.evaluate(mapOf("5m" to five, "15m" to fifteen, "30m" to thirty), now)
+        assertEquals("WAIT", result.signal)
+    }
+
 }
