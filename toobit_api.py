@@ -196,8 +196,9 @@ class ToobitAPI:
             if next_cursor <= cursor:
                 raise RuntimeError("Toobit kline pagination did not advance")
             cursor = next_cursor
-            if len(page) < page_size:
-                break
+            # Do not stop merely because an exchange page is shorter than the
+            # requested limit: some Toobit responses are partial while more
+            # historical candles remain. Continue from the last real timestamp.
             time.sleep(0.05)
         ordered_times = sorted(rows_by_time)
         missing_opens = []
