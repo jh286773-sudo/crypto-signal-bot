@@ -602,12 +602,17 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
                        "rejection_reasons":["high_volatility:"+tf for tf in blocked],
                        "high_volatility_block":blocked})
         return result
-    non_trending = [tf for tf in REQUIRED_TFS if (reports[tf].get("market_regime") or {}).get("state") != "trending"]
-    if non_trending:
+    # ADX is a market-strength context filter, not a three-timeframe hard gate.
+    # Only suppress entries when BOTH higher timeframes independently show a range.
+    higher_timeframe_range = [
+        tf for tf in ("15m", "30m")
+        if (reports[tf].get("market_regime") or {}).get("state") == "ranging"
+    ]
+    if len(higher_timeframe_range) == 2:
         result.update({"signal":"NO_SIGNAL","status":"NO_SIGNAL",
-                       "reason":"Market regime is ranging, transitional or unconfirmed: "+", ".join(non_trending),
-                       "rejection_reasons":["adx_regime_not_trending:"+tf for tf in non_trending],
-                       "blocked_market_regime":non_trending})
+                       "reason":"Both higher timeframes indicate a low-trend-strength market",
+                       "rejection_reasons":["adx_higher_timeframes_both_ranging"],
+                       "blocked_market_regime":higher_timeframe_range})
         return result
     if signal in ("LONG","SHORT"):
         side_history = expectancy_stats.get(signal, []) if isinstance(expectancy_stats, dict) else []
