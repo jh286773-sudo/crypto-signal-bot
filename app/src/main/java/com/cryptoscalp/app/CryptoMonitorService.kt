@@ -65,6 +65,7 @@ class CryptoMonitorService : Service() {
             var failed=0
             var analyzed=0
             var firstError=""
+            var lastDiagnostic=""
             val now=System.currentTimeMillis()
             for(symbol in list)try{
                 // Keep a tracked position open until an opposite confirmed signal arrives.
@@ -93,10 +94,10 @@ class CryptoMonitorService : Service() {
                     // First launch establishes a baseline instead of issuing a delayed historical signal.
                     prefs.edit().putLong(key,latestClosedCandleTime).apply()
                 } else if(latestClosedCandleTime>previousCandleTime){
-                    val candidate=TradingStrategy.evaluate(candleMap,marketAsOfMs)
-                    closeShadowOnReversal(symbol,candidate.signal,candidate.entry)
-                    if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate,latestClosedCandleTime)
                     val r=TradingStrategy.evaluate(candleMap,marketAsOfMs)
+                    lastDiagnostic=symbol+" • "+r.reasons.joinToString(" ؛ ")
+                    closeShadowOnReversal(symbol,r.signal,r.entry)
+                    if(isDirectionalSignal(r.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,r,latestClosedCandleTime)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
@@ -131,8 +132,10 @@ class CryptoMonitorService : Service() {
             }
             scanning=false
             handler.post{
+                if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
                 val detail=if(failed>0) " • خطا $failed: $firstError" else ""
-                updateStatus("توبیت • پایش $ok از ${list.size} نماد • تحلیل جدید: $analyzed • پایش قیمت هر ۶۰ ثانیه$detail")
+                val statusLine="توبیت • پایش $ok از ${list.size} نماد • تحلیل جدید: $analyzed • پایش قیمت هر ۶۰ ثانیه$detail"
+                updateStatus(if(lastDiagnostic.isNotBlank()) statusLine+"\n"+lastDiagnostic else statusLine)
             }
         }
     }
