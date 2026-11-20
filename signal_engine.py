@@ -211,7 +211,14 @@ def _market_structure(c, lookback=60):
         pl = min(float(x["low"]) for x in prior)
         last = c[-1]
         close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
-        event = "BOS_up" if close > ph else "BOS_down" if close < pl else "none"
+        atr_value = _atr(w)
+        span = max(high - low, 1e-12)
+        body = abs(close - float(last["open"]))
+        close_location = (close - low) / span
+        displacement = atr_value is not None and body >= atr_value * 0.35
+        event = ("BOS_up" if close > ph and displacement and close_location >= 0.70
+                 else "BOS_down" if close < pl and displacement and close_location <= 0.30
+                 else "none")
         sweep = "sell_side" if low < pl and close > pl else "buy_side" if high > ph and close < ph else "none"
         return {"previous_swing_high":ph,"previous_swing_low":pl,
                 "structure_event":event,"market_structure":"range",
