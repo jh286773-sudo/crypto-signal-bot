@@ -370,8 +370,8 @@ object TradingStrategy {
         if(direction=="WAIT") return StrategyResult("WAIT",price,
             listOf("شرط‌های جهت‌دار در همه تایم‌فریم‌های انتخاب‌شده تأیید نشد؛ EMA و DMI باید هم‌جهت باشند و RSI یا MACD یکی از آن‌ها را تأیید کند.",
                 "اندیکاتورهای پشتیبان فقط برای اطلاع نمایش داده می‌شوند و به‌تنهایی سیگنال را مسدود نمی‌کنند.")+diagnostics)
-        val reasons=mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "),
-            "قانون ورود بدون وزن‌دهی: EMA و DMI هم‌جهت، به‌علاوه تأیید RSI یا MACD.")+diagnostics
+        val reasons=(mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "),
+            "قانون ورود بدون وزن‌دهی: EMA و DMI هم‌جهت، به‌علاوه تأیید RSI یا MACD.")+diagnostics).toMutableList()
         if(selected.size==1) reasons.add("سیگنال مستقل تایم‌فریم ${selected.first()}")
         else reasons.add("اجماع کامل "+selected.size+" تایم‌فریم انتخاب‌شده")
         reasons.add(if(direction=="LONG")"تمام تایم‌فریم‌ها LONG؛ سیگنال لانگ" else "تمام تایم‌فریم‌ها SHORT؛ سیگنال شورت")
