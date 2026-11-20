@@ -481,10 +481,12 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
         # Real candle reports must complete the breakout -> retest -> directional close sequence.
         # Missing SMC is tolerated only for external/mocked report adapters.
         retest_key = "retest_long" if signal=="LONG" else "retest_short"
-        result["entry_stage"] = "ENTRY" if smc and smc.get(retest_key) else "PREPARATION"
+        confirmation = (smc.get("structure_event") in (("BOS_up","CHoCH_up") if signal=="LONG" else ("BOS_down","CHoCH_down"))
+                        or smc.get("liquidity_sweep") == ("sell_side" if signal=="LONG" else "buy_side"))
+        result["entry_stage"] = "ENTRY" if smc and smc.get(retest_key) else "CONFIRMATION" if confirmation else "PREPARATION"
         result["entry_context"] = {
             "preparation": reports["15m"]["bias"] == reports["30m"]["bias"] and reports["15m"]["bias"] in ("bullish","bearish"),
-            "confirmation": smc.get("structure_event") in (("BOS_up","CHoCH_up") if signal=="LONG" else ("BOS_down","CHoCH_down")) or smc.get("liquidity_sweep") == ("sell_side" if signal=="LONG" else "buy_side"),
+            "confirmation": confirmation,
             "retest_confirmed": bool(smc.get(retest_key)),
             "false_breakout": bool(smc.get("false_breakout"))
         }
@@ -495,8 +497,14 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
         result.update(_levels(signal,p,a,smc))
         result["entry_stage"] = "ENTRY"
     else:
-        result["entry_stage"] = "PREPARATION" if higher_long or higher_short else "WAIT"
-        result["reason"]="Multi-timeframe indicator consensus not strong enough"
+        smc = reports["5m"]["indicators"].get("smc", {})
+        direction = "LONG" if higher_long else "SHORT" if higher_short else None
+        confirmation = bool(direction and (
+            smc.get("structure_event") in (("BOS_up","CHoCH_up") if direction=="LONG" else ("BOS_down","CHoCH_down"))
+            or smc.get("liquidity_sweep") == ("sell_side" if direction=="LONG" else "buy_side")
+        ))
+        result["entry_stage"] = "CONFIRMATION" if confirmation else "PREPARATION" if higher_long or higher_short else "WAIT"
+        result["reason"]="Multi-timeframe indicator consensus or confirmed retest not complete"
     return result
 
 
