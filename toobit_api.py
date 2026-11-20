@@ -229,7 +229,7 @@ class ToobitAPI:
                 settle = event["settle_time"]
                 if settle < start_ms or settle > end_ms:
                     continue
-                index = (settle - int(start_ms)) // self.INTERVALS["5m"]
+                index = (settle - int(start_ms) - 1) // self.INTERVALS["5m"]
                 if 0 <= index < len(five):
                     bar = five[index]
                     if bar["timestamp"] < settle <= bar["timestamp"] + self.INTERVALS["5m"]:
