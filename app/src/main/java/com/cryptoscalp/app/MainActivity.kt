@@ -222,7 +222,7 @@ class MainActivity : Activity() {
         hero.addView(status)
         diagnostics = text("جزئیات تحلیل پس از بسته‌شدن کندل بعدی نمایش داده می‌شود.", 10, goldLight).apply {
             setPadding(0, dp(8), 0, 0)
-            maxLines = 5
+            maxLines = 8
         }
         hero.addView(diagnostics)
         root.addView(hero, marginParams(bottom = 15))
