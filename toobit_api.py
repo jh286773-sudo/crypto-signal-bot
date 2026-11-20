@@ -284,22 +284,49 @@ class ToobitAPI:
         return sorted(parsed, key=lambda x: x["settle_time"])
 
     def get_first_available_candle_open(self, symbol, interval, end_ms):
-        """Find the oldest closed candle currently exposed by Toobit's kline endpoint."""
+        """Walk backward through Toobit kline pages to find the true oldest closed candle.
+
+        Some responses are capped at 1000 rows even when startTime=0 is supplied.
+        A single request therefore cannot establish the beginning of exchange history.
+        """
         if interval not in self.INTERVALS:
             raise ValueError("Invalid interval")
-        rows = self._get("/quote/v1/klines", {
-            "symbol": symbol, "interval": interval,
-            "startTime": 0, "endTime": int(end_ms), "limit": 1000
-        })
-        candles = []
-        for row in rows if isinstance(rows, list) else []:
-            if len(row) >= 6:
-                opened = int(row[0])
-                if opened + self.INTERVALS[interval] <= int(end_ms):
-                    candles.append(opened)
-        if not candles:
+        step = self.INTERVALS[interval]
+        cursor_end = int(end_ms)
+        oldest = None
+        page_size = 1000
+        while cursor_end > 0:
+            rows = self._get("/quote/v1/klines", {
+                "symbol": symbol, "interval": interval,
+                "startTime": 0, "endTime": cursor_end, "limit": page_size
+            })
+            if not isinstance(rows, list) or not rows:
+                break
+            page_opens = [
+                int(row[0]) for row in rows if len(row) >= 6
+                and int(row[0]) + step <= int(end_ms)
+                and int(row[0]) < cursor_end
+            ]
+            if not page_opens:
+                break
+            page_oldest = min(page_opens)
+            if oldest is None or page_oldest < oldest:
+                oldest = page_oldest
+            else:
+                raise RuntimeError(
+                    f"Toobit kline history pagination did not move backward for {symbol} {interval}; "
+                    "refusing to report a truncated history as complete"
+                )
+            if len(rows) < page_size or page_oldest <= 0:
+                break
+            next_cursor = page_oldest - 1
+            if next_cursor >= cursor_end:
+                raise RuntimeError("Toobit kline history pagination cursor did not decrease")
+            cursor_end = next_cursor
+            time.sleep(0.05)
+        if oldest is None:
             raise RuntimeError(f"Toobit exposes no closed {interval} candles for {symbol}")
-        return min(candles)
+        return oldest
 
     def get_historical_range(self, symbol, start_ms, end_ms, include_funding=True):
         """Fetch timestamped 5m/15m/30m histories and attach actual funding events."""
