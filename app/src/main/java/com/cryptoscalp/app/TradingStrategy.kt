@@ -381,6 +381,9 @@ object TradingStrategy {
         val volatilityBlocked=reports.filterValues{it.highVolatility}.keys
         if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
             listOf("فیلتر نوسان غیرعادی فعال شد؛ سیگنال متوقف شد: "+volatilityBlocked.joinToString("، ")),emptyList())
+        val uncertainRegime=reports.filterValues{it.marketRegime!="trending"}.keys
+        if(uncertainRegime.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+            listOf("بازار رنج، انتقالی یا فاقد روند تأییدشده است؛ سیگنال صادر نمی‌شود: "+uncertainRegime.joinToString("، ")),emptyList())
 
         // Hard three-way consensus: every timeframe must independently agree.
         // No majority vote, fallback, or 5m-only signal is permitted.
