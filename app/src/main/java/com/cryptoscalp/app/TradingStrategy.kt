@@ -333,16 +333,6 @@ object TradingStrategy {
         return opposingCore==0&&opposingMinor<=1
     }
 
-    private fun directionalQuality(report:Report,direction:Double):Boolean {
-        val families=report.families
-        val aligned=families.values.count{it*direction>=.20}
-        val opposing=families.values.count{it*direction<=-.20}
-        val core=listOf("trend","momentum","strength")
-        val coreClear=core.all{(families[it]?:0.0)*direction>=0.0}
-        val side=if(direction>0)1 else -1
-        return aligned>=5&&opposing<=1&&coreClear&&noMajorIndicatorConflict(report.indicatorVotes,side)
-    }
-
     fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null,enforceExpectancy:Boolean=true):StrategyResult {
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
             if(rows.size<MIN_CANDLES||rows.any{it.time<=0L||it.time%duration!=0L})return false
@@ -385,24 +375,17 @@ object TradingStrategy {
         if(uncertainRegime.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
             listOf("بازار رنج، انتقالی یا فاقد روند تأییدشده است؛ سیگنال صادر نمی‌شود: "+uncertainRegime.joinToString("، ")),emptyList())
 
-        // Hard three-way consensus: every timeframe must independently agree.
-        // No majority vote, fallback, or 5m-only signal is permitted.
-        val allBullish=reports.values.all{it.bias=="bullish"}
-        val allBearish=reports.values.all{it.bias=="bearish"}
+        // Each timeframe derives its own bias from its indicator families.
+        // Require unanimous direction and retain major-indicator conflict protection.
+        val allBullish=reports.values.all{it.bias=="bullish"} &&
+            reports.values.all{noMajorIndicatorConflict(it.indicatorVotes,1)}
+        val allBearish=reports.values.all{it.bias=="bearish"} &&
+            reports.values.all{noMajorIndicatorConflict(it.indicatorVotes,-1)}
         val trigger5=reports["5m"]!!
         val sm5=trigger5.structure
-        // Quality gate v1 mirrors the Python research engine: stronger 15m/30m
-        // conviction, a stronger 5m trigger and a higher combined score.
-        // These candidate thresholds require out-of-sample validation.
-        val higherBullish=reports["15m"]!!.score>=26&&reports["30m"]!!.score>=26&&
-            directionalQuality(reports["15m"]!!,1.0)&&directionalQuality(reports["30m"]!!,1.0)
-        val higherBearish=reports["15m"]!!.score<=-26&&reports["30m"]!!.score<=-26&&
-            directionalQuality(reports["15m"]!!,-1.0)&&directionalQuality(reports["30m"]!!,-1.0)
-        val triggerBullish=directionalQuality(trigger5,1.0)
-        val triggerBearish=directionalQuality(trigger5,-1.0)
         val rawSignal=when{
-            allBullish&&higherBullish&&combined>=34&&trigger5.score>=24&&triggerBullish&&sm5?.retestLong==true->"LONG"
-            allBearish&&higherBearish&&combined<=-34&&trigger5.score<=-24&&triggerBearish&&sm5?.retestShort==true->"SHORT"
+            allBullish&&sm5?.retestLong==true->"LONG"
+            allBearish&&sm5?.retestShort==true->"SHORT"
             else->"WAIT"
         }
         val expectancy = if(rawSignal=="LONG"||rawSignal=="SHORT") ExpectancyPolicy.evaluate(expectancyStats?.get(rawSignal).orEmpty()) else null
