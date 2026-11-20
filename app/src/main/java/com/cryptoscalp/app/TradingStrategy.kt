@@ -320,52 +320,67 @@ object TradingStrategy {
 
     fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
-            if(rows.size<MIN_CANDLES||rows.any{it.time<=0L})return false
+            if(rows.size<MIN_CANDLES||rows.any{it.time<=0L||it.time%duration!=0L})return false
             for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
             return true
         }
+        val price=five.lastOrNull()?.close?:0.0
         if(!validSeries(five,300_000L)||!validSeries(fifteen,900_000L)||!validSeries(thirty,1_800_000L)){
-            val p=five.lastOrNull()?.close?:0.0
-            return StrategyResult("WAIT",0,p,p,p,p,listOf("زمان کندل‌ها نامعتبر، ناقص یا غیرپیوسته است؛ تحلیل متوقف شد"),emptyList())
+            return StrategyResult("WAIT",0,price,price,price,price,
+                listOf("داده یا زمان‌بندی یکی از تایم‌فریم‌های ۵، ۱۵ یا ۳۰ دقیقه نامعتبر/ناپیوسته است؛ سیگنال متوقف شد"),emptyList())
         }
+
+        // The 5m close defines one immutable decision boundary. Higher-timeframe
+        // candles are selected only if they had fully closed by that same boundary.
         val decisionTime=five.last().time+300_000L
-        if(decisionTime>asOfMs){
-            val p=five.last().close
-            return StrategyResult("WAIT",0,p,p,p,p,listOf("کندل ۵ دقیقه‌ای هنوز به‌طور قطعی بسته نشده است؛ سیگنال صادر نمی‌شود"),emptyList())
+        if(decisionTime>asOfMs||asOfMs-decisionTime>=300_000L){
+            return StrategyResult("WAIT",0,price,price,price,price,
+                listOf("کندل ۵ دقیقه‌ای بسته‌شده تازه و قابل‌همگام‌سازی نیست؛ سیگنال صادر نمی‌شود"),emptyList())
         }
+        val expected15=((decisionTime-1L)/900_000L)*900_000L
+        val expected30=((decisionTime-1L)/1_800_000L)*1_800_000L
         val closed15=fifteen.filter{it.time+900_000L<=decisionTime}
         val closed30=thirty.filter{it.time+1_800_000L<=decisionTime}
-        if(closed15.size<MIN_CANDLES||closed30.size<MIN_CANDLES){
-            val p=five.last().close
-            return StrategyResult("WAIT",0,p,p,p,p,listOf("کندل بسته‌شده کافی در تایم‌فریم‌های بالاتر موجود نیست"),emptyList())
+        if(closed15.size<MIN_CANDLES||closed30.size<MIN_CANDLES||
+            closed15.last().time!=expected15||closed30.last().time!=expected30){
+            return StrategyResult("WAIT",0,price,price,price,price,
+                listOf("آخرین کندل بسته‌شده ۱۵ یا ۳۰ دقیقه با مرز تصمیم ۵ دقیقه همگام نیست؛ هیچ سیگنالی صادر نمی‌شود"),emptyList())
         }
+
         val reports=linkedMapOf("5m" to analyze(five,"5m"),"15m" to analyze(closed15,"15m"),"30m" to analyze(closed30,"30m"))
         val invalid=reports.filterValues{!it.valid}.keys
-        val price=reports["5m"]?.price?:five.lastOrNull()?.close?:0.0
-        if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,price,price,price,listOf("داده معتبر کافی نیست: "+invalid.joinToString("، ")),emptyList())
+        if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,price,price,price,
+            listOf("داده معتبر کافی نیست: "+invalid.joinToString("، ")),emptyList())
+
         val combined=reports.entries.sumOf{it.value.score*(tfWeights[it.key]?:0.0)}
         val volatilityBlocked=reports.filterValues{it.highVolatility}.keys
-        if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,listOf("فیلتر نوسان غیرعادی فعال شد؛ سیگنال متوقف شد: "+volatilityBlocked.joinToString("، ")),emptyList())
-        val longs=reports.values.count{it.bias=="bullish"};val shorts=reports.values.count{it.bias=="bearish"}
-        val higherLong=reports["15m"]?.bias=="bullish"&&reports["30m"]?.bias=="bullish"
-        val higherShort=reports["15m"]?.bias=="bearish"&&reports["30m"]?.bias=="bearish"
-        val triggerLong=reports["5m"]?.bias=="bullish"&&reports["5m"]!!.score>=18
-        val triggerShort=reports["5m"]?.bias=="bearish"&&reports["5m"]!!.score<=-18
-        val sm5=reports["5m"]?.structure
-        val signal=when{combined>=28&&higherLong&&triggerLong&&longs==3&&sm5?.retestLong==true->"LONG";combined<=-28&&higherShort&&triggerShort&&shorts==3&&sm5?.retestShort==true->"SHORT";else->"WAIT"}
+        if(volatilityBlocked.isNotEmpty())return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+            listOf("فیلتر نوسان غیرعادی فعال شد؛ سیگنال متوقف شد: "+volatilityBlocked.joinToString("، ")),emptyList())
+
+        // Hard three-way consensus: every timeframe must independently agree.
+        // No majority vote, fallback, or 5m-only signal is permitted.
+        val allBullish=reports.values.all{it.bias=="bullish"}
+        val allBearish=reports.values.all{it.bias=="bearish"}
+        val trigger5=reports["5m"]!!
+        val sm5=trigger5.structure
+        val signal=when{
+            allBullish&&combined>=28&&trigger5.score>=18&&sm5?.retestLong==true->"LONG"
+            allBearish&&combined<=-28&&trigger5.score<=-18&&sm5?.retestShort==true->"SHORT"
+            else->"WAIT"
+        }
         val a=reports["5m"]?.atr?:0.0
-        if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
-        val sm=reports["5m"]?.structure
-        if(signal!="WAIT"&&(sm?.entryDistanceAtr?:0.0)>.80){
+        if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+            listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
+        if(signal!="WAIT"&&(sm5?.entryDistanceAtr?:0.0)>.80){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
                 listOf("Retest بیش از ۰٫۸ ATR از سطح ورود فاصله دارد؛ از ورود دیرهنگام صرف‌نظر شد"),reports.values.flatMap{it.smc}.distinct())
         }
-        if(signal!="WAIT"&&sm?.falseBreakout==true){
+        if(signal!="WAIT"&&sm5?.falseBreakout==true){
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
                 listOf("شکست جعلی شناسایی شد؛ ساختار فعلی نامعتبر است و باید منتظر ساختار تازه ماند"),reports.values.flatMap{it.smc}.distinct())
         }
         val atrRisk=max(a*1.5,price*.001)
-        val structuralStop=if(signal=="LONG")sm?.previousSwingLow?.minus(a*.15) else sm?.previousSwingHigh?.plus(a*.15)
+        val structuralStop=if(signal=="LONG")sm5?.previousSwingLow?.minus(a*.15) else sm5?.previousSwingHigh?.plus(a*.15)
         val candidate=structuralStop?:if(signal=="LONG")price-atrRisk else price+atrRisk
         val structuralRisk=abs(price-candidate)
         val risk=if(candidate>0&&(if(signal=="LONG")candidate<price else candidate>price)&&structuralRisk<=3.0*a&&structuralRisk>=a*.25)structuralRisk else atrRisk
@@ -373,26 +388,18 @@ object TradingStrategy {
         val tp1=if(signal=="LONG")price+1.5*risk else if(signal=="SHORT")price-1.5*risk else price
         val tp2=if(signal=="LONG")price+2.5*risk else if(signal=="SHORT")price-2.5*risk else price
         val tp3=if(signal=="LONG")price+3.5*risk else if(signal=="SHORT")price-3.5*risk else price
-        val reasons=mutableListOf("موتور تحلیل نسخه ۰.۲.۹: هشت خانواده شاخص","امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
+        val reasons=mutableListOf("موتور تحلیل نسخه ۰.۲.۹: هشت خانواده شاخص",
+            "امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
         for((tf,rep) in reports){
-            // User-facing explanations must not expose neutral/ranging market labels.
-            // The regime remains internal and continues to influence indicator-family weighting.
             reasons.add(tf+": امتیاز تحلیل "+"%.2f".format(rep.score))
             reasons.add("امتیاز خانواده‌ها: "+rep.families.entries.joinToString("، "){it.key+"="+"%.2f".format(it.value)})
         }
-        if(signal=="LONG"||signal=="SHORT") {
-            reasons.add("آماده‌سازی: هم‌جهتی ۱۵ و ۳۰ دقیقه")
-            reasons.add("تأیید: شکست ساختاری/بازپس‌گیری نقدینگی با کندل بسته‌شده")
-            reasons.add("نقطه ورود: بازگشت و تثبیت مجدد روی سطح شکست")
+        if(signal=="LONG"||signal=="SHORT"){
+            reasons.add("تأیید مستقل و هم‌زمان هر سه تایم‌فریم ۵، ۱۵ و ۳۰ دقیقه")
+            reasons.add("نقطه ورود: بازگشت و تثبیت مجدد روی سطح شکست در ۵ دقیقه")
             reasons.add(if(signal=="LONG")"تأیید کامل سه تایم‌فریم؛ لانگ" else "تأیید کامل سه تایم‌فریم؛ شورت")
-        } else if(higherLong||higherShort) {
-            reasons.add("مرحله آماده‌سازی: جهت تایم‌فریم‌های ۱۵ و ۳۰ دقیقه همسو است")
-            val confirmation=sm5?.event=="BOS_up"||sm5?.event=="CHoCH_up"||sm5?.event=="BOS_down"||sm5?.event=="CHoCH_down"||(sm5?.sweep?.let{it!="none"}==true)
-            val retestReady=if(higherLong)sm5?.retestLong==true else sm5?.retestShort==true
-            reasons.add(if(confirmation)"مرحله تأیید: شکست ساختاری یا Sweep شناسایی شد" else "مرحله تأیید: هنوز شکست معتبر یا Sweep تأیید نشده است")
-            reasons.add(if(retestReady)"مرحله ورود: Retest تأیید شد؛ منتظر تکمیل امتیاز ترکیبی هستیم" else "مرحله ورود: فقط پس از بازگشت و تثبیت قیمت روی سطح شکست")
         }
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
         return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc,tp3,listOf(1.5,2.5,3.5))
     }
-}
+}\n}\n
