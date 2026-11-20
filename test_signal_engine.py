@@ -72,5 +72,16 @@ class EngineTests(unittest.TestCase):
         result = analyze_timeframe(candles(120), "15m")
         self.assertIn(result["market_regime"]["state"], ("trending", "ranging", "transition", "unknown"))
 
+    def test_five_minute_trigger_must_confirm_higher_timeframe_bias(self):
+        strong = {"valid": True, "score": 60.0, "bias": "bullish", "indicators": {"atr": 1.0}, "close": 100.0}
+        weak_trigger = {"valid": True, "score": 15.0, "bias": "bullish", "indicators": {"atr": 1.0}, "close": 100.0}
+        with patch("signal_engine.analyze_timeframe", side_effect=[weak_trigger, strong, strong]):
+            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+
+    def test_divergence_requires_enough_closed_candles(self):
+        from signal_engine import _divergence
+        self.assertEqual(_divergence(candles(60)), "none")
+
 
 if __name__=="__main__": unittest.main()
