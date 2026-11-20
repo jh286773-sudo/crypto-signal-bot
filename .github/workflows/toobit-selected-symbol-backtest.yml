@@ -1,0 +1,51 @@
+name: AURUM X Selected-Symbol Backtest From 2026-11-09
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: Inclusive UTC start date (YYYY-MM-DD)
+        required: true
+        default: "2026-11-09"
+        type: string
+      symbols:
+        description: Comma-separated Toobit USDT perpetual symbols
+        required: true
+        default: "BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  selected-symbol-backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validate pagination and strategy tests
+        run: |
+          python -m unittest test_toobit_history_pagination.py
+          python -m unittest discover -v
+      - name: Run selected-symbol backtest from requested UTC date
+        env:
+          START_DATE: ${{ inputs.start_date || '2026-11-09' }}
+          SYMBOLS: ${{ inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
+        run: |
+          python run_toobit_multi_backtest.py --days 0 --start-date "$START_DATE" --symbols "$SYMBOLS" --slippage-bps 1.0 --output toobit_selected_from_2026-11-09.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aurum-x-selected-backtest-from-2026-11-09
+          path: toobit_selected_from_2026-11-09.json
+          if-no-files-found: warn
+          retention-days: 30
