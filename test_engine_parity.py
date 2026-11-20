@@ -24,6 +24,7 @@ class CrossEngineContractTests(unittest.TestCase):
 
 
     def test_shared_golden_fixture_signal_matches_android_contract(self):
+        root=pathlib.Path(__file__).parent
         fixture_path=root/"app/src/test/resources/strategy_parity_fixture.json"
         fixture=json.loads(fixture_path.read_text())
         durations={"5m":300000,"15m":900000,"30m":1800000}
