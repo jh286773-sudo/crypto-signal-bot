@@ -1,0 +1,23 @@
+name: Validate AURUM X 0.2.9 Python engine
+on:
+  push:
+    branches: [main, port-029-brain]
+    paths:
+      - 'signal_engine.py'
+      - 'monitor.py'
+      - 'test_signal_engine.py'
+      - '.github/workflows/port-reference-engine.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python sources
+        run: python -m compileall -q .
+      - name: Run 0.2.9 engine tests
+        run: python -m unittest -v test_signal_engine.py

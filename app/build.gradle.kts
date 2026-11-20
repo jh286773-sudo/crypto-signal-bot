@@ -9,8 +9,8 @@ android {
         applicationId = "com.cryptoscalp.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.2.8"
+        versionCode = 9
+        versionName = "0.2.9"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
