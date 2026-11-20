@@ -259,7 +259,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
                 cooldown_until_index = max(cooldown_until_index, exit_index + loss_cooldown_bars)
                 cooldown_events += 1
                 loss_streak = 0
-        elif net_pnl > 0:
+        else:
             loss_streak = 0
         start_equity = equity
         equity += net_pnl
