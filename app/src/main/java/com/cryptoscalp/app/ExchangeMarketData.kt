@@ -69,7 +69,7 @@ object ExchangeMarketData {
         return out.distinct().sorted()
     }
 
-    fun candles(exchange: String, symbol: String, interval: String): List<MarketCandle> {
+    fun markPriceCandles(exchange: String, symbol: String, interval: String): List<MarketCandle> {
         require(exchange == "Toobit") { "فقط صرافی توبیت پشتیبانی می‌شود." }
         require(interval == "5m" || interval == "15m" || interval == "30m") {
             "تایم‌فریم نامعتبر است: $interval"
@@ -109,6 +109,65 @@ object ExchangeMarketData {
             throw IllegalStateException("توبیت: تعداد کندل معتبر $interval کافی نیست (${result.size}).")
         }
         return result.sortedBy { it.time }
+    }
+
+    /**
+     * Contract-price OHLCV used by the strategy and Python walk-forward engine.
+     * This endpoint includes real volume and taker-buy volume for order-flow analysis.
+     */
+    fun candles(exchange: String, symbol: String, interval: String): List<MarketCandle> {
+        require(exchange == "Toobit") { "فقط صرافی توبیت پشتیبانی می‌شود." }
+        require(interval == "5m" || interval == "15m" || interval == "30m") {
+            "تایم‌فریم نامعتبر است: $interval"
+        }
+        require(symbol.endsWith("-SWAP-USDT")) { "نماد قرارداد توبیت نامعتبر است: $symbol" }
+        val now = exchangeTimeMs()
+        val duration = when (interval) {
+            "5m" -> 300_000L
+            "15m" -> 900_000L
+            else -> 1_800_000L
+        }
+        val url = "https://api.toobit.com/quote/v1/klines" +
+            "?symbol=$symbol&interval=$interval&startTime=${now - duration * 260}&endTime=$now&limit=260"
+        val rows = JSONArray(get(url))
+        val result = mutableListOf<MarketCandle>()
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONArray(i) ?: continue
+            try {
+                if (row.length() < 6) continue
+                val candleTime = row.optString(0).toLongOrNull() ?: continue
+                if (candleTime <= 0L || candleTime + duration > now) continue
+                val open = row.optString(1).toDouble()
+                val high = row.optString(2).toDouble()
+                val low = row.optString(3).toDouble()
+                val close = row.optString(4).toDouble()
+                val volume = row.optString(5).toDouble()
+                val takerBuy = if (row.length() > 9) row.optString(9).toDoubleOrNull() else null
+                if (open > 0.0 && high >= maxOf(open, close) && low <= minOf(open, close) &&
+                    low > 0.0 && close > 0.0 && volume >= 0.0 &&
+                    (takerBuy == null || (takerBuy >= 0.0 && takerBuy <= volume * 1.001))) {
+                    result.add(MarketCandle(open, high, low, close, volume, candleTime, takerBuy))
+                }
+            } catch (_: Exception) {
+                // Ignore malformed rows without discarding otherwise valid candles.
+            }
+        }
+        if (result.size < 60) {
+            throw IllegalStateException("توبیت: تعداد کندل معتبر $interval کافی نیست (${result.size}).")
+        }
+        return result.sortedBy { it.time }
+    }
+
+    /** Mark price matched to the mark-price chart, separate from traded contract candles. */
+    fun markPrice(exchange: String, symbol: String): Double {
+        require(exchange == "Toobit") { "فقط صرافی توبیت پشتیبانی می‌شود." }
+        require(symbol.endsWith("-SWAP-USDT")) { "نماد قرارداد توبیت نامعتبر است: $symbol" }
+        val root = JSONObject(get("https://api.toobit.com/quote/v1/markPrice?symbol=$symbol"))
+        if (root.optString("symbolId") == symbol) {
+            val price = root.optString("price").toDoubleOrNull() ?: 0.0
+            if (price > 0.0) return price
+        }
+        throw IllegalStateException("قیمت Mark $symbol از توبیت دریافت نشد.")
     }
 
     /** Latest traded futures price; used for 60-second risk checks, not candle-close analysis. */
