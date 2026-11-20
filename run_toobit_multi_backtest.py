@@ -58,7 +58,7 @@ def main():
         symbol: {tf: api.get_first_available_candle_open(symbol, tf, end_ms)
                  for tf in ("5m", "15m", "30m")}
         for symbol in selected_symbols
-    } if not args.start_date and not args.days else {})
+    } if not args.start_date else {})
     starts_by_symbol = {
         symbol: ({tf: requested_start_ms for tf in ("5m", "15m", "30m")}
                  if args.start_date else
