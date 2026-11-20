@@ -18,7 +18,8 @@ def parse_args():
     parser.add_argument("--symbol", default="BTC-SWAP-USDT")
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--slippage-bps", type=float, required=True,
-                         help="Measured adverse slippage per fill, in basis points")
+                         help="Adverse slippage assumption per fill, in basis points")
+    parser.add_argument("--slippage-source", default="user-supplied slippage input; not independently measured")
     parser.add_argument("--public-vip0-fees", action="store_true",
                          help="Use published VIP-0 futures taker fee (6 bps) instead of account-specific rates")
     parser.add_argument("--equity", type=float, default=10000.0)
@@ -66,7 +67,7 @@ def main():
     result["commission_source"] = ("published Toobit VIP-0 futures taker schedule" if args.public_vip0_fees
                                    else "Toobit authenticated USER_DATA commissionRate")
     result["commission_rates"] = commission
-    result["slippage_source"] = "user-supplied measured adverse slippage per fill"
+    result["slippage_source"] = args.slippage_source
     result["candle_counts"] = {tf: len(rows) for tf, rows in data.items()}
 
     with open(args.output, "w", encoding="utf-8") as handle:
