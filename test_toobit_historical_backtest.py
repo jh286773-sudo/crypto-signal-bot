@@ -47,6 +47,17 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 3 * 300000)
         self.assertEqual([item["timestamp"] for item in rows], [0, 300000, 600000])
 
+    def test_crypto_universe_excludes_tradfi_contracts(self):
+        api = ToobitAPI()
+        info = {"coins": [{"coinId": "BTC"}, {"coinId": "ETH"}, {"coinId": "USDT"}],
+                "contracts": [
+                    {"symbol": "BTC-SWAP-USDT", "status": "TRADING", "quoteAsset": "USDT", "inverse": False, "underlying": "BTC"},
+                    {"symbol": "NVDA-SWAP-USDT", "status": "TRADING", "quoteAsset": "USDT", "inverse": False, "underlying": "NVDA"},
+                    {"symbol": "ETH-SWAP-USDT", "status": "TRADING", "quoteAsset": "USDT", "inverse": False, "underlying": "ETH"},
+                ]}
+        with patch.object(api, "_get", side_effect=[info, [{"s": "BTC-SWAP-USDT", "qv": "100"}, {"s": "NVDA-SWAP-USDT", "qv": "200"}, {"s": "ETH-SWAP-USDT", "qv": "50"}]]):
+            symbols = api.get_futures_symbols(limit=100, preferred_bases=None)
+        self.assertEqual(set(symbols), {"BTC-SWAP-USDT", "ETH-SWAP-USDT"})
     def test_live_klines_parse_taker_buy_volume_from_exchange_payload(self):
         api = ToobitAPI()
         row0 = [0, "1", "2", "0.5", "1.5", "10", 0, "15", 2, "6", "9"]
