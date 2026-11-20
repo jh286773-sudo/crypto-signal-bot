@@ -94,11 +94,15 @@ class CryptoMonitorService : Service() {
                     // Establish a baseline without sending a delayed historical alert,
                     // but still analyze once so the user immediately sees per-timeframe diagnostics.
                     val baseline=TradingStrategy.evaluate(candleMap,marketAsOfMs)
-                    lastDiagnostic=symbol+" • خط مبنا، بدون اعلان تاریخی: "+baseline.reasons.joinToString(" ؛ ")
+                    recordSuccessfulAnalysis()
+                    analyzed++
+                    val candleCounts=selectedTimeframes.joinToString("، ") { tf -> "$tf=${candleMap.getValue(tf).size}" }
+                    lastDiagnostic=symbol+" • تحلیل اولیه انجام شد (بدون اعلان تاریخی) • کندل‌ها: "+candleCounts+" • "+baseline.reasons.joinToString(" ؛ ")
                     prefs.edit().putLong(key,latestClosedCandleTime).apply()
                 } else if(latestClosedCandleTime>previousCandleTime){
                     val r=TradingStrategy.evaluate(candleMap,marketAsOfMs)
-                    lastDiagnostic=symbol+" • "+r.reasons.joinToString(" ؛ ")
+                    recordSuccessfulAnalysis()
+                    lastDiagnostic=symbol+" • تحلیل کندل جدید • تایم‌فریم‌ها: "+selectedTimeframes.joinToString("، ")+" • "+r.reasons.joinToString(" ؛ ")
                     closeShadowOnReversal(symbol,r.signal,r.entry)
                     if(isDirectionalSignal(r.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,r,latestClosedCandleTime)
                     val open=prefs.getString("open_setup_$symbol",null)
@@ -127,22 +131,33 @@ class CryptoMonitorService : Service() {
                     prefs.edit().putString("last_signal_$symbol",r.signal)
                         .putLong(key,latestClosedCandleTime).apply()
                     analyzed++
+                } else {
+                    lastDiagnostic=symbol+" • داده‌های تایم‌فریم‌های "+selectedTimeframes.joinToString("، ")+" دریافت شد؛ منتظر بسته‌شدن کندل مشترک جدید هستیم. آخرین مرز مشترک: "+latestClosedCandleTime
                 }
                 ok++
             }catch(e:Exception){
                 failed++
                 val errorText="$symbol: ${e.message ?: e.javaClass.simpleName}"
                 if(firstError.isBlank()) firstError=errorText
-                if(lastDiagnostic.isBlank()) lastDiagnostic="خطای دریافت/تحلیل $errorText"
+                lastDiagnostic="خطای دریافت/تحلیل $errorText"
             }
             scanning=false
             handler.post{
-                if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
+                val totalAnalyses=prefs.getInt("analysis_count_total",0)
+                val lastAnalysisAt=prefs.getLong("last_successful_analysis_at",0L)
                 val detail=if(failed>0) " • خطا $failed: $firstError" else ""
-                val statusLine="توبیت • پایش $ok از ${list.size} نماد • تحلیل جدید: $analyzed • پایش قیمت هر ۶۰ ثانیه$detail"
-                updateStatus(if(lastDiagnostic.isNotBlank()) statusLine+"\n"+lastDiagnostic else statusLine)
+                val waiting=if(analyzed==0 && failed==0) " • هنوز کندل بسته‌شده مشترک جدید نرسیده" else ""
+                val lastAt=if(lastAnalysisAt>0L) " • آخرین تحلیل: $lastAnalysisAt" else ""
+                val statusLine="توبیت • پایش $ok از ${list.size} نماد • تحلیل موفق این چرخه: $analyzed • کل تحلیل‌ها: $totalAnalyses • پایش هر ۶۰ ثانیه$detail$waiting$lastAt"
+                if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
+                updateStatus(statusLine+(if(lastDiagnostic.isNotBlank()) "\n"+lastDiagnostic else ""))
             }
         }
+    }
+    private fun recordSuccessfulAnalysis(){
+        val total=prefs.getInt("analysis_count_total",0)+1
+        prefs.edit().putInt("analysis_count_total",total)
+            .putLong("last_successful_analysis_at",System.currentTimeMillis()).apply()
     }
     // WAIT is an internal no-trade state only; user-facing entry alerts are LONG or SHORT.
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
