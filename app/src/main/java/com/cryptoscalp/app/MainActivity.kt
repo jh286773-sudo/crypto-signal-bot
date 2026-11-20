@@ -250,7 +250,10 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 isClickable = true
                 isFocusable = true
-                setPadding(dp(10), dp(8), dp(10), dp(8))
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                minHeight = dp(44)
+                elevation = dp(3).toFloat()
+                setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.argb(110, 0, 0, 0))
                 setOnClickListener {
                     if (selectedChartTimeframe != tf) {
                         selectedChartTimeframe = tf
@@ -357,8 +360,10 @@ class MainActivity : Activity() {
             if (view is Button) {
                 attachPressFeedback(view)
                 view.stateListAnimator = null
-                view.elevation = max(view.elevation, dp(8).toFloat())
-                view.minHeight = max(view.minHeight, dp(46))
+                view.elevation = max(view.elevation, dp(10).toFloat())
+                view.translationZ = dp(1).toFloat()
+                view.minHeight = max(view.minHeight, dp(48))
+                view.setShadowLayer(dp(1).toFloat(), 0f, dp(1).toFloat(), Color.argb(90, 0, 0, 0))
                 view.typeface = Typeface.create("sans-serif", Typeface.BOLD)
                 view.letterSpacing = 0.015f
             } else if (view.isClickable && view !is TextView) {
@@ -514,9 +519,17 @@ class MainActivity : Activity() {
         timeframeButtons.forEach { (tf, chip) ->
             val active = tf == selectedChartTimeframe
             chip.setTextColor(if (active) ink else goldLight)
-            chip.background = if (active) rounded(goldLight, Color.WHITE, 10)
-                else rounded(Color.rgb(27, 27, 29), Color.rgb(105, 84, 43), 10)
-            chip.elevation = if (active) dp(5).toFloat() else 0f
+            chip.background = if (active) android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.WHITE, goldLight, gold, Color.rgb(183, 126, 29))
+            ).apply { cornerRadius = dp(12).toFloat(); setStroke(dp(2), Color.WHITE) }
+            else android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(67, 57, 39), Color.rgb(30, 30, 32))
+            ).apply { cornerRadius = dp(12).toFloat(); setStroke(dp(1), Color.rgb(154, 119, 55)) }
+            chip.elevation = if (active) dp(8).toFloat() else dp(3).toFloat()
+            chip.translationZ = if (active) dp(2).toFloat() else 0f
+            chip.setShadowLayer(if (active) dp(3).toFloat() else dp(1).toFloat(), 0f, dp(2).toFloat(), Color.argb(130, 0, 0, 0))
         }
     }
 
