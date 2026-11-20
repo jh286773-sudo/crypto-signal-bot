@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from contextlib import contextmanager
 from typing import Any
 
 
@@ -26,10 +27,18 @@ class ShadowLedger:
             db.execute("""CREATE TABLE IF NOT EXISTS shadow_cursor (
                 symbol TEXT PRIMARY KEY, last_bar INTEGER NOT NULL)""")
 
+    @contextmanager
     def _db(self):
         db = sqlite3.connect(self.path, timeout=20)
-        db.execute("PRAGMA journal_mode=WAL")
-        return db
+        try:
+            db.execute("PRAGMA journal_mode=WAL")
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     @staticmethod
     def _bar_time(bar: dict[str, Any]) -> int:
