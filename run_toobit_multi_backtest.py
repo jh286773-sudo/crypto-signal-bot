@@ -1,4 +1,4 @@
-"""Run a comparable 10-day Toobit walk-forward on crypto-only USDT perpetuals."""
+"""Run a shared-window Toobit walk-forward across all active USDT linear perpetuals."""
 import argparse
 import json
 import math
@@ -6,17 +6,6 @@ from datetime import datetime, timezone
 
 from backtest import run_backtest
 from toobit_api import ToobitAPI
-
-
-# Research-only allowlist: excludes tokenized equities, indices, metals and other
-# non-crypto underlyings that may also be listed as USDT perpetual contracts.
-CRYPTO_BASES = (
-    "BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "LINK", "AVAX",
-    "DOT", "LTC", "BCH", "TRX", "SUI", "TON", "NEAR", "APT", "ARB",
-    "OP", "PEPE", "WIF", "FIL", "ATOM", "UNI", "ETC", "XLM", "HBAR",
-    "AAVE", "INJ", "SEI", "ICP", "TIA", "RENDER", "SHIB", "1000SHIB",
-    "1000PEPE", "FLOKI", "MKR", "CRV", "GRT", "MANA", "SAND", "EGLD",
-)
 
 
 def finite_json(value):
@@ -32,9 +21,10 @@ def finite_json(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=10)
-    parser.add_argument("--min-symbols", type=int, default=10)
-    parser.add_argument("--candidates", type=int, default=50,
-                        help="Maximum liquid crypto contracts to inspect")
+    parser.add_argument("--min-symbols", type=int, default=10,
+                        help="Minimum successful symbols required; does not stop the full-universe scan")
+    parser.add_argument("--candidates", type=int, default=10000,
+                        help="Maximum active USDT perpetual contracts to inspect (default: all)")
     parser.add_argument("--slippage-bps", type=float, default=1.0,
                         help="Assumed adverse slippage per fill; not measured")
     parser.add_argument("--equity-per-symbol", type=float, default=10000.0)
@@ -44,7 +34,7 @@ def main():
     if not 2 <= args.days <= 30:
         raise SystemExit("--days must be between 2 and 30 (funding endpoint history cap)")
     if args.min_symbols < 10 or args.candidates < args.min_symbols:
-        raise SystemExit("At least 10 crypto symbols are required and candidates must cover min-symbols")
+        raise SystemExit("At least 10 symbols are required and candidates must cover min-symbols")
     if args.slippage_bps < 0:
         raise SystemExit("--slippage-bps cannot be negative")
 
@@ -52,11 +42,9 @@ def main():
     end_ms = int(api.server_time()["serverTime"])
     end_ms = (end_ms // 300000) * 300000
     start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000
-    # This allowlist is strictly for backtest sampling; it does not alter the app's
-    # selectable symbols or the live signal scanner.
-    candidates = api.get_futures_symbols(
-        limit=args.candidates, preferred_bases=CRYPTO_BASES
-    )
+    # Enumerate the complete active USDT-margined linear perpetual universe.
+    # This research-only scan does not alter app symbol selection or live scanning.
+    candidates = api.get_futures_symbols(limit=args.candidates, preferred_bases=None)
     results, failures = [], []
 
     # All symbols use the same UTC window, fee schedule, slippage and risk model.
@@ -91,8 +79,6 @@ def main():
                 "max_drawdown_pct": round(result["max_drawdown_pct"], 4),
                 "profit_factor": finite_json(result["profit_factor"]),
             }), flush=True)
-            if len(results) >= args.min_symbols:
-                break
         except Exception as exc:
             failures.append({"symbol": symbol, "error": str(exc)})
             print(f"SKIP {symbol}: {exc}", flush=True)
@@ -124,7 +110,7 @@ def main():
         "gross_loss_sum": gross_loss,
         "profit_factor": gross_profit / abs(gross_loss) if gross_loss else (math.inf if gross_profit else 0.0),
         "max_symbol_drawdown_pct": max(item["max_drawdown_pct"] for item in results),
-        "warning": "Pooled equal-capital summary of independent per-symbol simulations, not a single shared-margin portfolio. Max drawdown is the worst individual symbol drawdown.",
+        "warning": "Pooled equal-capital summary of independent per-symbol simulations, not a single shared-margin portfolio. Max drawdown is the worst individual symbol drawdown. Failed symbols are listed separately and are not silently treated as zero-return symbols.",
     }
     report = {
         "period_utc": {
@@ -134,8 +120,10 @@ def main():
         },
         "methodology": {
             "strategy": "same 5m/15m/30m closed-candle strategy on every crypto symbol",
-            "symbol_selection": "highest 24h quote-volume active Toobit USDT perpetuals filtered by explicit crypto-underlying allowlist",
-            "crypto_base_allowlist": list(CRYPTO_BASES),
+            "symbol_selection": "all active Toobit USDT-margined linear perpetual contracts returned by exchangeInfo, ranked by 24h quote volume",
+            "candidate_contracts": len(candidates),
+            "successfully_tested_contracts": len(results),
+            "universe_scope": "USDT linear perpetuals; excludes inverse and non-USDT contracts",
             "minimum_symbols": args.min_symbols,
             "slippage_bps_per_fill": args.slippage_bps,
             "slippage_is_measured": False,
@@ -145,6 +133,7 @@ def main():
             "funding": "historical Toobit settlement events",
             "same_utc_window_for_all_symbols": True,
             "production_symbol_universe_changed": False,
+            "full_candidate_scan_completed": len(results) + len(failures) == len(candidates),
         },
         "pooled_summary": pooled,
         "per_symbol": results,
