@@ -268,8 +268,10 @@ object TradingStrategy {
             indicatorVotes[name]=value
             if(value!=0)notes.add(name+":"+(if(value>0)"+" else "")+value)
         }
-        vote("EMA",if(e20>e50&&e50>e200)1 else if(e20<e50&&e50<e200)-1 else 0)
-        vote("RSI",if(r!=null&&r>52&&r<70)1 else if(r!=null&&r>30&&r<48)-1 else 0)
+        // Trend direction uses EMA20/50 alignment with price relative to EMA200.
+        vote("EMA",if(e20>e50&&price>e200)1 else if(e20<e50&&price<e200)-1 else 0)
+        // RSI midpoint momentum; overbought/oversold extremes do not veto a trend.
+        vote("RSI",if(r!=null&&r>=50.0)1 else if(r!=null&&r<50.0)-1 else 0)
         vote("MACD",mc.third?.let{if(it>0)1 else if(it<0)-1 else 0}?:0)
         // DI+/DI- directly identify directional pressure.
         vote("ADX_DMI",if(dx!=null&&dx.plus>dx.minus)1 else if(dx!=null&&dx.minus>dx.plus)-1 else 0)
@@ -282,11 +284,25 @@ object TradingStrategy {
     }
 
     internal fun indicatorBias(votes:Map<String,Int>):String {
-        val coreLong=listOf("EMA","RSI","MACD","ADX_DMI").all{votes[it]==1}
-        val coreShort=listOf("EMA","RSI","MACD","ADX_DMI").all{votes[it]==-1}
-        val supportLong=listOf("VWAP","OBV_Trend","Bollinger").all{(votes[it]?:0)>=0}
-        val supportShort=listOf("VWAP","OBV_Trend","Bollinger").all{(votes[it]?:0)<=0}
-        return when{coreLong&&supportLong->"bullish";coreShort&&supportShort->"bearish";else->"neutral"}
+        // No score or vote count: trend and directional pressure must agree;
+        // either RSI midpoint or MACD momentum must confirm.
+        val longMomentum = votes["RSI"]==1 || votes["MACD"]==1
+        val shortMomentum = votes["RSI"]==-1 || votes["MACD"]==-1
+        return when {
+            votes["EMA"]==1 && votes["ADX_DMI"]==1 && longMomentum -> "bullish"
+            votes["EMA"]==-1 && votes["ADX_DMI"]==-1 && shortMomentum -> "bearish"
+            else -> "neutral"
+        }
+    }
+
+    private fun voteLabel(value:Int?):String = when(value) {
+        1 -> "مثبت"; -1 -> "منفی"; else -> "خنثی"
+    }
+    private fun timeframeDiagnostic(tf:String,report:Report):String {
+        val v=report.indicatorVotes
+        val direction=if(report.bias=="bullish") "LONG" else if(report.bias=="bearish") "SHORT" else "بدون تأیید"
+        return tf+": "+direction+" | EMA "+voteLabel(v["EMA"])+", RSI "+voteLabel(v["RSI"])+", MACD "+voteLabel(v["MACD"])+", DMI "+voteLabel(v["ADX_DMI"])+
+            " | پشتیبان‌ها: VWAP "+voteLabel(v["VWAP"])+", OBV "+voteLabel(v["OBV_Trend"])+", Bollinger "+voteLabel(v["Bollinger"])
     }
 
     /** SMC is a separate structural entry confirmation, never a weighted vote. */
@@ -347,13 +363,12 @@ object TradingStrategy {
         val allBullish=reports.values.all{it.bias=="bullish"}
         val allBearish=reports.values.all{it.bias=="bearish"}
         val direction=when { allBullish->"LONG"; allBearish->"SHORT"; else->"WAIT" }
+        val diagnostics=reports.map { (tf,report) -> timeframeDiagnostic(tf,report) }
         if(direction=="WAIT") return StrategyResult("WAIT",price,
-            listOf("تحلیل اندیکاتورها در تمام تایم‌فریم‌های انتخاب‌شده باید هم‌جهت باشد؛ اختلاف یا حالت خنثی، سیگنال را متوقف می‌کند"))
-        val smcRejected=reports.filterValues{!smcConfirms(it.structure,direction)}.keys
-        if(smcRejected.isNotEmpty()) return StrategyResult("WAIT",price,
-            listOf("تأیید مستقل اسمارت‌مانی در تایم‌فریم‌های زیر وجود ندارد یا شکست جعلی/ساختار مخالف دیده شده است: "+smcRejected.joinToString("، ")))
+            listOf("شرط‌های جهت‌دار در همه تایم‌فریم‌های انتخاب‌شده تأیید نشد؛ EMA و DMI باید هم‌جهت باشند و RSI یا MACD یکی از آن‌ها را تأیید کند.",
+                "اندیکاتورهای پشتیبان فقط برای اطلاع نمایش داده می‌شوند و به‌تنهایی سیگنال را مسدود نمی‌کنند.")+diagnostics)
         val reasons=mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "),
-            "تأیید مستقل SMC: BOS/CHoCH، نقدینگی، اردربلاک و Retest؛ بدون امتیازدهی")
+            "قانون ورود بدون وزن‌دهی: EMA و DMI هم‌جهت، به‌علاوه تأیید RSI یا MACD.")+diagnostics
         if(selected.size==1) reasons.add("سیگنال مستقل تایم‌فریم ${selected.first()}")
         else reasons.add("اجماع کامل "+selected.size+" تایم‌فریم انتخاب‌شده")
         reasons.add(if(direction=="LONG")"تمام تایم‌فریم‌ها LONG؛ سیگنال لانگ" else "تمام تایم‌فریم‌ها SHORT؛ سیگنال شورت")
