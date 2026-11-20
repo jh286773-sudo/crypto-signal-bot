@@ -155,6 +155,15 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["entry_stage"], "CONFIRMATION")
         self.assertFalse(result["entry_context"]["retest_confirmed"])
 
+    def test_missing_smc_retest_evidence_cannot_bypass_entry_gate(self):
+        bullish = {"valid": True, "score": 60.0, "bias": "bullish",
+                   "indicators": {"atr": 1.0, "smc": {}}, "close": 100.0}
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            result = analyze_market({tf: candles() for tf in ("5m", "15m", "30m")})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertEqual(result["entry_stage"], "PREPARATION")
+        self.assertFalse(result["entry_context"]["retest_confirmed"])
+
     def test_adaptive_levels_use_structure_and_reward_risk_multiples(self):
         from signal_engine import _levels
         levels = _levels("LONG", 100.0, 1.0, {"previous_swing_low": 98.0})
