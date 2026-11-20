@@ -129,9 +129,14 @@ class CryptoMonitorService : Service() {
         if(stop){closeOpen(symbol,"حد ضرر فعال شد • قیمت ${fmt(price)}");return}
         val tp1=if(long)price>=s.optDouble("tp1") else price<=s.optDouble("tp1")
         if(tp1&&!s.optBoolean("tp1Done")){
-            s.put("tp1Done",true);prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
-            notifyExit(symbol,"مرحله اول حد سود لمس شد",
-                "قیمت فعلی: ${fmt(price)} • هدف دوم: ${fmt(s.optDouble("tp2"))} • یادآوری خروج پله‌ای؛ سفارش خودکار اجرا نمی‌شود")
+            // After TP1, protect the remaining setup at breakeven. This is an
+            // app-side alert level only; no stop/partial-close order is sent.
+            s.put("tp1Done",true)
+            val entryPrice=s.optDouble("entry",0.0)
+            if(entryPrice>0.0)s.put("stop",entryPrice)
+            prefs.edit().putString("open_setup_$symbol",s.toString()).apply()
+            notifyExit(symbol,"مرحله اول حد سود لمس شد • حد ضرر به نقطه ورود منتقل شد",
+                "قیمت فعلی: ${fmt(price)} • حد ضرر جدید: ${fmt(s.optDouble("stop"))} • هدف دوم: ${fmt(s.optDouble("tp2"))} • فقط یادآوری برنامه؛ سفارش خودکار اجرا نمی‌شود")
         }
         val tp2=if(long)price>=s.optDouble("tp2") else price<=s.optDouble("tp2")
         if(tp2&&!s.optBoolean("tp2Done")){
