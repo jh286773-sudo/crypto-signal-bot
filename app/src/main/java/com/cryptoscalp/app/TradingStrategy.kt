@@ -14,7 +14,7 @@ object TradingStrategy {
     private data class ADX(val value: Double, val plus: Double, val minus: Double)
     private data class Ichi(val tenkan: Double, val kijun: Double, val spanA: Double, val spanB: Double)
     private data class Structure(val event: String, val sweep: String, val marketTrend: String = "range", val equalHighs: Boolean = false, val equalLows: Boolean = false, val orderBlockType: String = "none", val orderBlockLow: Double? = null, val orderBlockHigh: Double? = null, val previousSwingHigh: Double? = null, val previousSwingLow: Double? = null, val retestLong: Boolean = false, val retestShort: Boolean = false, val falseBreakout: Boolean = false, val retestLevel: Double? = null, val entryDistanceAtr: Double? = null, val equalHighLevel: Double? = null, val equalLowLevel: Double? = null)
-    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val bias: String = "neutral", val atr: Double? = null, val ema21: Double? = null, val indicatorVotes: Map<String,Int> = emptyMap(), val notes: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null)
+    private data class Report(val valid: Boolean, val reason: String = "", val price: Double = 0.0, val bias: String = "neutral", val structure: Structure = Structure("none","none"), val atr: Double? = null, val ema21: Double? = null, val indicatorVotes: Map<String,Int> = emptyMap(), val notes: List<String> = emptyList(), val highVolatility: Boolean = false, val atrPct: Double? = null, val volatilityRatio: Double? = null, val marketRegime: String = "unknown", val adxValue: Double? = null)
 
     private fun ema(v: List<Double>, n: Int): Double? {
         if (v.size < n) return null
@@ -277,7 +277,8 @@ object TradingStrategy {
         vote("OBV_Trend",ov)
         vote("Bollinger",if(bands!=null&&price>bands.second)1 else if(bands!=null&&price<bands.second)-1 else 0)
         val bias=indicatorBias(indicatorVotes)
-        return Report(true,price=price,bias=bias,atr=a,ema21=e20,indicatorVotes=indicatorVotes,notes=notes,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value)
+        val smc=structure(c)
+        return Report(true,price=price,bias=bias,structure=smc,atr=a,ema21=e20,indicatorVotes=indicatorVotes,notes=notes,highVolatility=vol?.blocked?:false,atrPct=vol?.atrPct,volatilityRatio=vol?.ratio,marketRegime=regime,adxValue=dx?.value)
     }
 
     internal fun indicatorBias(votes:Map<String,Int>):String {
@@ -286,6 +287,18 @@ object TradingStrategy {
         val supportLong=listOf("VWAP","OBV_Trend","Bollinger").all{(votes[it]?:0)>=0}
         val supportShort=listOf("VWAP","OBV_Trend","Bollinger").all{(votes[it]?:0)<=0}
         return when{coreLong&&supportLong->"bullish";coreShort&&supportShort->"bearish";else->"neutral"}
+    }
+
+    /** SMC is a separate structural entry confirmation, never a weighted vote. */
+    internal fun smcConfirms(s:Structure, direction:String):Boolean {
+        if(s.falseBreakout)return false
+        return when(direction) {
+            "LONG" -> (s.orderBlockType!="bearish") &&
+                (s.event=="BOS_up" || s.event=="CHoCH_up" || s.retestLong || s.sweep=="sell_side")
+            "SHORT" -> (s.orderBlockType!="bullish") &&
+                (s.event=="BOS_down" || s.event=="CHoCH_down" || s.retestShort || s.sweep=="buy_side")
+            else -> false
+        }
     }
 
     /** Each selected timeframe is analyzed independently; multi-timeframe signals require unanimity. */
@@ -336,7 +349,11 @@ object TradingStrategy {
         val direction=when { allBullish->"LONG"; allBearish->"SHORT"; else->"WAIT" }
         if(direction=="WAIT") return StrategyResult("WAIT",price,
             listOf("تحلیل اندیکاتورها در تمام تایم‌فریم‌های انتخاب‌شده باید هم‌جهت باشد؛ اختلاف یا حالت خنثی، سیگنال را متوقف می‌کند"))
-        val reasons=mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "))
+        val smcRejected=reports.filterValues{!smcConfirms(it.structure,direction)}.keys
+        if(smcRejected.isNotEmpty()) return StrategyResult("WAIT",price,
+            listOf("تأیید مستقل اسمارت‌مانی در تایم‌فریم‌های زیر وجود ندارد یا شکست جعلی/ساختار مخالف دیده شده است: "+smcRejected.joinToString("، ")))
+        val reasons=mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "),
+            "تأیید مستقل SMC: BOS/CHoCH، نقدینگی، اردربلاک و Retest؛ بدون امتیازدهی")
         if(selected.size==1) reasons.add("سیگنال مستقل تایم‌فریم ${selected.first()}")
         else reasons.add("اجماع کامل "+selected.size+" تایم‌فریم انتخاب‌شده")
         reasons.add(if(direction=="LONG")"تمام تایم‌فریم‌ها LONG؛ سیگنال لانگ" else "تمام تایم‌فریم‌ها SHORT؛ سیگنال شورت")
