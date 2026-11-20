@@ -36,7 +36,7 @@ class BacktestTests(unittest.TestCase):
     def test_rejects_estimated_funding_without_historical_exchange_data(self):
         data={tf:candles(tf) for tf in DURATION_MS}
         with self.assertRaisesRegex(ValueError,"historical funding_rate"):
-            run_backtest(data,funding_bps_per_8h=8)
+            run_backtest(data,fee_bps=0,slippage_bps=0,funding_bps_per_8h=8)
 
 
 if __name__ == "__main__":
