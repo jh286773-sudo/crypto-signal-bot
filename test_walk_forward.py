@@ -5,8 +5,13 @@ from walk_forward import run_walk_forward, _closed_history, _validate, DURATION_
 
 def bars(tf, n=100):
     step=DURATION_MS[tf]
-    return [{"timestamp":i*step,"open":100.0,"high":103.0,"low":97.0,"close":101.0,"volume":100.0}
+    return [{"timestamp":i*step,"open":101.0,"high":103.0,"low":97.0,"close":101.0,"volume":100.0}
             for i in range(n)]
+
+
+def make_signal(stop=100.0, targets=(102.0,103.0,104.0), side="LONG", atr=1.0):
+    return {"signal":side, "stop_loss":stop, "take_profits":list(targets),
+            "timeframes":{"5m":{"indicators":{"atr":atr}}}}
 
 
 class WalkForwardTests(unittest.TestCase):
@@ -54,8 +59,8 @@ class WalkForwardTests(unittest.TestCase):
     def test_position_sizing_and_partial_targets_are_reported(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][60:]:
-            row["low"]=101.5; row["high"]=105.0
-        signal={"signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]}
+            row["low"]=102.1; row["high"]=105.0
+        signal=make_signal(100.0,[102.0,103.0,104.0])
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
                                     initial_equity=10000,risk_fraction=.01,max_holding_bars=2)
@@ -71,9 +76,9 @@ class WalkForwardTests(unittest.TestCase):
     def test_tp1_then_same_bar_breakeven_touch_closes_remainder_conservatively(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][60:]:
-            row["low"]=100.0
+            row["low"]=100.5
             row["high"]=103.0
-        signal={"signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]}
+        signal=make_signal(100.0,[102.0,103.0,104.0])
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
                                     initial_equity=10000,risk_fraction=.01,max_holding_bars=2)
@@ -84,7 +89,7 @@ class WalkForwardTests(unittest.TestCase):
 
     def test_position_size_accounts_for_round_trip_fees_and_slippage(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
-        signal={"signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]}
+        signal=make_signal(100.0,[102.0,103.0,104.0])
         with patch("walk_forward.analyze_market",return_value=signal):
             free=run_walk_forward(data,fee_bps_open=0,fee_bps_close=0,
                                   slippage_bps_per_side=0,initial_equity=10000,
@@ -102,20 +107,46 @@ class WalkForwardTests(unittest.TestCase):
     def test_tp2_locks_tp1_for_remaining_position(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         # Entry is 100; targets are 101.5R, 102.5R, 103.5R for a 1.0 risk.
-        data["5m"][360].update({"low":100.6,"high":102.0})
-        data["5m"][361].update({"open":100.6,"low":100.5,"high":101.0,"close":100.8})
-        signal={"signal":"LONG","stop_loss":100.0,"take_profits":[101.5,102.5,103.5]}
+        data["5m"][360].update({"low":101.6,"high":103.0})
+        data["5m"][361].update({"open":101.4,"low":101.3,"high":101.6,"close":101.4})
+        signal=make_signal(100.0,[101.5,102.5,103.5])
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
                                     initial_equity=10000,risk_fraction=.01,max_holding_bars=2)
         trade=result["trades"][0]
         self.assertEqual(trade["targets_hit"],["TP1","TP2"])
         self.assertEqual(trade["exit_reason"],"stop_after_tp2")
-        self.assertAlmostEqual(trade["exit"],100.5)
+        self.assertAlmostEqual(trade["exit"],101.4)
+
+    def test_protected_stop_losses_count_toward_loss_cooldown(self):
+        data={tf:bars(tf,800) for tf in DURATION_MS}
+        for row in data["5m"][360:]:
+            row["low"]=100.5
+            row["high"]=102.0
+        signal=make_signal(100.0,[101.5,102.5,103.5])
+        with patch("walk_forward.analyze_market",return_value=signal):
+            result=run_walk_forward(data,fee_bps_per_side=25,slippage_bps_per_side=0,
+                                    initial_equity=10000,max_holding_bars=1)
+        self.assertGreaterEqual(result["trade_count"],2)
+        self.assertEqual(result["trades"][0]["exit_reason"],"stop_after_tp1")
+        self.assertLess(result["trades"][0]["net_pnl"],0)
+        self.assertGreaterEqual(result["loss_guard"]["cooldown_events"],1)
+
+    def test_next_open_gap_is_skipped_instead_of_chasing_signal(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        data["5m"][360]["open"]=102.0
+        signal=make_signal(100.0,[102.0,103.0,104.0])
+        def one_signal(history):
+            index=history["5m"][-1]["timestamp"] // DURATION_MS["5m"]
+            return signal if index==359 else {"signal":"NO_SIGNAL"}
+        with patch("walk_forward.analyze_market",side_effect=one_signal):
+            result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0)
+        self.assertEqual(result["trade_count"],0)
+        self.assertEqual(result["entry_filter"]["entry_gap_skips"],1)
 
     def test_default_risk_is_half_percent_and_two_losses_trigger_cooldown(self):
         data={tf:bars(tf,800) for tf in DURATION_MS}
-        signal={"signal":"LONG","stop_loss":99.0,"take_profits":[102.0,103.0,104.0]}
+        signal=make_signal(99.0,[102.0,103.0,104.0])
         with patch("walk_forward.analyze_market",return_value=signal):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
                                     initial_equity=10000,max_holding_bars=1)
@@ -129,7 +160,7 @@ class WalkForwardTests(unittest.TestCase):
 
     def test_full_stops_more_than_24_hours_apart_do_not_trigger_cooldown(self):
         data={tf:bars(tf,800) for tf in DURATION_MS}
-        signal={"signal":"LONG","stop_loss":99.0,"take_profits":[102.0,103.0,104.0]}
+        signal=make_signal(99.0,[102.0,103.0,104.0])
         def sparse_signals(history):
             index=history["5m"][-1]["timestamp"] // DURATION_MS["5m"]
             return signal if index in (359,649) else {"signal":"NO_SIGNAL"}
@@ -154,9 +185,8 @@ class WalkForwardTests(unittest.TestCase):
         data["5m"][360]["high"]=101.0
         data["5m"][360]["funding_rate"]=0.001
         data["5m"][360]["funding_settle_time"]=360*DURATION_MS["5m"]+60_000
-        with patch("walk_forward.analyze_market",return_value={
-            "signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]
-        }):
+        with patch("walk_forward.analyze_market",return_value=make_signal(
+            100.0,[102.0,103.0,104.0])):
             result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0,
                                     initial_equity=10000,max_holding_bars=2)
         trade=result["trades"][0]
@@ -168,12 +198,11 @@ class WalkForwardTests(unittest.TestCase):
     def test_distinct_entry_exit_fees_and_funding_settlement_once(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         for row in data["5m"][360:364]:
-            row["low"]=100.0; row["high"]=100.5
+            row["low"]=100.5; row["high"]=101.0
         data["5m"][361]["funding_rate"]=0.001
         data["5m"][361]["funding_settle_time"]=362*DURATION_MS["5m"]
-        with patch("walk_forward.analyze_market",return_value={
-            "signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]
-        }):
+        with patch("walk_forward.analyze_market",return_value=make_signal(
+            100.0,[102.0,103.0,104.0])):
             result=run_walk_forward(data,fee_bps_open=2,fee_bps_close=4,
                                     slippage_bps_per_side=0,initial_equity=10000,
                                     max_holding_bars=2)
