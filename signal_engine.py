@@ -278,10 +278,18 @@ def _market_structure(c, lookback=60):
         xo, xc = float(x["open"]), float(x["close"])
         nh, nl, nc = float(nxt["high"]), float(nxt["low"]), float(nxt["close"])
         nr = max(nh-nl, 1e-12)
-        if xc < xo and nc > float(x["high"]) and nc >= nh-nr*0.25:
+        impulse_body = abs(nc-float(nxt["open"]))
+        # Displacement must be material relative to ATR, not merely a one-tick close.
+        bullish_valid = (xc < xo and nc > float(x["high"]) and nc >= nh-nr*0.25
+                         and impulse_body >= atr_ref*0.50
+                         and not any(float(z["close"]) < float(x["low"]) for z in w[j+2:]))
+        bearish_valid = (xc > xo and nc < float(x["low"]) and nc <= nl+nr*0.25
+                         and impulse_body >= atr_ref*0.50
+                         and not any(float(z["close"]) > float(x["high"]) for z in w[j+2:]))
+        if bullish_valid:
             order_blocks.append({"type":"bullish","low":float(x["low"]),"high":float(x["high"])})
             break
-        if xc > xo and nc < float(x["low"]) and nc <= nl+nr*0.25:
+        if bearish_valid:
             order_blocks.append({"type":"bearish","low":float(x["low"]),"high":float(x["high"])})
             break
 
