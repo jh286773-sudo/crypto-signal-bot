@@ -108,7 +108,7 @@ class CryptoMonitorService : Service() {
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
-                    when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous,isLossCooldownActive(symbol))) {
+                    when (SignalDeduplicationPolicy.decide(openSide,r.signal,previous)) {
                         SignalDecision.OPEN -> {
                             saveOpen(symbol,r,latestClosedCandleTime)
                             notifySignal(symbol,r)
@@ -121,7 +121,7 @@ class CryptoMonitorService : Service() {
                         }
                         SignalDecision.NONE -> Unit
                     }
-                    // WAIT remains internal; a cooldown reversal is reconsidered after its expiry.
+                    // WAIT remains internal; a later LONG can open whenever the position is flat.
                     prefs.edit().putString("last_signal_$symbol",r.signal)
                         .putLong(key,latestClosedCandleTime).apply()
                     analyzed++
@@ -155,10 +155,7 @@ class CryptoMonitorService : Service() {
     }
     // WAIT is an internal no-trade state only; user-facing entry alerts are LONG or SHORT.
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
-    private fun isLossCooldownActive(symbol:String):Boolean {
-        val until=prefs.getLong("loss_cooldown_until_$symbol",0L)
-        return LossCooldownPolicy.isActive(until,System.currentTimeMillis())
-    }
+
 
     private fun saveOpen(symbol:String,r:StrategyResult,barTime:Long){
         val o=JSONObject().put("side",r.signal).put("entry",r.entry)
@@ -192,14 +189,6 @@ class CryptoMonitorService : Service() {
         val key="closed_net_return_"+symbol+"_LONG"
         val prior=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199)
         val edit=prefs.edit().putString(key,(prior+net).joinToString(","))
-        if(net<0.0){
-            val now=System.currentTimeMillis()
-            val lossKey="recent_net_losses_$symbol"
-            val losses=prefs.getString(lossKey,"").orEmpty().split(",").mapNotNull{it.toLongOrNull()}
-            val update=LossCooldownPolicy.recordLoss(losses,now)
-            edit.putString(lossKey,update.recentLosses.joinToString(","))
-            if(update.cooldownUntilMs>now) edit.putLong("loss_cooldown_until_$symbol",update.cooldownUntilMs)
-        }
         edit.apply()
     }
     // Positions persist through all price movements and are closed only by an opposite confirmed signal.
