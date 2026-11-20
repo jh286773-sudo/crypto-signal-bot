@@ -122,7 +122,6 @@ class ShadowLedger:
                 state["stop"] = float(state["targets"][0])
             self._fill(db, symbol, state, fill, fraction, stamp, persist=False)
             if state["remaining"] <= 1e-9:
-                self._save_closed(db, symbol, state, stamp)
                 return True
             if index < 2:
                 break
