@@ -162,8 +162,13 @@ class ToobitAPI:
         if not selected or any(tf not in self.INTERVALS for tf in selected):
             raise ValueError("Invalid or empty selected timeframe list")
         server_now = int(self.server_time()["serverTime"])
+        slowest_duration = max(self.INTERVALS[tf] for tf in selected)
         series = {
-            tf: self.get_klines(symbol, tf, 260, as_of_ms=server_now)
+            tf: self.get_klines(
+                symbol, tf,
+                min(1000, max(260, slowest_duration // self.INTERVALS[tf] + 220)),
+                as_of_ms=server_now
+            )
             for tf in selected
         }
         if any(not rows for rows in series.values()):
