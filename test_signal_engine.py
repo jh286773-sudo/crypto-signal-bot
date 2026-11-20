@@ -222,6 +222,13 @@ class EngineTests(unittest.TestCase):
         self.assertIn("overextended", result["reason"])
 
 
+    def test_individual_indicator_conflicts_allow_one_minor_but_block_core_or_two(self):
+        from signal_engine import _no_major_indicator_conflict
+        self.assertTrue(_no_major_indicator_conflict({"EMA":1,"RSI":1,"MACD":1,"VWAP":-1}, "LONG"))
+        self.assertFalse(_no_major_indicator_conflict({"EMA":1,"RSI":-1,"MACD":1,"VWAP":1}, "LONG"))
+        self.assertFalse(_no_major_indicator_conflict({"EMA":1,"RSI":1,"MACD":1,"VWAP":-1,"OBV_Trend":-1}, "LONG"))
+        self.assertTrue(_no_major_indicator_conflict({"EMA":-1,"RSI":-1,"MACD":-1,"VWAP":1}, "SHORT"))
+
     def test_indicator_family_conflict_blocks_directional_signal(self):
         conflicted = {"valid": True, "score": 60.0, "bias": "bullish",
                       "family_scores": {"trend":-0.8,"momentum":0.7,"strength":0.6,
