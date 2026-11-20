@@ -89,10 +89,10 @@ class WalkForwardTests(unittest.TestCase):
 
     def test_funding_is_not_silently_dropped_on_same_bar_exit(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
-        data["5m"][60]["low"]=98.0
-        data["5m"][60]["high"]=101.0
-        data["5m"][60]["funding_rate"]=0.001
-        data["5m"][60]["funding_settle_time"]=60*DURATION_MS["5m"]+60_000
+        data["5m"][360]["low"]=98.0
+        data["5m"][360]["high"]=101.0
+        data["5m"][360]["funding_rate"]=0.001
+        data["5m"][360]["funding_settle_time"]=360*DURATION_MS["5m"]+60_000
         with patch("walk_forward.analyze_market",return_value={
             "signal":"LONG","stop_loss":100.0,"take_profits":[102.0,103.0,104.0]
         }):
