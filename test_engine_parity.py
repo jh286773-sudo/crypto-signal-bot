@@ -1,4 +1,6 @@
 import pathlib
+import json
+import math
 import unittest
 
 
@@ -19,6 +21,24 @@ class CrossEngineContractTests(unittest.TestCase):
         self.assertIn("entryDistanceAtr",kt)
         self.assertIn(">.80",kt)
         self.assertIn("0.80",py)
+
+
+    def test_shared_golden_fixture_signal_matches_android_contract(self):
+        root=pathlib.Path(__file__).parent
+        fixture_path=root/"app/src/test/resources/strategy_parity_fixture.json"
+        fixture=json.loads(fixture_path.read_text())
+        durations={"5m":300000,"15m":900000,"30m":1800000}
+        data={}
+        for tf,count in fixture["bars"].items():
+            rows=[]
+            for i in range(count):
+                close=fixture["base_price"]+i*0.02+math.sin(i*0.3)*0.03
+                rows.append({"timestamp":fixture["start_ms"]+i*durations[tf],
+                             "open":close-0.02,"high":close+0.15,"low":close-0.15,
+                             "close":close,"volume":100+i})
+            data[tf]=rows
+        from signal_engine import analyze_market
+        self.assertEqual(analyze_market(data)["signal"],fixture["expected_signal"])
 
 
 if __name__ == "__main__":
