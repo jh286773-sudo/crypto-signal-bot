@@ -135,6 +135,9 @@ class ShadowLedger:
                 return True
             if index < 2:
                 break
+        if stamp - int(state.get("opened_at", stamp)) >= 72 * 300000:
+            self._fill(db, symbol, state, float(bar["close"]), float(state["remaining"]), stamp)
+            return True
         db.execute("UPDATE shadow_open SET state=?, last_bar=? WHERE symbol=?",
                    (json.dumps(state, separators=(",", ":")), stamp, symbol))
         return False
