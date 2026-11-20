@@ -80,7 +80,6 @@ def main():
         "win_rate_pct": result["win_rate_pct"],
         "max_drawdown_pct": result["max_drawdown_pct"],
         "risk_fraction": result["risk_fraction"],
-        "loss_guard": result["loss_guard"],
         "commission_rates": commission,
         "funding_mode": result["funding_mode"],
         "output": args.output,

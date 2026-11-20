@@ -88,7 +88,7 @@ class WalkForwardTests(unittest.TestCase):
         self.assertEqual(result["trades"][0]["entry_time"], 360 * DURATION_MS["5m"])
         self.assertEqual(result["trades"][0]["exit_reason"], "opposite_short_signal")
 
-    def test_two_net_losses_trigger_cooldown_and_block_new_long_entries(self):
+    def test_two_net_losses_do_not_block_a_later_long_entry(self):
         def fake(hist, **kwargs):
             index = hist["5m"][-1]["timestamp"] // DURATION_MS["5m"]
             if index in (359, 361, 651):
@@ -99,9 +99,9 @@ class WalkForwardTests(unittest.TestCase):
         with patch("walk_forward.analyze_market", side_effect=fake):
             result = run_walk_forward(self.data, fee_bps_per_side=25,
                                       slippage_bps_per_side=0, initial_equity=10000)
-        self.assertEqual(result["loss_guard"]["cooldown_events"], 1)
-        self.assertGreater(result["loss_guard"]["cooldown_skipped_bars"], 200)
+        self.assertEqual(result["trade_count"], 3)
         self.assertTrue(all(t["side"] == "LONG" for t in result["trades"]))
+        self.assertNotIn("loss_guard", result)
 
     def test_distinct_fees_and_funding_are_charged_at_long_close(self):
         self.data["5m"][361]["funding_rate"] = 0.001
