@@ -144,7 +144,7 @@ def run_backtest(timeframes: Dict[str, list], holding_bars: int = 3,
     gains = sum(x for x in returns if x > 0)
     losses = -sum(x for x in returns if x < 0)
     avg_hold = sum(t["holding_bars"] for t in trades) / len(trades) if trades else 0.0
-    total_funding = sum(t["estimated_funding_bps"] for t in trades)
+    total_funding = sum(t["funding_cost_bps"] for t in trades)
     return {
         "trades": trades,
         "trade_count": len(trades),
