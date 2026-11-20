@@ -7,7 +7,7 @@ import kotlin.math.sqrt
 import kotlin.math.roundToInt
 
 data class MarketCandle(val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double = 0.0, val time: Long = 0L)
-data class StrategyResult(val signal: String, val score: Int, val entry: Double, val stop: Double, val target1: Double, val target2: Double, val reasons: List<String>, val smc: List<String>)
+data class StrategyResult(val signal: String, val score: Int, val entry: Double, val stop: Double, val target1: Double, val target2: Double, val reasons: List<String>, val smc: List<String>, val target3: Double = target2, val riskReward: List<Double> = listOf(1.5, 2.5, 3.5))
 
 /** AURUM X 0.2.9 read-only engine: eight indicator families and 5m/15m/30m consensus. */
 object TradingStrategy {
@@ -308,6 +308,10 @@ object TradingStrategy {
             return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
                 listOf("Retest بیش از ۰٫۸ ATR از سطح ورود فاصله دارد؛ از ورود دیرهنگام صرف‌نظر شد"),reports.values.flatMap{it.smc}.distinct())
         }
+        if(signal!="WAIT"&&sm?.falseBreakout==true){
+            return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
+                listOf("شکست جعلی شناسایی شد؛ ساختار فعلی نامعتبر است و باید منتظر ساختار تازه ماند"),reports.values.flatMap{it.smc}.distinct())
+        }
         val atrRisk=max(a*1.5,price*.001)
         val structuralStop=if(signal=="LONG")sm?.previousSwingLow?.minus(a*.15) else sm?.previousSwingHigh?.plus(a*.15)
         val candidate=structuralStop?:if(signal=="LONG")price-atrRisk else price+atrRisk
@@ -316,6 +320,7 @@ object TradingStrategy {
         val stop=if(signal=="LONG")price-risk else if(signal=="SHORT")price+risk else price
         val tp1=if(signal=="LONG")price+1.5*risk else if(signal=="SHORT")price-1.5*risk else price
         val tp2=if(signal=="LONG")price+2.5*risk else if(signal=="SHORT")price-2.5*risk else price
+        val tp3=if(signal=="LONG")price+3.5*risk else if(signal=="SHORT")price-3.5*risk else price
         val reasons=mutableListOf("موتور تحلیل نسخه ۰.۲.۹: هشت خانواده شاخص","امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
         for((tf,rep) in reports){
             // User-facing explanations must not expose neutral/ranging market labels.
@@ -336,6 +341,6 @@ object TradingStrategy {
             reasons.add(if(retestReady)"مرحله ورود: Retest تأیید شد؛ منتظر تکمیل امتیاز ترکیبی هستیم" else "مرحله ورود: فقط پس از بازگشت و تثبیت قیمت روی سطح شکست")
         }
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
-        return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc)
+        return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc,tp3,listOf(1.5,2.5,3.5))
     }
 }
