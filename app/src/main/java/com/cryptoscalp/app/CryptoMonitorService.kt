@@ -177,7 +177,19 @@ class CryptoMonitorService : Service() {
             if(i==1){o.put("tp2Done",true);o.put("stop",o.optDouble("tp1"))}
             recordShadowClose(symbol,o,fill,fraction)
             if(prefs.getString("shadow_setup_$symbol",null)==null)return
-            if(i<2)break
+            // Conservative OHLC handling: if a newly protected stop is also touched
+            // in this candle, close the remainder at that stop rather than assuming
+            // a favorable intrabar path.
+            if(i<2){
+                val protectedStop=o.optDouble("stop",0.0)
+                val protectedStopHit=if(long)bar.low<=protectedStop else bar.high>=protectedStop
+                if(protectedStopHit){
+                    val protectedFill=if(long)minOf(bar.open,protectedStop) else maxOf(bar.open,protectedStop)
+                    recordShadowClose(symbol,o,protectedFill,o.optDouble("remaining",0.0))
+                    return
+                }
+                break
+            }
         }
         if(bar.time-o.optLong("openedBar",bar.time)>=72L*300_000L){
             recordShadowClose(symbol,o,bar.close,o.optDouble("remaining",1.0))
