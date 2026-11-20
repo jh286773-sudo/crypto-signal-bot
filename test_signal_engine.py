@@ -50,7 +50,7 @@ class EngineTests(unittest.TestCase):
     def test_all_three_aligned_can_signal_after_confirmed_retest(self):
         bullish={"valid":True,"score":60.0,"bias":"bullish","family_scores": {"trend":0.8,"momentum":0.8,"strength":0.8,"volume":0.8,"structure":0.8,"orderflow":0.8,"volatility":0.0,"divergence":0.0}, "indicators":{"atr":1.0,"smc":{"retest_long":True,"structure_event":"BOS_up","entry_distance_atr":0.2,"previous_swing_low":98.0}},"ema21":99.5,"close":100.0}
         with patch("signal_engine.analyze_timeframe", return_value=bullish):
-            result=analyze_market({tf:[] for tf in ("5m","15m","30m")})
+            result=analyze_market({tf:[] for tf in ("5m","15m","30m")}, expectancy_stats={"LONG":[0.5]*30})
         self.assertEqual(result["signal"],"LONG")
     def test_anti_chase_filter_rejects_extended_entry_and_accepts_pullback(self):
         from signal_engine import _entry_not_chasing
@@ -58,6 +58,42 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(_entry_not_chasing(101.5, 100.0, 2.0))
         self.assertFalse(_entry_not_chasing(101.0, None, 2.0))
         self.assertFalse(_entry_not_chasing(101.0, 100.0, 0.0))
+
+
+    def test_timestamped_python_timeframes_must_share_exact_5m_decision_boundary(self):
+        data = {}
+        durations = {"5m":300000, "15m":900000, "30m":1800000}
+        start5 = 1800000000000
+        decision = start5 + 100 * durations["5m"]
+        for tf, duration in durations.items():
+            count = 100
+            start = start5 if tf == "5m" else (decision // duration) * duration - duration - (count-1)*duration
+            rows = candles(count)
+            for i, row in enumerate(rows):
+                row["open_time"] = start + i*duration
+            data[tf] = rows
+        self.assertNotIn("not aligned", analyze_market(data).get("reason", ""))
+        data["15m"][-1]["open_time"] += durations["15m"]
+        result = analyze_market(data)
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("Non-contiguous", result["reason"])
+
+    def test_timestamped_python_rejects_mixed_timeframe_timestamp_presence(self):
+        data = {}
+        durations = {"5m":300000, "15m":900000, "30m":1800000}
+        start5 = 1800000000000
+        decision = start5 + 100 * durations["5m"]
+        for tf, duration in durations.items():
+            count = 100
+            start = start5 if tf == "5m" else (decision // duration) * duration - duration - (count-1)*duration
+            rows = candles(count)
+            for i, row in enumerate(rows):
+                row["timestamp"] = start + i*duration
+            data[tf] = rows
+        del data["30m"][-1]["timestamp"]
+        result = analyze_market(data)
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("Mixed timestamped", result["reason"])
 
     def test_bad_input_safe(self):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])

@@ -34,7 +34,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_only_closed_htf_history_is_passed_to_strategy(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         seen=[]
-        def fake(hist):
+        def fake(hist, **kwargs):
             seen.append({tf:row[-1]["timestamp"] for tf,row in hist.items()})
             return {"signal":"NO_SIGNAL"}
         with patch("walk_forward.analyze_market",side_effect=fake):
@@ -47,7 +47,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_strategy_receives_only_live_equivalent_260_bar_windows(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         seen=[]
-        def fake(hist):
+        def fake(hist, **kwargs):
             seen.append({tf:len(rows) for tf,rows in hist.items()})
             return {"signal":"NO_SIGNAL"}
         with patch("walk_forward.analyze_market",side_effect=fake):
@@ -136,7 +136,7 @@ class WalkForwardTests(unittest.TestCase):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         data["5m"][360]["open"]=102.0
         signal=make_signal(100.0,[102.0,103.0,104.0])
-        def one_signal(history):
+        def one_signal(history, **kwargs):
             index=history["5m"][-1]["timestamp"] // DURATION_MS["5m"]
             return signal if index==359 else {"signal":"NO_SIGNAL"}
         with patch("walk_forward.analyze_market",side_effect=one_signal):
@@ -161,7 +161,7 @@ class WalkForwardTests(unittest.TestCase):
     def test_full_stops_more_than_24_hours_apart_do_not_trigger_cooldown(self):
         data={tf:bars(tf,800) for tf in DURATION_MS}
         signal=make_signal(99.0,[102.0,103.0,104.0])
-        def sparse_signals(history):
+        def sparse_signals(history, **kwargs):
             index=history["5m"][-1]["timestamp"] // DURATION_MS["5m"]
             return signal if index in (359,649) else {"signal":"NO_SIGNAL"}
         with patch("walk_forward.analyze_market",side_effect=sparse_signals):

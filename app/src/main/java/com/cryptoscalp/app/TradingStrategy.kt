@@ -343,7 +343,7 @@ object TradingStrategy {
         return aligned>=5&&opposing<=1&&coreClear&&noMajorIndicatorConflict(report.indicatorVotes,side)
     }
 
-    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
+    fun evaluate(five:List<MarketCandle>,fifteen:List<MarketCandle>,thirty:List<MarketCandle>,asOfMs:Long=System.currentTimeMillis(),expectancyStats:Map<String,List<Double>>?=null):StrategyResult {
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
             if(rows.size<MIN_CANDLES||rows.any{it.time<=0L||it.time%duration!=0L})return false
             for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
@@ -397,11 +397,13 @@ object TradingStrategy {
             directionalQuality(reports["15m"]!!,-1.0)&&directionalQuality(reports["30m"]!!,-1.0)
         val triggerBullish=directionalQuality(trigger5,1.0)
         val triggerBearish=directionalQuality(trigger5,-1.0)
-        val signal=when{
+        val rawSignal=when{
             allBullish&&higherBullish&&combined>=34&&trigger5.score>=24&&triggerBullish&&sm5?.retestLong==true->"LONG"
             allBearish&&higherBearish&&combined<=-34&&trigger5.score<=-24&&triggerBearish&&sm5?.retestShort==true->"SHORT"
             else->"WAIT"
         }
+        val expectancy = if(rawSignal=="LONG"||rawSignal=="SHORT") ExpectancyPolicy.evaluate(expectancyStats?.get(rawSignal).orEmpty()) else null
+        val signal = if(rawSignal!="WAIT" && expectancy?.allowed!=true) "WAIT" else rawSignal
         val a=reports["5m"]?.atr?:0.0
         if(signal!="WAIT"&&a<=0.0)return StrategyResult("WAIT",combined.roundToInt(),price,price,price,price,
             listOf("ATR در دسترس نیست؛ صدور سیگنال متوقف شد"),emptyList())
@@ -427,7 +429,7 @@ object TradingStrategy {
         val tp1=if(signal=="LONG")price+1.5*risk else if(signal=="SHORT")price-1.5*risk else price
         val tp2=if(signal=="LONG")price+2.5*risk else if(signal=="SHORT")price-2.5*risk else price
         val tp3=if(signal=="LONG")price+3.5*risk else if(signal=="SHORT")price-3.5*risk else price
-        val reasons=mutableListOf("موتور تحلیل نسخه ۰.۲.۹: هشت خانواده شاخص",
+        val reasons=mutableListOf("موتور تحلیل نسخه ۰.۳.۰: هشت خانواده شاخص",
             "امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
         for((tf,rep) in reports){
             reasons.add(tf+": امتیاز تحلیل "+"%.2f".format(rep.score))
@@ -437,6 +439,9 @@ object TradingStrategy {
             reasons.add("تأیید مستقل و هم‌زمان هر سه تایم‌فریم ۵، ۱۵ و ۳۰ دقیقه")
             reasons.add("نقطه ورود: بازگشت و تثبیت مجدد روی سطح شکست در ۵ دقیقه")
             reasons.add(if(signal=="LONG")"تأیید کامل سه تایم‌فریم؛ لانگ" else "تأیید کامل سه تایم‌فریم؛ شورت")
+            reasons.add("امید ریاضی خالص معاملات بسته‌شده تأیید شد؛ حداقل ۳۰ معامله، حد پایین اطمینان ۹۵٪ مثبت و Profit Factor بالاتر از ۱٫۱۰")
+        } else if(rawSignal=="LONG"||rawSignal=="SHORT") {
+            reasons.add("ورود متوقف شد: امید ریاضی خالص این جهت هنوز با حداقل ۳۰ معامله بسته‌شده اثبات نشده است")
         }
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
         return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc,tp3,listOf(1.5,2.5,3.5))

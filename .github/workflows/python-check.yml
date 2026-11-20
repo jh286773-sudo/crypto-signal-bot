@@ -11,6 +11,7 @@ on:
       - smc-entry-risk-parity-v3
       - aurum-x/advanced-smc-entry-backtest
       - aurum-x-loss-reduction
+      - aurum-x/expectancy-timestamp-parity-v1
   workflow_dispatch:
 
 permissions:
@@ -31,4 +32,4 @@ jobs:
       - name: Check Python files
         run: python -m compileall -q .
       - name: Run strategy and backtest tests
-        run: python -m unittest -v test_signal_engine.py test_backtest.py test_walk_forward.py test_engine_parity.py test_toobit_api_timestamps.py test_toobit_historical_backtest.py
+        run: python -m unittest -v test_signal_engine.py test_expectancy.py test_backtest.py test_walk_forward.py test_engine_parity.py test_toobit_api_timestamps.py test_toobit_historical_backtest.py

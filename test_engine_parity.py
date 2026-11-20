@@ -18,6 +18,12 @@ class CrossEngineContractTests(unittest.TestCase):
                       "falseBreakout", "equalHighs", "equalLows"):
             self.assertIn(token,kt)
         self.assertIn("entry_distance_atr",py)
+        self.assertIn("expectancy_allows",py)
+        self.assertIn("MIN_TRADES = 30", (root/"expectancy.py").read_text())
+        policy=(root/"app/src/main/java/com/cryptoscalp/app/ExpectancyPolicy.kt").read_text()
+        for token in ("MIN_TRADES=30","MIN_PROFIT_FACTOR=1.10","ONE_SIDED_Z=1.645"):
+            self.assertIn(token,policy)
+        self.assertIn("expectancyStats?.get(rawSignal)",kt)
         self.assertIn("entryDistanceAtr",kt)
         self.assertIn(">.50",kt)
         self.assertIn("0.50",py)
@@ -33,7 +39,8 @@ class CrossEngineContractTests(unittest.TestCase):
             rows=[]
             for i in range(count):
                 close=fixture["base_price"]+i*0.02+math.sin(i*0.3)*0.03
-                rows.append({"timestamp":fixture["start_ms"]+i*durations[tf],
+                aligned_start = (fixture["start_ms"] // durations[tf]) * durations[tf]
+                rows.append({"timestamp":aligned_start+i*durations[tf],
                              "open":close-0.02,"high":close+0.15,"low":close-0.15,
                              "close":close,"volume":100+i})
             data[tf]=rows
