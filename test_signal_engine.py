@@ -16,7 +16,7 @@ def report(bias, close=100.0):
     return {"valid":True,"bias":bias,"close":close,
             "indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"ADX_DMI":1,
                                "VWAP":1,"OBV_Trend":0,"Bollinger":1},
-            "indicators":{"atr":1.0,"smc":{} }}
+            "indicators":{"atr":1.0}}
 
 
 class EngineTests(unittest.TestCase):
@@ -37,7 +37,7 @@ class EngineTests(unittest.TestCase):
     def test_indicator_report_contains_technical_indicators_without_score_fields(self):
         result=analyze_timeframe(candles())
         self.assertTrue(result["valid"])
-        for key in ("ema","rsi","macd","bollinger","adx_dmi","atr","vwap","obv","smc"):
+        for key in ("ema","rsi","macd","bollinger","adx_dmi","atr","vwap","obv"):
             self.assertIn(key,result["indicators"])
         self.assertEqual(set(result["indicator_votes"]),
                          {"EMA","RSI","MACD","ADX_DMI","VWAP","OBV_Trend","Bollinger"})
