@@ -92,13 +92,38 @@ class TradingStrategyParityTest {
         assertTrue(result.reasons.isNotEmpty())
     }
 
-    @Test fun selectedTimeframesNeedClosedCandlesAtCommonBoundary() {
-        val now=System.currentTimeMillis()
+    @Test fun selectedTimeframesDoNotNeedASharedCandleBoundary() {
+        val duration1m=60_000L
+        val duration3m=180_000L
+        val duration15m=900_000L
+        val duration4h=14_400_000L
+        val decision=(System.currentTimeMillis()/duration4h)*duration4h
+        val rows1m=series(220,duration1m,decision-219*duration1m)
+        val rows3m=series(220,duration3m,decision-219*duration3m-duration3m)
+        val rows15m=series(220,duration15m,decision-219*duration15m-duration15m)
+        val rows4h=series(220,duration4h,decision-219*duration4h)
+        // The 1m series ends later than the other timeframes; all are independently fresh.
+        val asOf=decision+duration1m
+        val result=TradingStrategy.evaluate(mapOf(
+            "1m" to rows1m,
+            "3m" to rows3m,
+            "15m" to rows15m,
+            "4h" to rows4h
+        ),asOf)
+        assertFalse(result.reasons.any{it.contains("مرز تصمیم مشترک")||it.contains("کندل بسته‌شده تازه برای تایم‌فریم‌های انتخاب‌شده")})
+        assertTrue(result.reasons.any{it.startsWith("1m:")})
+        assertTrue(result.reasons.any{it.startsWith("3m:")})
+        assertTrue(result.reasons.any{it.startsWith("15m:")})
+        assertTrue(result.reasons.any{it.startsWith("4h:")})
+    }
+
+    @Test fun timeframeMustUseItsOwnLatestClosedCandle() {
         val duration=300_000L
+        val now=System.currentTimeMillis()
         val start=(now/duration)*duration-219*duration
         val rows=series(220,duration,start)
         val beforeClose=TradingStrategy.evaluate(mapOf("5m" to rows),rows.last().time+duration-1)
         assertEquals("WAIT",beforeClose.signal)
-        assertTrue(beforeClose.reasons.first().contains("کندل بسته‌شده تازه"))
+        assertTrue(beforeClose.reasons.first().contains("داده بسته‌شده بعضی تایم‌فریم‌ها تازه نیست"))
     }
 }
