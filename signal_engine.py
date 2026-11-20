@@ -421,7 +421,7 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         c=candles; close=_series(c,"close"); price=close[-1]
         e20=_ema(close,20); e50=_ema(close,50); e200=_ema(close,200)
         r=_rsi(close); m=_macd(close); bb=_bollinger(close)
-        st=_stoch_rsi(close); ad=_adx(c); ichi=_ichimoku(c); a=_atr(c)
+        ad=_adx(c); a=_atr(c)
         vw=_vwap(c); obv=_obv_trend(c); structure=_market_structure(c)
         volatility=_volatility_status(c,timeframe,a)
         regime=_adx_regime(ad)
