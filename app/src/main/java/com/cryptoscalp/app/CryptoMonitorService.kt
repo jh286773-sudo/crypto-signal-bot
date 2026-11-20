@@ -119,9 +119,7 @@ class CryptoMonitorService : Service() {
             scanning=false
             handler.post{
                 val totalAnalyses=prefs.getInt("analysis_count_total",0)
-                val lastAnalysisAt=prefs.getLong("last_successful_analysis_at",0L)
-                val lastAt=if(lastAnalysisAt>0L) " • آخرین تحلیل موفق: "+android.text.format.DateFormat.format("HH:mm:ss",lastAnalysisAt) else " • هنوز تحلیل موفقی ثبت نشده"
-                val statusLine="توبیت • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه$lastAt"
+                val statusLine="توبیت • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه"
                 if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
                 // Keep errors and per-symbol diagnostics internal; never show them in the phone notification.
                 updateStatus(statusLine)
