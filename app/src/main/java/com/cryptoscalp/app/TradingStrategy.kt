@@ -331,7 +331,7 @@ object TradingStrategy {
         }
         val price=five.lastOrNull()?.close?:0.0
         if(!validSeries(five,300_000L)||!validSeries(fifteen,900_000L)||!validSeries(thirty,1_800_000L)){
-            return StrategyResult("WAIT",0,price,price,price,price,
+            return StrategyResult("WAIT",0,price,
                 listOf("داده یا زمان‌بندی یکی از تایم‌فریم‌های ۵، ۱۵ یا ۳۰ دقیقه نامعتبر/ناپیوسته است؛ سیگنال متوقف شد"),emptyList())
         }
 
@@ -339,7 +339,7 @@ object TradingStrategy {
         // candles are selected only if they had fully closed by that same boundary.
         val decisionTime=five.last().time+300_000L
         if(decisionTime>asOfMs||asOfMs-decisionTime>=300_000L){
-            return StrategyResult("WAIT",0,price,price,price,price,
+            return StrategyResult("WAIT",0,price,
                 listOf("کندل ۵ دقیقه‌ای بسته‌شده تازه و قابل‌همگام‌سازی نیست؛ سیگنال صادر نمی‌شود"),emptyList())
         }
         val expected15=(decisionTime/900_000L)*900_000L-900_000L
@@ -348,13 +348,13 @@ object TradingStrategy {
         val closed30=thirty.filter{it.time+1_800_000L<=decisionTime}
         if(closed15.size<MIN_CANDLES||closed30.size<MIN_CANDLES||
             closed15.last().time!=expected15||closed30.last().time!=expected30){
-            return StrategyResult("WAIT",0,price,price,price,price,
+            return StrategyResult("WAIT",0,price,
                 listOf("آخرین کندل بسته‌شده ۱۵ یا ۳۰ دقیقه با مرز تصمیم ۵ دقیقه همگام نیست؛ هیچ سیگنالی صادر نمی‌شود"),emptyList())
         }
 
         val reports=linkedMapOf("5m" to analyze(five,"5m"),"15m" to analyze(closed15,"15m"),"30m" to analyze(closed30,"30m"))
         val invalid=reports.filterValues{!it.valid}.keys
-        if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,price,price,price,
+        if(invalid.isNotEmpty())return StrategyResult("WAIT",0,price,
             listOf("داده معتبر کافی نیست: "+invalid.joinToString("، ")),emptyList())
 
         val combined=reports.entries.sumOf{it.value.score*(tfWeights[it.key]?:0.0)}
