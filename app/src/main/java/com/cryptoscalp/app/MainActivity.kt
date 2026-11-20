@@ -15,6 +15,7 @@ import android.os.Looper
 import android.graphics.Typeface
 import android.graphics.BitmapFactory
 import android.view.Gravity
+import android.view.View
 import android.widget.*
 import android.text.Editable
 import android.text.TextWatcher
