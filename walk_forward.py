@@ -48,7 +48,8 @@ def _closed_history(pairs, tf: str, decision_ms: int) -> List[dict]:
 def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = None,
                      fee_bps_open: float = None, fee_bps_close: float = None,
                      slippage_bps_per_side: float, initial_equity: float = 10_000.0,
-                     risk_fraction: float = 0.01, max_holding_bars: int = 72,
+                     risk_fraction: float = 0.005, max_holding_bars: int = 72,
+                     loss_streak_limit: int = 2, loss_cooldown_bars: int = 288,
                      allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3)) -> Dict[str, Any]:
     """Causal portfolio backtest with timestamp as-of alignment and three TP exits.
 
@@ -64,7 +65,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         raise ValueError("explicit opening and closing exchange fee rates are required")
     if min(fee_bps_open, fee_bps_close, slippage_bps_per_side) < 0:
         raise ValueError("exchange fee and slippage assumptions cannot be negative")
-    if initial_equity <= 0 or not 0 < risk_fraction <= 0.05 or max_holding_bars < 1:
+    if (initial_equity <= 0 or not 0 < risk_fraction <= 0.05 or max_holding_bars < 1
+            or loss_streak_limit < 1 or loss_cooldown_bars < 1):
         raise ValueError("invalid equity, risk fraction, or holding horizon")
     if len(allocation) != 3 or any(x < 0 for x in allocation) or abs(sum(allocation)-1.0) > 1e-9:
         raise ValueError("TP allocation must contain three non-negative fractions summing to 1")
@@ -76,8 +78,16 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     peak = equity
     max_dd = 0.0
     trades = []
+    loss_streak = 0
+    cooldown_until_index = -1
+    cooldown_events = 0
+    cooldown_skipped_bars = 0
     i = 59
     while i + 1 < len(five):
+        if i < cooldown_until_index:
+            cooldown_skipped_bars += 1
+            i += 1
+            continue
         decision_open, decision_candle = five[i]
         decision_time = decision_open + DURATION_MS["5m"]
         histories = {tf: _closed_history(indexed[tf], tf, decision_time) for tf in REQUIRED_TFS}
@@ -243,6 +253,14 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         funding = funding_bps_total if funding_events_applied else None
         funding_cash = funding_cash if funding_events_applied else None
         net_pnl = realized - fees - (funding_cash or 0.0)
+        if net_pnl < 0:
+            loss_streak += 1
+            if loss_streak >= loss_streak_limit:
+                cooldown_until_index = max(cooldown_until_index, exit_index + loss_cooldown_bars)
+                cooldown_events += 1
+                loss_streak = 0
+        else:
+            loss_streak = 0
         start_equity = equity
         equity += net_pnl
         peak = max(peak, equity)
@@ -292,6 +310,10 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         "gross_profit": gross_profit, "gross_loss": gross_loss,
         "side_stats": side_stats,
         "max_consecutive_losses": max_consecutive_losses,
+        "loss_guard": {"loss_streak_limit": loss_streak_limit,
+                       "cooldown_bars": loss_cooldown_bars,
+                       "cooldown_events": cooldown_events,
+                       "cooldown_skipped_bars": cooldown_skipped_bars},
         "max_drawdown_pct": max_dd*100, "risk_fraction": risk_fraction,
         "fee_bps_open": fee_bps_open, "fee_bps_close": fee_bps_close,
         "slippage_bps_per_side": slippage_bps_per_side,
