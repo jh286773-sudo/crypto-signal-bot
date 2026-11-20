@@ -509,6 +509,11 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
             "retest_confirmed": bool(smc.get(retest_key)),
             "false_breakout": bool(smc.get("false_breakout"))
         }
+        if smc.get("false_breakout"):
+            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                    "entry_stage":"WAIT",
+                    "reason":"Failed breakout detected; invalidate the setup and wait for a fresh structure.",
+                    "trade_enabled":False}
         if smc and not smc.get(retest_key):
             return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
                     "reason":"Setup is not entry-ready: wait for confirmed retest; do not chase the breakout.",
