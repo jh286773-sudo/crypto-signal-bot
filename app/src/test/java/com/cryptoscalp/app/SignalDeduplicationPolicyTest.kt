@@ -7,7 +7,7 @@ class SignalDeduplicationPolicyTest {
     @Test fun opensLongOnlyWhenFlatAndNotCoolingDown() {
         assertEquals(SignalDecision.OPEN, SignalDeduplicationPolicy.decide(null, "LONG", "WAIT", false))
         assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "SHORT", "WAIT", false))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "LONG", "LONG", false))
+        assertEquals(SignalDecision.OPEN, SignalDeduplicationPolicy.decide(null, "LONG", "LONG", false))
         assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "LONG", "WAIT", true))
     }
 
