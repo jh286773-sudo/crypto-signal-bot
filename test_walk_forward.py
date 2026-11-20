@@ -179,6 +179,19 @@ class WalkForwardTests(unittest.TestCase):
         self.assertEqual(result["max_consecutive_losses"],0)
         self.assertEqual(result["profit_factor"],0.0)
 
+    def test_rejection_reason_counts_and_samples_are_reported(self):
+        data={tf:bars(tf,400) for tf in DURATION_MS}
+        rejected={"signal":"NO_SIGNAL","reason":"waiting for retest",
+                  "rejection_reasons":["smc_retest_not_confirmed","five_minute_trigger_weak"]}
+        with patch("walk_forward.analyze_market",return_value=rejected):
+            result=run_walk_forward(data,fee_bps_per_side=0,slippage_bps_per_side=0)
+        diagnostics=result["decision_diagnostics"]
+        self.assertGreater(diagnostics["rejection_reason_counts"]["smc_retest_not_confirmed"],0)
+        self.assertGreater(diagnostics["rejection_reason_counts"]["five_minute_trigger_weak"],0)
+        self.assertTrue(diagnostics["rejected_decision_samples"])
+        self.assertEqual(diagnostics["rejected_decision_samples"][0]["reasons"],
+                         ["smc_retest_not_confirmed","five_minute_trigger_weak"])
+
     def test_funding_is_not_silently_dropped_on_same_bar_exit(self):
         data={tf:bars(tf,400) for tf in DURATION_MS}
         data["5m"][360]["low"]=98.0
