@@ -14,7 +14,7 @@ def run_backtest(timeframes: Dict[str, list], *, fee_bps: float = None,
                  slippage_bps: float, holding_bars: int = 72,
                  funding_bps_per_8h: float = 0.0,
                  initial_equity: float = 10_000.0,
-                 risk_fraction: float = 0.01,
+                 risk_fraction: float = 0.005,
                  allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3)) -> Dict[str, Any]:
     """Run causal 5m/15m/30m walk-forward using explicit per-side costs.
 

@@ -7,9 +7,9 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
     def test_kline_range_pages_without_duplicate_candles(self):
         api = ToobitAPI()
         first = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-                 for i in range(1000)]
+                 for i in range(2, 1002)]
         second = [[i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-                  for i in range(999, 1002)]
+                  for i in range(2)]
         with patch.object(api, "_get", side_effect=[first, second]) as get:
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 1002 * 300000)
         self.assertEqual(len(rows), 1002)
@@ -17,6 +17,36 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         self.assertEqual(rows[-1]["timestamp"], 1001 * 300000)
         self.assertEqual(rows[0]["taker_buy_volume"], 4.0)
         self.assertEqual(get.call_count, 2)
+
+    def test_kline_range_recovers_a_missing_leading_prefix(self):
+        api = ToobitAPI()
+        def row(i):
+            return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
+        later = [row(2), row(3)]
+        prefix = [row(0), row(1)]
+        with patch.object(api, "_get", side_effect=[later, prefix]) as get:
+            rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 4 * 300000)
+        self.assertEqual([item["timestamp"] for item in rows], [0, 300000, 600000, 900000])
+        self.assertEqual(get.call_count, 2)
+
+    def test_kline_range_continues_after_a_short_nonfinal_page(self):
+        api = ToobitAPI()
+        def row(i):
+            return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
+        first = [row(i) for i in range(500, 1002)]
+        second = [row(i) for i in range(500)]
+        with patch.object(api, "_get", side_effect=[first, second]) as get:
+            rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 1002 * 300000)
+        self.assertEqual(len(rows), 1002)
+        self.assertEqual(get.call_count, 2)
+
+    def test_kline_range_retries_missing_real_exchange_candle(self):
+        api = ToobitAPI()
+        def row(i):
+            return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
+        with patch.object(api, "_get", side_effect=[[row(0), row(2)], [row(1)]]):
+            rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 3 * 300000)
+        self.assertEqual([item["timestamp"] for item in rows], [0, 300000, 600000])
 
     def test_live_klines_parse_taker_buy_volume_from_exchange_payload(self):
         api = ToobitAPI()

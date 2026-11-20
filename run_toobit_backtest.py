@@ -18,11 +18,12 @@ def parse_args():
     parser.add_argument("--symbol", default="BTC-SWAP-USDT")
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--slippage-bps", type=float, required=True,
-                         help="Measured adverse slippage per fill, in basis points")
+                         help="Adverse slippage assumption per fill, in basis points")
+    parser.add_argument("--slippage-source", default="user-supplied slippage input; not independently measured")
     parser.add_argument("--public-vip0-fees", action="store_true",
                          help="Use published VIP-0 futures taker fee (6 bps) instead of account-specific rates")
     parser.add_argument("--equity", type=float, default=10000.0)
-    parser.add_argument("--risk", type=float, default=0.01)
+    parser.add_argument("--risk", type=float, default=0.005)
     parser.add_argument("--output", default="toobit_walk_forward_result.json")
     return parser.parse_args()
 
@@ -35,7 +36,7 @@ def main():
         raise SystemExit("--slippage-bps cannot be negative")
     api = ToobitAPI()
     server_ms = int(api.server_time()["serverTime"])
-    end_ms = (server_ms // DURATION_MS["5m"]) * DURATION_MS["5m"]
+    end_ms = int(os.environ["END_MS"]) if os.environ.get("END_MS") else (server_ms // DURATION_MS["5m"]) * DURATION_MS["5m"]
     start_ms = ((end_ms - args.days * 86_400_000) // DURATION_MS["30m"]) * DURATION_MS["30m"]
 
     # Account-specific open/close taker rates, returned as decimals by Toobit.
@@ -66,7 +67,7 @@ def main():
     result["commission_source"] = ("published Toobit VIP-0 futures taker schedule" if args.public_vip0_fees
                                    else "Toobit authenticated USER_DATA commissionRate")
     result["commission_rates"] = commission
-    result["slippage_source"] = "user-supplied measured adverse slippage per fill"
+    result["slippage_source"] = args.slippage_source
     result["candle_counts"] = {tf: len(rows) for tf, rows in data.items()}
 
     with open(args.output, "w", encoding="utf-8") as handle:
@@ -78,6 +79,8 @@ def main():
         "net_return_pct": result["net_return_pct"],
         "win_rate_pct": result["win_rate_pct"],
         "max_drawdown_pct": result["max_drawdown_pct"],
+        "risk_fraction": result["risk_fraction"],
+        "loss_guard": result["loss_guard"],
         "commission_rates": commission,
         "funding_mode": result["funding_mode"],
         "output": args.output,

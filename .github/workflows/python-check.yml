@@ -10,6 +10,7 @@ on:
       - strategy-quality-upgrades-v2
       - smc-entry-risk-parity-v3
       - aurum-x/advanced-smc-entry-backtest
+      - aurum-x-loss-reduction
   workflow_dispatch:
 
 permissions:
