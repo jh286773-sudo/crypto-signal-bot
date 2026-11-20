@@ -74,7 +74,10 @@ class CryptoMonitorService : Service() {
                 // Capture one exchange-clock boundary and use it for all three HTTP candle requests.
                 val marketAsOfMs=ExchangeMarketData.exchangeTimeMs()
                 val five=ExchangeMarketData.candles(exchange,symbol,"5m",marketAsOfMs)
-                val latestClosedCandleTime=five.last().time
+                val latestBar=five.last()
+                manageOpen(symbol,latestBar.close)
+                manageShadow(symbol,latestBar)
+                val latestClosedCandleTime=latestBar.time
                 val key="last_analysis_candle_$symbol"
                 val previousCandleTime=prefs.getLong(key,-1L)
                 if(previousCandleTime<0L){
@@ -83,7 +86,9 @@ class CryptoMonitorService : Service() {
                 } else if(latestClosedCandleTime>previousCandleTime){
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m",marketAsOfMs)
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m",marketAsOfMs)
-                    val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol))
+                    val candidate=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,emptyMap(),false)
+                    if(isDirectionalSignal(candidate.signal) && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,candidate)
+                    val r=TradingStrategy.evaluate(five,fifteen,thirty,marketAsOfMs,loadExpectancyStats(symbol),true)
                     val open=prefs.getString("open_setup_$symbol",null)
                     val openSide=open?.let { JSONObject(it).optString("side") }
                     val previous=prefs.getString("last_signal_$symbol",null)
@@ -128,13 +133,48 @@ class CryptoMonitorService : Service() {
     private fun isDirectionalSignal(signal:String)=signal=="LONG"||signal=="SHORT"
 
     private fun saveOpen(symbol:String,r:StrategyResult){
-        // Track direction only. SL/TP are not part of this hold-until-reversal mode.
-        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("openedAt",System.currentTimeMillis())
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3).put("tp1Done",false).put("tp2Done",false).put("openedAt",System.currentTimeMillis())
         prefs.edit().putString("open_setup_$symbol",o.toString()).apply()
     }
-    private fun expectancyKey(symbol:String,side:String)="closed_net_r_${symbol}_$side"
+    private fun expectancyKey(symbol:String,side:String)="shadow_closed_net_r_"+symbol+"_"+side
     private fun loadExpectancyStats(symbol:String):Map<String,List<Double>> = listOf("LONG","SHORT").associateWith { side ->
         prefs.getString(expectancyKey(symbol,side),"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(200)
+    }
+    private fun saveShadow(symbol:String,r:StrategyResult){
+        val risk=kotlin.math.abs(r.entry-r.stop); if(risk<=0.0||!risk.isFinite())return
+        val o=JSONObject().put("side",r.signal).put("entry",r.entry).put("initialRisk",risk).put("stop",r.stop).put("tp1",r.target1).put("tp2",r.target2).put("tp3",r.target3).put("remaining",1.0).put("grossR",0.0).put("entryCostR",r.entry*.0007/risk).put("tp1Done",false).put("tp2Done",false)
+        prefs.edit().putString("shadow_setup_$symbol",o.toString()).apply()
+    }
+    private fun recordShadowClose(symbol:String,o:JSONObject,exit:Double,fraction:Double){
+        val side=o.optString("side"); val entry=o.optDouble("entry",0.0); val risk=o.optDouble("initialRisk",0.0)
+        if((side!="LONG"&&side!="SHORT")||entry<=0.0||risk<=0.0||exit<=0.0||fraction<=0.0)return
+        val dir=if(side=="LONG")1.0 else -1.0
+        o.put("grossR",o.optDouble("grossR",0.0)+dir*(exit-entry)/risk*fraction)
+        o.put("exitCostR",o.optDouble("exitCostR",0.0)+exit*.0007/risk*fraction)
+        o.put("remaining",maxOf(0.0,o.optDouble("remaining",1.0)-fraction))
+        if(o.optDouble("remaining",0.0)<=1e-8){
+            val net=o.optDouble("grossR",0.0)-o.optDouble("entryCostR",0.0)-o.optDouble("exitCostR",0.0)
+            if(net.isFinite()){val key=expectancyKey(symbol,side);val old=prefs.getString(key,"").orEmpty().split(",").mapNotNull{it.toDoubleOrNull()}.takeLast(199);prefs.edit().putString(key,(old+net).joinToString(",")).remove("shadow_setup_$symbol").apply()}
+            else prefs.edit().remove("shadow_setup_$symbol").apply()
+        }else prefs.edit().putString("shadow_setup_$symbol",o.toString()).apply()
+    }
+    private fun manageShadow(symbol:String,bar:MarketCandle){
+        val raw=prefs.getString("shadow_setup_$symbol",null)?:return
+        val o=try{JSONObject(raw)}catch(_:Exception){prefs.edit().remove("shadow_setup_$symbol").apply();return}
+        val long=o.optString("side")=="LONG"; val stop=o.optDouble("stop",0.0)
+        val stopped=if(long)bar.low<=stop else bar.high>=stop
+        if(stopped){val fill=if(long)minOf(bar.open,stop) else maxOf(bar.open,stop);recordShadowClose(symbol,o,fill,o.optDouble("remaining",1.0));return}
+        for(i in 0..2){
+            if((i==0&&o.optBoolean("tp1Done"))||(i==1&&o.optBoolean("tp2Done")))continue
+            val target=o.optDouble("tp"+(i+1),0.0); val hit=if(long)bar.high>=target else bar.low<=target
+            if(!hit)break
+            val rem=o.optDouble("remaining",0.0); val fraction=if(i==2)rem else minOf(rem,1.0/3.0)
+            val fill=if(long)maxOf(bar.open,target) else minOf(bar.open,target)
+            if(i==0){o.put("tp1Done",true);o.put("stop",o.optDouble("entry"))}
+            if(i==1){o.put("tp2Done",true);o.put("stop",o.optDouble("tp1"))}
+            recordShadowClose(symbol,o,fill,fraction)
+            if(prefs.getString("shadow_setup_$symbol",null)==null||i<2)return
+        }
     }
     private fun recordVirtualClose(symbol:String,exit:Double){
         val raw=prefs.getString("open_setup_$symbol",null)?:return
@@ -223,7 +263,7 @@ class CryptoMonitorService : Service() {
         prefs.edit().remove(lossTimesKey(symbol)).remove(lossCooldownKey(symbol)).apply()
     }
     private fun clearOpen(symbol:String){prefs.edit().remove("open_setup_$symbol").apply()}
-    private fun closeOpen(symbol:String,reason:String){clearOpen(symbol);notifyExit(symbol,"خروج از موقعیت • $symbol",reason)}
+    private fun closeOpen(symbol:String,reason:String){ val px=Regex("قیمت ([0-9.eE+-]+)").find(reason)?.groupValues?.getOrNull(1)?.toDoubleOrNull(); if(px!=null)recordVirtualClose(symbol,px); clearOpen(symbol); notifyExit(symbol,"خروج از موقعیت • $symbol",reason) }
     private fun fmt(v:Double)=if(v>=100)"%.2f".format(v) else if(v>=1)"%.4f".format(v) else "%.7f".format(v)
     private fun notifySignal(symbol:String,r:StrategyResult){
         val body=buildString{
