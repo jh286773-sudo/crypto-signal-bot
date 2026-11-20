@@ -22,9 +22,9 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         api = ToobitAPI()
         row0 = [0, "1", "2", "0.5", "1.5", "10", 0, "15", 2, "6", "9"]
         row1 = [300000, "1", "2", "0.5", "1.5", "10", 0, "15", 2, "6", "9"]
-        with patch.object(api, "server_time", return_value={"serverTime": 600000}), \\
-             patch.object(api, "_get", return_value=[row0, row1]):
-            candles = api.get_klines("BTC-SWAP-USDT", "5m", limit=60)
+        with patch.object(api, "server_time", return_value={"serverTime": 600000}):
+            with patch.object(api, "_get", return_value=[row0, row1]):
+                candles = api.get_klines("BTC-SWAP-USDT", "5m", limit=60)
         self.assertEqual(len(candles), 2)
         self.assertEqual(candles[0]["taker_buy_volume"], 6.0)
 
