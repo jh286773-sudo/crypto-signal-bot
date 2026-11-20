@@ -83,7 +83,7 @@ class CryptoMonitorService : Service() {
                     // All three datasets contain closed candles only; 15m/30m may be unchanged between scans.
                     val fifteen=ExchangeMarketData.candles(exchange,symbol,"15m")
                     val thirty=ExchangeMarketData.candles(exchange,symbol,"30m")
-                    val r=TradingStrategy.evaluate(five,fifteen,thirty)
+                    val r=TradingStrategy.evaluate(five,fifteen,thirty,ExchangeMarketData.exchangeTimeMs())
                     val open=prefs.getString("open_setup_$symbol",null)
                     val previous=prefs.getString("last_signal_$symbol",null)
                     if(open==null && isDirectionalSignal(r.signal) && previous!=r.signal) {
