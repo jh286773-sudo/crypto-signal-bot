@@ -84,11 +84,12 @@ class ToobitAPI:
                 except (TypeError, ValueError):
                     ranked.append((symbol, 0.0))
 
+        # Keep every eligible exchangeInfo contract in the candidate universe,
+        # even if the 24h ticker endpoint omits a zero-volume/newly-listed symbol.
+        ranked_symbols = {symbol for symbol, _ in ranked}
+        ranked.extend((symbol, 0.0) for symbol in eligible if symbol not in ranked_symbols)
         ranked.sort(key=lambda item: item[1], reverse=True)
-        symbols = [symbol for symbol, _ in ranked[:limit]]
-        if not symbols:
-            symbols = sorted(eligible)[:limit]
-        return symbols
+        return [symbol for symbol, _ in ranked[:limit]]
 
     def get_price(self, symbol="BTC-SWAP-USDT"):
         return self._get("/quote/v1/contract/ticker/price", {"symbol": symbol})

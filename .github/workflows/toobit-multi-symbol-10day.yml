@@ -1,4 +1,4 @@
-name: Toobit Multi-Symbol 10-Day Walk-Forward
+name: Toobit Full USDT Perpetual-Universe Walk-Forward
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
       days:
         description: Shared historical window in days
         required: true
-        default: "10"
+        default: "30"
         type: string
       min_symbols:
         description: Minimum number of completed symbols (at least 10)
@@ -20,6 +20,11 @@ on:
         required: true
         default: "1.0"
         type: string
+      candidates:
+        description: Maximum active USDT perpetual contracts to scan (10000 means all returned)
+        required: true
+        default: "10000"
+        type: string
 
 permissions:
   contents: read
@@ -27,7 +32,7 @@ permissions:
 jobs:
   multi-symbol-backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,18 +44,20 @@ jobs:
           pip install -r requirements.txt
       - name: Run Toobit multi-symbol historical backtest
         env:
-          DAYS: ${{ github.event.inputs.days || '10' }}
+          DAYS: ${{ github.event.inputs.days || '30' }}
           MIN_SYMBOLS: ${{ github.event.inputs.min_symbols || '10' }}
           SLIPPAGE_BPS: ${{ github.event.inputs.slippage_bps || '1.0' }}
+          CANDIDATES: ${{ github.event.inputs.candidates || '10000' }}
         run: |
           python run_toobit_multi_backtest.py \
             --days "$DAYS" \
             --min-symbols "$MIN_SYMBOLS" \
+            --candidates "$CANDIDATES" \
             --slippage-bps "$SLIPPAGE_BPS" \
             --output toobit_multi_symbol_10day.json
       - uses: actions/upload-artifact@v4
         with:
-          name: aurum-x-toobit-multi-symbol-10day
+          name: aurum-x-toobit-full-usdt-perpetual-universe
           path: toobit_multi_symbol_10day.json
           if-no-files-found: error
           retention-days: 30

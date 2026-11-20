@@ -34,3 +34,23 @@ class ToobitClosedCandleTests(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
+
+class ToobitFullUniverseTests(unittest.TestCase):
+    def test_exchange_info_contracts_missing_from_ticker_are_not_dropped(self):
+        from unittest.mock import patch
+        api = ToobitAPI()
+        exchange_info = {"contracts": [
+            {"symbol": "BTC-SWAP-USDT", "status": "TRADING",
+             "quoteAsset": "USDT", "inverse": False},
+            {"symbol": "ETH-SWAP-USDT", "status": "TRADING",
+             "quoteAsset": "USDT", "inverse": False},
+            {"symbol": "BTC-USD-SWAP", "status": "TRADING",
+             "quoteAsset": "USD", "inverse": True},
+            {"symbol": "OLD-SWAP-USDT", "status": "CLOSED",
+             "quoteAsset": "USDT", "inverse": False},
+        ]}
+        ticker = [{"s": "BTC-SWAP-USDT", "qv": "1000"}]
+        with patch.object(api, "_get", side_effect=[exchange_info, ticker]):
+            symbols = api.get_futures_symbols(limit=10000, preferred_bases=None)
+        self.assertEqual(symbols, ["BTC-SWAP-USDT", "ETH-SWAP-USDT"])
