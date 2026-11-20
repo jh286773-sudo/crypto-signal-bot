@@ -112,8 +112,11 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             i += 1
             continue
         # Match the live Android strategy input horizon and bound indicator cost.
+        # The first 30 completed walk-forward trades are a shadow-training window;
+        # only subsequent entries are gated by their strictly prior closed outcomes.
+        history_ready = min(len(values) for values in closed_net_r.values()) >= 30
         signal = analyze_market({tf: rows[-260:] for tf, rows in histories.items()},
-                                expectancy_stats={side: list(values) for side, values in closed_net_r.items()})
+                                expectancy_stats={side: list(values) for side, values in closed_net_r.items()} if history_ready else None)
         decision_diagnostics["evaluated"] += 1
         side = signal.get("signal")
         if side not in ("LONG", "SHORT"):
@@ -352,6 +355,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             "funding_mode": funding_mode, "net_pnl": net_pnl,
             "net_return_pct": net_pnl/start_equity*100 if start_equity else 0.0,
             "equity_after": equity,
+            "expectancy_warmup": not history_ready,
         })
         i = max(exit_index+1, i+1)
     returns = [t["net_return_pct"] for t in trades]
