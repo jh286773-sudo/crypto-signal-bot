@@ -258,10 +258,12 @@ object TradingStrategy {
         val tp2=when(signal){"LONG"->price+2*risk;"SHORT"->price-2*risk;else->price}
         val reasons=mutableListOf("موتور تحلیل نسخه ۰.۲.۹: هشت خانواده شاخص","امتیاز ترکیبی سه تایم‌فریم: "+"%.2f".format(combined))
         for((tf,rep) in reports){
-            reasons.add(tf+": "+rep.bias+"، امتیاز "+"%.2f".format(rep.score)+"، رژیم "+rep.marketRegime+(rep.adxValue?.let{" ADX "+"%.1f".format(it)}?:""))
+            // User-facing explanations must not expose neutral/ranging market labels.
+            // The regime remains internal and continues to influence indicator-family weighting.
+            reasons.add(tf+": امتیاز تحلیل "+"%.2f".format(rep.score))
             reasons.add("امتیاز خانواده‌ها: "+rep.families.entries.joinToString("، "){it.key+"="+"%.2f".format(it.value)})
         }
-        reasons.add(if(signal=="LONG")"تأیید کامل سه تایم‌فریم؛ لانگ" else if(signal=="SHORT")"تأیید کامل سه تایم‌فریم؛ شورت" else "اجماع سه تایم‌فریم کافی نیست؛ معامله‌ای پیشنهاد نمی‌شود")
+        reasons.add(if(signal=="LONG")"تأیید کامل سه تایم‌فریم؛ لانگ" else "تأیید کامل سه تایم‌فریم؛ شورت")
         val smc=reports.flatMap{(tf,rep)->rep.smc.map{tf+": "+it}}.distinct()
         return StrategyResult(signal,combined.roundToInt(),price,stop,tp1,tp2,reasons,smc)
     }
