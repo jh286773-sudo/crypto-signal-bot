@@ -53,6 +53,20 @@ class TradingStrategyParityTest {
         assertEquals(number("expected_score").toInt(), result.score)
     }
 
+    @Test fun rejectsTakerBuyVolumeAboveTotalVolume() {
+        val now = System.currentTimeMillis()
+        val fiveStart = (now / 300_000L) * 300_000L - 80 * 300_000L
+        val fifteenStart = (now / 900_000L) * 900_000L - 80 * 900_000L
+        val thirtyStart = (now / 1_800_000L) * 1_800_000L - 80 * 1_800_000L
+        val five = series(80, 300_000L, fiveStart).toMutableList()
+        five[0] = five[0].copy(takerBuyVolume = five[0].volume + 1.0)
+        val result = TradingStrategy.evaluate(
+            five, series(80, 900_000L, fifteenStart), series(80, 1_800_000L, thirtyStart)
+        )
+        assertEquals("WAIT", result.signal)
+        assert(result.reasons.any { it.contains("داده معتبر کافی نیست") })
+    }
+
     @Test fun usesExchangeAsOfTimeToRejectAnUnclosedFiveMinuteCandle() {
         val now = System.currentTimeMillis()
         val fiveStart = (now / 300_000L) * 300_000L - 79 * 300_000L
