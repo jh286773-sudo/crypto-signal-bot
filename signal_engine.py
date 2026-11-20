@@ -503,11 +503,11 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], expectancy_stats: 
     selected_tfs = tuple(dict.fromkeys(REQUIRED_TFS if selected_timeframes is None else selected_timeframes))
     if not selected_tfs or any(tf not in SUPPORTED_TFS for tf in selected_tfs):
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Invalid or empty selected timeframe list","trade_enabled":False}
-    missing = [tf for tf in selected_tfs if not timeframes.get(tf)]
+    missing = [tf for tf in selected_tfs if tf not in timeframes]
     if missing:
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Missing selected timeframe data: "+", ".join(missing),"trade_enabled":False}
     # Timestamped live data is frozen to one common close boundary to prevent look-ahead.
-    timestamped = [all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in selected_tfs]
+    timestamped = [bool(timeframes.get(tf, [])) and all(any(k in row for k in ("timestamp", "open_time", "time")) for row in timeframes.get(tf, [])) for tf in selected_tfs]
     if any(timestamped) and not all(timestamped):
         return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"Mixed timestamped/untimestamped selected timeframe data","trade_enabled":False}
     analysis_timeframes = {tf:list(timeframes.get(tf,[])) for tf in selected_tfs}
