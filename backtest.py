@@ -19,7 +19,7 @@ def run_backtest(timeframes: Dict[str, list], *, fee_bps: float = None,
     """Run causal 5m/15m/30m walk-forward using explicit per-side costs.
 
     Funding fallback is intentionally disabled: callers must provide real
-    historical per-candle funding_rate values to include funding costs.
+    historical funding settlement events to include funding costs.
     """
     if funding_bps_per_8h:
         raise ValueError("estimated funding fallback disabled; provide actual funding settlement events")
