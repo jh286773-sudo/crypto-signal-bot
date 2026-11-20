@@ -239,7 +239,34 @@ class ToobitAPI:
                 candle_open = ((settle - 1) // self.INTERVALS["5m"]) * self.INTERVALS["5m"]
                 bar = bars_by_open.get(candle_open)
                 if bar is None:
-                    raise RuntimeError(f"Missing 5m candle covering Toobit funding settlement at {settle}")
+                    # Backfill an isolated gap with an exact one-candle request before
+                    # declaring the historical series incomplete.
+                    page = self._get("/quote/v1/klines", {
+                        "symbol": symbol, "interval": "5m",
+                        "startTime": candle_open, "endTime": candle_open + self.INTERVALS["5m"],
+                        "limit": 10
+                    })
+                    for row in page if isinstance(page, list) else []:
+                        if len(row) < 6 or int(row[0]) != candle_open:
+                            continue
+                        recovered = {
+                            "timestamp": candle_open, "open_time": candle_open,
+                            "open": float(row[1]), "high": float(row[2]),
+                            "low": float(row[3]), "close": float(row[4]),
+                            "volume": float(row[5])
+                        }
+                        if len(row) > 9:
+                            recovered["taker_buy_volume"] = float(row[9])
+                        five.append(recovered)
+                        bars_by_open[candle_open] = recovered
+                        bar = recovered
+                        break
+                if bar is None:
+                    nearest = sorted(bars_by_open, key=lambda t: abs(t-candle_open))[:4]
+                    raise RuntimeError(
+                        f"Missing 5m candle covering Toobit funding settlement at {settle}; "
+                        f"nearest available candle opens: {nearest}"
+                    )
                 if not bar["timestamp"] < settle <= bar["timestamp"] + self.INTERVALS["5m"]:
                     raise RuntimeError(f"Funding settlement timestamp does not align with a 5m candle: {settle}")
                 bar["funding_rate"] = event["funding_rate"]
