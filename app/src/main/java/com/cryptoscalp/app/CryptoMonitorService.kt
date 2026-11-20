@@ -91,7 +91,10 @@ class CryptoMonitorService : Service() {
                 val key="last_analysis_candle_${symbol}_$selectionKey"
                 val previousCandleTime=prefs.getLong(key,-1L)
                 if(previousCandleTime<0L){
-                    // First launch establishes a baseline instead of issuing a delayed historical signal.
+                    // Establish a baseline without sending a delayed historical alert,
+                    // but still analyze once so the user immediately sees per-timeframe diagnostics.
+                    val baseline=TradingStrategy.evaluate(candleMap,marketAsOfMs)
+                    lastDiagnostic=symbol+" • خط مبنا، بدون اعلان تاریخی: "+baseline.reasons.joinToString(" ؛ ")
                     prefs.edit().putLong(key,latestClosedCandleTime).apply()
                 } else if(latestClosedCandleTime>previousCandleTime){
                     val r=TradingStrategy.evaluate(candleMap,marketAsOfMs)
