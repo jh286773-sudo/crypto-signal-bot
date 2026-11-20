@@ -70,7 +70,7 @@ def main():
                 logging.warning("%s: missing valid entry price; alert skipped", symbol)
                 continue
 
-            atr = float(entry_report.get("atr") or 0.0)
+            atr = float(entry_report.get("indicators", {}).get("atr") or 0.0)
             risk = max(atr * 1.5, float(price) * 0.001)
             stop = float(price) - risk if signal == "LONG" else float(price) + risk
             sign = 1 if signal == "LONG" else -1
