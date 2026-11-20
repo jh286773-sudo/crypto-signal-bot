@@ -42,9 +42,9 @@ class ToobitFullUniverseTests(unittest.TestCase):
         api = ToobitAPI()
         exchange_info = {"coins": [{"coinId": "BTC"}, {"coinId": "ETH"}], "contracts": [
             {"symbol": "BTC-SWAP-USDT", "status": "TRADING",
-             "quoteAsset": "USDT", "inverse": False},
+             "quoteAsset": "USDT", "inverse": False, "underlying": "BTC"},
             {"symbol": "ETH-SWAP-USDT", "status": "TRADING",
-             "quoteAsset": "USDT", "inverse": False},
+             "quoteAsset": "USDT", "inverse": False, "underlying": "ETH"},
             {"symbol": "BTC-USD-SWAP", "status": "TRADING",
              "quoteAsset": "USD", "inverse": True},
             {"symbol": "OLD-SWAP-USDT", "status": "CLOSED",
