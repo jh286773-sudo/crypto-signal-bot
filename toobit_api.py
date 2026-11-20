@@ -240,6 +240,33 @@ class ToobitAPI:
             cursor_start = next_cursor_start
             time.sleep(0.05)
 
+        # The Toobit endpoint may omit the first open-time when startTime is
+        # exactly on a candle boundary. Retry that boundary with a narrow range
+        # beginning one full interval earlier; never fabricate the missing bar.
+        if expected_first not in rows_by_time:
+            boundary_page = self._get("/quote/v1/klines", {
+                "symbol": symbol, "interval": interval,
+                "startTime": max(0, expected_first - step),
+                "endTime": expected_first + step, "limit": 10
+            })
+            match = next((row for row in boundary_page if len(row) >= 6
+                          and int(row[0]) == expected_first), None) if isinstance(boundary_page, list) else None
+            if match is not None:
+                item = {
+                    "timestamp": expected_first, "open_time": expected_first,
+                    "open": float(match[1]), "high": float(match[2]),
+                    "low": float(match[3]), "close": float(match[4]),
+                    "volume": float(match[5])
+                }
+                if len(match) > 9:
+                    item["taker_buy_volume"] = float(match[9])
+                rows_by_time[expected_first] = item
+                print(
+                    f"Toobit exact-boundary retry recovered {symbol} {interval} "
+                    f"candle {expected_first}",
+                    flush=True,
+                )
+
         # Retry small internal gaps with exact exchange queries. Never synthesize bars.
         ordered_times = sorted(rows_by_time)
         missing_opens = []
