@@ -220,10 +220,14 @@ def _market_structure(c, lookback=60):
                  else "BOS_down" if close < pl and displacement and close_location <= 0.30
                  else "none")
         sweep = "sell_side" if low < pl and close > pl else "buy_side" if high > ph and close < ph else "none"
+        tolerance = max((atr_value or close*0.001)*0.25, close*0.0005)
         return {"previous_swing_high":ph,"previous_swing_low":pl,
                 "structure_event":event,"market_structure":"range",
                 "liquidity_sweep":sweep,"equal_high_liquidity":False,
-                "equal_low_liquidity":False,"order_blocks":[]}
+                "equal_low_liquidity":False,"order_blocks":[],
+                "false_breakout": sweep != "none",
+                "retest_long": False, "retest_short": False,
+                "breakout_quality": "false" if sweep != "none" else "none"}
     last = w[-1]
     close, high, low = float(last["close"]), float(last["high"]), float(last["low"])
     last_high_i, last_high = swing_highs[-1]
@@ -262,12 +266,22 @@ def _market_structure(c, lookback=60):
         if xc > xo and nc < float(x["low"]) and nc < nl + (nh-nl)*0.25:
             order_blocks.append({"type":"bearish","low":float(x["low"]),"high":float(x["high"])})
             break
+    tolerance = max((atr or close*0.001)*0.25, close*0.0005)
+    prior_bars = w[-7:-1]
+    prior_break_up = any(float(x["close"]) > last_high and abs(float(x["close"])-last_high) >= (atr or 0)*0.10 for x in prior_bars)
+    prior_break_down = any(float(x["close"]) < last_low and abs(float(x["close"])-last_low) >= (atr or 0)*0.10 for x in prior_bars)
+    retest_long = prior_break_up and low <= last_high+tolerance and close > last_high and close > float(last["open"])
+    retest_short = prior_break_down and high >= last_low-tolerance and close < last_low and close < float(last["open"])
+    false_breakout = sweep != "none"
     return {
         "previous_swing_high": last_high, "previous_swing_low": last_low,
         "structure_event": event, "market_structure": "bullish" if up_trend else "bearish" if down_trend else "range",
         "liquidity_sweep": sweep, "equal_high_liquidity": len(equal_highs) >= 2,
         "equal_low_liquidity": len(equal_lows) >= 2, "order_blocks": order_blocks,
-        "swing_high_count": len(swing_highs), "swing_low_count": len(swing_lows)
+        "swing_high_count": len(swing_highs), "swing_low_count": len(swing_lows),
+        "false_breakout": false_breakout, "retest_long": retest_long,
+        "retest_short": retest_short,
+        "breakout_quality": "retest_confirmed" if retest_long or retest_short else "false" if false_breakout else "unconfirmed" if event != "none" else "none"
     }
 
 
@@ -395,13 +409,25 @@ def analyze_timeframe(candles: List[Dict[str, Any]], timeframe="5m") -> Dict[str
         return {"valid":False,"reason":f"Invalid candle data: {exc}"}
 
 
-def _levels(side, price, volatility):
-    risk=max(volatility*1.5,price*0.001)
+def _levels(side, price, volatility, structure=None):
+    """ATR + confirmed swing invalidation; targets use explicit reward/risk multiples."""
+    atr_risk=max(volatility*1.5,price*0.001)
+    structure=structure or {}
     if side=="LONG":
-        return {"entry":price,"stop_loss":price-risk,
-                "take_profits":[price+risk,price+2*risk,price+3*risk]}
-    return {"entry":price,"stop_loss":price+risk,
-            "take_profits":[price-risk,price-2*risk,price-3*risk]}
+        swing=structure.get("previous_swing_low")
+        candidate=float(swing)-0.15*volatility if swing is not None else price-atr_risk
+        stop=candidate if 0 < candidate < price and price-candidate <= 3.0*volatility else price-atr_risk
+        risk=price-stop
+        return {"entry":price,"stop_loss":stop,
+                "take_profits":[price+1.5*risk,price+2.5*risk,price+3.5*risk],
+                "risk_per_unit":risk,"risk_reward":[1.5,2.5,3.5]}
+    swing=structure.get("previous_swing_high")
+    candidate=float(swing)+0.15*volatility if swing is not None else price+atr_risk
+    stop=candidate if candidate > price and candidate-price <= 3.0*volatility else price+atr_risk
+    risk=stop-price
+    return {"entry":price,"stop_loss":stop,
+            "take_profits":[price-1.5*risk,price-2.5*risk,price-3.5*risk],
+            "risk_per_unit":risk,"risk_reward":[1.5,2.5,3.5]}
 
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
@@ -437,8 +463,25 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]]) -> Dict[str,Any]:
     if signal in ("LONG","SHORT"):
         a=reports["5m"]["indicators"]["atr"]; p=reports["5m"]["close"]
         if not a or a<=0: return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":"ATR unavailable"}
-        result.update(_levels(signal,p,a))
+        smc = reports["5m"]["indicators"].get("smc", {})
+        # Real candle reports must complete the breakout -> retest -> directional close sequence.
+        # Missing SMC is tolerated only for external/mocked report adapters.
+        retest_key = "retest_long" if signal=="LONG" else "retest_short"
+        result["entry_stage"] = "ENTRY" if smc and smc.get(retest_key) else "PREPARATION"
+        result["entry_context"] = {
+            "preparation": reports["15m"]["bias"] == reports["30m"]["bias"] and reports["15m"]["bias"] in ("bullish","bearish"),
+            "confirmation": smc.get("structure_event") in (("BOS_up","CHoCH_up") if signal=="LONG" else ("BOS_down","CHoCH_down")) or smc.get("liquidity_sweep") == ("sell_side" if signal=="LONG" else "buy_side"),
+            "retest_confirmed": bool(smc.get(retest_key)),
+            "false_breakout": bool(smc.get("false_breakout"))
+        }
+        if smc and not smc.get(retest_key):
+            return {**result,"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                    "reason":"Setup is not entry-ready: wait for confirmed retest; do not chase the breakout.",
+                    "trade_enabled":False}
+        result.update(_levels(signal,p,a,smc))
+        result["entry_stage"] = "ENTRY"
     else:
+        result["entry_stage"] = "PREPARATION" if higher_long or higher_short else "WAIT"
         result["reason"]="Multi-timeframe indicator consensus not strong enough"
     return result
 
