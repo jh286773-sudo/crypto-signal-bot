@@ -28,6 +28,28 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         self.assertEqual(len(candles), 2)
         self.assertEqual(candles[0]["taker_buy_volume"], 6.0)
 
+    def test_funding_missing_bar_is_backfilled_with_exact_candle_request(self):
+        from walk_forward import DURATION_MS
+        api = ToobitAPI()
+        data = {
+            tf: [{"timestamp": i * step, "open_time": i * step, "open": 1.0,
+                  "high": 1.1, "low": 0.9, "close": 1.0, "volume": 10.0}
+                 for i in range(60) if not (tf == "5m" and i == 1)]
+            for tf, step in DURATION_MS.items()
+        }
+        recovered = [300000, "1", "1.1", "0.9", "1", "10", 0, "0", 1, "4"]
+        def exact_get(endpoint, params):
+            if endpoint == "/quote/v1/klines" and params.get("startTime") == 300000:
+                return [recovered]
+            raise AssertionError(f"unexpected request: {endpoint} {params}")
+        with patch.object(api, "get_klines_range", side_effect=lambda symbol, tf, start, end: data[tf]), \\
+             patch.object(api, "get_historical_funding_rates", return_value=[
+                 {"settle_time": 600000, "funding_rate": 0.001}
+             ]), patch.object(api, "_get", side_effect=exact_get):
+            result = api.get_historical_range("BTC-SWAP-USDT", 0, 60 * DURATION_MS["30m"])
+        self.assertEqual(result["5m"][1]["timestamp"], 300000)
+        self.assertEqual(result["5m"][1]["funding_settle_time"], 600000)
+
     def test_account_fee_rate_uses_signed_read_only_endpoint(self):
         api = ToobitAPI(api_key="test-key", api_secret="test-secret")
         with patch.object(api, "_signed_get", return_value={
