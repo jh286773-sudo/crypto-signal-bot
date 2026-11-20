@@ -181,7 +181,6 @@ class CryptoMonitorService : Service() {
         val body=buildString{
             append("اقدام: بازکردن موقعیت ${r.signal} • ${if(r.signal=="LONG")"لانگ" else "شورت"}\\n")
             append("تا زمان دریافت سیگنال مخالف معتبر، موقعیت باز نگه داشته می‌شود.\\n")
-            append("امتیاز تأیید: ${r.score}\\n")
             append("این اعلان راهنمای دستی است؛ برنامه سفارش صرافی را ثبت یا اجرا نمی‌کند.\\n")
             append("دلایل: ${(r.reasons+r.smc).joinToString("، ")}")
         }
