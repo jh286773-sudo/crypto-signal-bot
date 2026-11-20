@@ -59,6 +59,42 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(_entry_not_chasing(101.0, None, 2.0))
         self.assertFalse(_entry_not_chasing(101.0, 100.0, 0.0))
 
+
+    def test_timestamped_python_timeframes_must_share_exact_5m_decision_boundary(self):
+        data = {}
+        durations = {"5m":300000, "15m":900000, "30m":1800000}
+        start5 = 1800000000000
+        decision = start5 + 100 * durations["5m"]
+        for tf, duration in durations.items():
+            count = 100
+            start = start5 if tf == "5m" else (decision // duration) * duration - duration - (count-1)*duration
+            rows = candles(count)
+            for i, row in enumerate(rows):
+                row["open_time"] = start + i*duration
+            data[tf] = rows
+        self.assertNotIn("not aligned", analyze_market(data).get("reason", ""))
+        data["15m"][-1]["open_time"] += durations["15m"]
+        result = analyze_market(data)
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("Non-contiguous", result["reason"])
+
+    def test_timestamped_python_rejects_mixed_timeframe_timestamp_presence(self):
+        data = {}
+        durations = {"5m":300000, "15m":900000, "30m":1800000}
+        start5 = 1800000000000
+        decision = start5 + 100 * durations["5m"]
+        for tf, duration in durations.items():
+            count = 100
+            start = start5 if tf == "5m" else (decision // duration) * duration - duration - (count-1)*duration
+            rows = candles(count)
+            for i, row in enumerate(rows):
+                row["timestamp"] = start + i*duration
+            data[tf] = rows
+        del data["30m"][-1]["timestamp"]
+        result = analyze_market(data)
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("Mixed timestamped", result["reason"])
+
     def test_bad_input_safe(self):
         self.assertFalse(analyze_timeframe([{"close":1}]*70)["valid"])
 
