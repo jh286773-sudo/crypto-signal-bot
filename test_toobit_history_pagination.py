@@ -58,6 +58,25 @@ class ToobitHistoryPaginationTests(unittest.TestCase):
         self.assertEqual(calls[1]["startTime"], 1100 * step - 1)
         self.assertEqual(calls[2]["startTime"], 2100 * step - 1)
 
+    def test_range_fetch_recovers_exact_first_candle_with_narrow_retry(self):
+        api = ToobitAPI()
+        step = ToobitAPI.INTERVALS["5m"]
+        start = 100 * step
+        calls = []
+
+        def fake_get(_endpoint, params):
+            calls.append(params.copy())
+            if len(calls) == 1:
+                return [[start + step, "1", "2", "0.5", "1.5", "10"]]
+            return [[start, "1", "2", "0.5", "1.5", "10"]]
+
+        with patch.object(api, "_get", side_effect=fake_get):
+            rows = api.get_klines_range("BTC-SWAP-USDT", "5m", start, start + 2 * step)
+
+        self.assertEqual([row["timestamp"] for row in rows], [start, start + step])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1]["startTime"], start - step)
+
 
 if __name__ == "__main__":
     unittest.main()
