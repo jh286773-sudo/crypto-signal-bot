@@ -10,33 +10,6 @@ MAX_SYMBOLS = min(10, max(1, int(os.getenv("MAX_SYMBOLS", "10"))))
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
 NTFY_SERVER = os.getenv("NTFY_SERVER", "https://ntfy.sh").rstrip(" /")
 
-REASON_FA = {
-    "15m trend is bullish": "روند ۱۵ دقیقه‌ای صعودی است",
-    "15m trend is bearish": "روند ۱۵ دقیقه‌ای نزولی است",
-    "5m scalp entry confirmed": "ورود اسکالپ در تایم‌فریم ۵ دقیقه تأیید شد",
-    "30m trend confirms 15m direction": "روند ۳۰ دقیقه‌ای جهت ۱۵ دقیقه‌ای را تأیید می‌کند",
-    "30m trend does not confirm; confidence reduced": "روند ۳۰ دقیقه‌ای تأیید نمی‌کند؛ اطمینان کاهش یافته است",
-    "Bullish market structure": "ساختار بازار صعودی است",
-    "Bearish market structure": "ساختار بازار نزولی است",
-    "Bearish market structure warning": "هشدار: ساختار بازار نزولی است",
-    "Bullish market structure warning": "هشدار: ساختار بازار صعودی است",
-    "Bullish liquidity sweep": "جمع‌آوری نقدینگی صعودی",
-    "Bearish liquidity sweep": "جمع‌آوری نقدینگی نزولی",
-    "Bullish order block": "بلوک سفارش صعودی",
-    "Bearish order block": "بلوک سفارش نزولی",
-}
-
-
-def translate_reason(reason):
-    """Translate known signal-engine reasons while preserving unknown text."""
-    return REASON_FA.get(str(reason).strip(), str(reason).strip())
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-)
-
 
 def notify(title, message, priority="default"):
     if not NTFY_TOPIC:
@@ -44,7 +17,6 @@ def notify(title, message, priority="default"):
         return
     if "/" in NTFY_TOPIC or not NTFY_TOPIC.replace("-", "").replace("_", "").isalnum():
         raise ValueError("NTFY_TOPIC must be a simple topic name.")
-
     response = requests.post(
         f"{NTFY_SERVER}/{NTFY_TOPIC}",
         data=message.encode("utf-8"),
@@ -53,6 +25,23 @@ def notify(title, message, priority="default"):
     )
     response.raise_for_status()
     logging.info("Phone notification sent: %s", title)
+
+
+def _analysis_reasons(result):
+    parts = []
+    for tf in ("5m", "15m", "30m"):
+        report = result.get("timeframes", {}).get(tf, {})
+        if not report:
+            continue
+        parts.append(f"{tf}: bias={report.get('bias', 'unknown')}, score={report.get('score', 'n/a')}")
+        families = report.get("family_scores", {})
+        if families:
+            parts.append("families=" + ", ".join(f"{k}:{v}" for k, v in families.items()))
+        votes = report.get("indicator_votes", {})
+        active = [f"{k}:{'+' if v > 0 else ''}{v}" for k, v in votes.items() if v]
+        if active:
+            parts.append("votes=" + ", ".join(active))
+    return "؛ ".join(parts) or result.get("reason", "اجماع شاخص‌ها")
 
 
 def main():
@@ -66,45 +55,49 @@ def main():
         try:
             candles = api.get_multi_timeframe(symbol)
             result = analyze_market(candles)
-            signal = result.get("signal", "WAIT")
-            price = result.get("price")
+            signal = result.get("signal", "NO_SIGNAL")
+            reports = result.get("timeframes", {})
+            five = reports.get("5m", {})
+            price = result.get("entry") or five.get("close")
             checked += 1
 
             logging.info(
-                "%s | price=%s | signal=%s | score=%s | reason=%s",
-                symbol, price, signal, result.get("score"),
-                result.get("reason", "; ".join(result.get("reasons", []))),
+                "%s | price=%s | signal=%s | combined_score=%s | confidence=%s",
+                symbol, price, signal, result.get("combined_score"), result.get("confidence_score"),
             )
-
             if signal not in ("LONG", "SHORT"):
                 continue
-
-            atr = float(result.get("atr") or 0)
-            if not price or atr <= 0:
-                logging.warning("%s: missing price or ATR; alert skipped", symbol)
+            if not price or float(price) <= 0:
+                logging.warning("%s: missing price; alert skipped", symbol)
                 continue
 
-            direction = 1 if signal == "LONG" else -1
-            stop = price - direction * 1.5 * atr
-            target = price + direction * 3.0 * atr
-            signal_fa = "خرید (لانگ)" if signal == "LONG" else "فروش (شورت)"
-            reasons = result.get("reasons") or [result.get("reason", "")]
-            reasons_fa = "؛ ".join(translate_reason(item) for item in reasons if item)
-            score = result.get("score", "نامشخص")
+            indicators = five.get("indicators", {})
+            atr = float(indicators.get("atr") or 0)
+            risk = max(atr * 1.5, float(price) * 0.001)
+            stop = result.get("stop_loss")
+            targets = result.get("take_profits") or []
+            if stop is None:
+                stop = float(price) - risk if signal == "LONG" else float(price) + risk
+            if len(targets) < 2:
+                sign = 1 if signal == "LONG" else -1
+                targets = [float(price) + sign * risk, float(price) + sign * 2 * risk]
 
+            signal_fa = "خرید (لانگ)" if signal == "LONG" else "فروش (شورت)"
+            score = result.get("confidence_score", result.get("combined_score", "نامشخص"))
+            reasons = _analysis_reasons(result)
             message = (
                 f"جفت‌ارز: {symbol}\n"
                 f"نوع سیگنال: {signal_fa}\n"
-                f"قیمت ورود پیشنهادی: {price:.8g}\n"
-                f"حد ضرر: {stop:.8g}\n"
-                f"حد سود: {target:.8g}\n"
-                f"امتیاز سیگنال: {score}\n"
-                f"دلایل: {reasons_fa or 'در دسترس نیست'}\n"
+                f"قیمت ورود پیشنهادی: {float(price):.8g}\n"
+                f"حد ضرر: {float(stop):.8g}\n"
+                f"حد سود ۱: {float(targets[0]):.8g}\n"
+                f"حد سود ۲: {float(targets[1]):.8g}\n"
+                f"امتیاز اطمینان مدل: {score}\n"
+                f"دلایل: {reasons}\n"
                 "فقط سیگنال است؛ هیچ سفارشی ثبت نشده است."
             )
             notify(f"سیگنال {signal_fa} | {symbol}", message, "high")
             alerts += 1
-
         except Exception:
             logging.exception("Analysis failed for %s; continuing with next contract", symbol)
 
@@ -112,4 +105,5 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     main()
