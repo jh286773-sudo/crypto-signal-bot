@@ -120,4 +120,12 @@ class TradingStrategyParityTest {
         assert(result.reasons.any { it.contains("همگام نیست") })
     }
 
+    @Test fun ema21AntiChaseGateRejectsExtendedOrMissingDataAndAcceptsPullback() {
+        assertEquals(true, TradingStrategy.entryNotExtended(100.0, 99.5, 1.0))
+        assertEquals(false, TradingStrategy.entryNotExtended(100.0, 99.0, 1.0))
+        assertEquals(false, TradingStrategy.entryNotExtended(100.0, null, 1.0))
+        assertEquals(false, TradingStrategy.entryNotExtended(100.0, 99.5, null))
+        assertEquals(false, TradingStrategy.entryNotExtended(100.0, 99.5, 0.0))
+    }
+
 }
