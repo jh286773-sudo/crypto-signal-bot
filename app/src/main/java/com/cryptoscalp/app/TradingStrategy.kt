@@ -152,10 +152,15 @@ object TradingStrategy {
         val equalHighs=sh.takeLast(5).count{abs(it.second-lastHigh)<=tol}>=2
         val equalLows=sl.takeLast(5).count{abs(it.second-lastLow)<=tol}>=2
         var obType="none";var obLow:Double?=null;var obHigh:Double?=null
-        if(event=="BOS_up"||event=="CHoCH_up"){
-            for(j in w.size-2 downTo max(0,w.size-12)){val x=w[j];if(x.close<x.open){obType="bullish";obLow=x.low;obHigh=x.high;break}}
-        }else if(event=="BOS_down"||event=="CHoCH_down"){
-            for(j in w.size-2 downTo max(0,w.size-12)){val x=w[j];if(x.close>x.open){obType="bearish";obLow=x.low;obHigh=x.high;break}}
+        // Retain the latest displacement-origin block so later price retests can confirm.
+        for(j in w.size-2 downTo max(0,w.size-21)){
+            val x=w[j];val next=w[j+1]
+            if(x.close<x.open&&next.close>x.high&&next.close>next.high-(next.high-next.low)*.25){
+                obType="bullish";obLow=x.low;obHigh=x.high;break
+            }
+            if(x.close>x.open&&next.close<x.low&&next.close<next.low+(next.high-next.low)*.25){
+                obType="bearish";obLow=x.low;obHigh=x.high;break
+            }
         }
         return Structure(event,sweep,if(up)"bullish" else if(down)"bearish" else "range",equalHighs,equalLows,obType,obLow,obHigh)
     }
@@ -203,8 +208,9 @@ object TradingStrategy {
         vote("volume","OBV",if(ov!=null&&ov>0)1 else if(ov!=null&&ov<0)-1 else 0)
         vote("volume","MFI",if(mf!=null&&mf>50&&mf<80)1 else if(mf!=null&&mf>20&&mf<50)-1 else 0)
         vote("volatility","Bollinger",if(bands!=null&&price>bands.second)1 else if(bands!=null&&price<bands.second)-1 else 0)
-        val inBullOb=sm.orderBlockType=="bullish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price in sm.orderBlockLow..sm.orderBlockHigh
-        val inBearOb=sm.orderBlockType=="bearish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price in sm.orderBlockLow..sm.orderBlockHigh
+        val obTolerance=(a?:price*.001)*.25
+        val inBullOb=sm.orderBlockType=="bullish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
+        val inBearOb=sm.orderBlockType=="bearish"&&sm.orderBlockLow!=null&&sm.orderBlockHigh!=null&&price>=sm.orderBlockLow!!-obTolerance&&price<=sm.orderBlockHigh!!+obTolerance
         val smcBull=sm.event=="BOS_up"||sm.event=="CHoCH_up"||sm.sweep=="sell_side"||inBullOb
         val smcBear=sm.event=="BOS_down"||sm.event=="CHoCH_down"||sm.sweep=="buy_side"||inBearOb
         vote("structure","SMC",if(smcBull&&!smcBear)1 else if(smcBear&&!smcBull)-1 else 0,1.3)
