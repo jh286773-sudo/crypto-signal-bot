@@ -235,8 +235,14 @@ object TradingStrategy {
 
     private fun analyze(c:List<MarketCandle>,timeframe:String):Report {
         if(c.size<MIN_CANDLES)return Report(false,"حداقل ۶۰ کندل لازم است")
-        if(c.takeLast(MIN_CANDLES).any{!it.open.isFinite()||!it.high.isFinite()||!it.low.isFinite()||!it.close.isFinite()||!it.volume.isFinite()||it.open<=0||it.high<=0||it.low<=0||it.close<=0||it.high<it.low})
-            return Report(false,"داده کندل نامعتبر است")
+        // All history feeds recursive indicators, so validate every candle,
+        // not only the visible tail; an old NaN can otherwise poison EMA/ATR.
+        if(c.any{
+            !it.open.isFinite()||!it.high.isFinite()||!it.low.isFinite()||
+            !it.close.isFinite()||!it.volume.isFinite()||
+            it.open<=0||it.high<=0||it.low<=0||it.close<=0||it.volume<0||
+            it.high<max(it.open,it.close)||it.low>min(it.open,it.close)||it.high<it.low
+        }) return Report(false,"داده کندل نامعتبر است")
         val v=c.map{it.close};val price=v.last()
         val e9=ema(v,9)!!;val e21=ema(v,21)!!;val e50=ema(v,50)!!
         val s20=sma(v,20);val s50=sma(v,50);val r=rsi(v);val mc=macd(v);val bands=bb(v)
