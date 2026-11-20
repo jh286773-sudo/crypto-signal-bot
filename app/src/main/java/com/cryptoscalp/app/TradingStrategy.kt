@@ -339,25 +339,20 @@ object TradingStrategy {
                 listOf("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود")+
                     invalidSeries.map { "$it: حداقل ۲۰۰ کندل مرتب و پیوسته با زمان‌بندی معتبر لازم است" })
         }
-        val latestCommonClose = selected.minOf { tf -> raw.getValue(tf).last().time + durations.getValue(tf) }
-        val freshnessWindow = selected.maxOf { durations.getValue(it) }
-        if(latestCommonClose>asOfMs || asOfMs-latestCommonClose>=freshnessWindow) {
-            return StrategyResult("WAIT",raw[selected.first()]!!.last().close,
-                listOf("کندل بسته‌شده تازه برای تایم‌فریم‌های انتخاب‌شده در دسترس نیست؛ سیگنالی صادر نمی‌شود"))
-        }
-        val aligned = linkedMapOf<String,List<MarketCandle>>()
-        for(tf in selected) {
+        // Each timeframe uses its own latest CLOSED candle. No shared candle boundary,
+        // timestamp intersection, or cross-timeframe candle synchronization is required.
+        val staleTimeframes=selected.filter { tf ->
             val duration=durations.getValue(tf)
-            val expected=(latestCommonClose/duration)*duration-duration
-            val rows=raw.getValue(tf).filter{it.time+duration<=latestCommonClose}
-            if(rows.size<MIN_CANDLES||rows.lastOrNull()?.time!=expected) {
-                return StrategyResult("WAIT",raw.getValue(tf).last().close,
-                    listOf("کندل بسته‌شده تایم‌فریم $tf با مرز تصمیم مشترک هماهنگ نیست؛ سیگنالی صادر نمی‌شود"))
-            }
-            aligned[tf]=rows
+            val last=raw.getValue(tf).last()
+            val closedAt=last.time+duration
+            closedAt>asOfMs || asOfMs-closedAt>=duration
+        }
+        if(staleTimeframes.isNotEmpty()) {
+            return StrategyResult("WAIT",raw[selected.first()]!!.last().close,
+                listOf("داده بسته‌شده بعضی تایم‌فریم‌ها تازه نیست؛ سیگنالی صادر نمی‌شود: "+staleTimeframes.joinToString("، ")))
         }
         val reports=linkedMapOf<String,Report>()
-        for(tf in selected) reports[tf]=analyze(aligned.getValue(tf),tf)
+        for(tf in selected) reports[tf]=analyze(raw.getValue(tf),tf)
         val invalid=reports.filterValues{!it.valid}.keys
         val price=reports[selected.first()]?.price?:0.0
         if(invalid.isNotEmpty())return StrategyResult("WAIT",price,
