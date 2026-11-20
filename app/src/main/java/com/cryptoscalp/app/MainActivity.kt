@@ -43,7 +43,7 @@ class MainActivity : Activity() {
             val prefs=getSharedPreferences("crypto_monitor",Context.MODE_PRIVATE)
             val liveStatus=prefs.getString("latest_monitor_status",null)
             if (::status.isInitialized && !liveStatus.isNullOrBlank()) {
-                status.text=liveStatus.substringBefore("\\n")
+                status.text=liveStatus.substringBefore("\n")
             }
             val message=prefs.getString("latest_signal_diagnostic",null)
             diagnostics.text=message?.let { "آخرین عیب‌یابی سیگنال:\n"+it }
