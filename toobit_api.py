@@ -58,6 +58,13 @@ class ToobitAPI:
         """Return liquid active USDT perpetuals, optionally limited to preferred base assets."""
         info = self._get("/api/v1/exchangeInfo")
         contracts = info.get("contracts", [])
+        # TradFi stock/index/commodity/FX contracts also use USDT linear swaps.
+        # Restrict this research universe to underlyings listed as exchange coins.
+        crypto_assets = {
+            str(item.get("coinId", "")).upper()
+            for item in info.get("coins", [])
+            if item.get("coinId")
+        }
         eligible = {
             item["symbol"]
             for item in contracts
@@ -65,6 +72,7 @@ class ToobitAPI:
             and item.get("quoteAsset") == "USDT"
             and item.get("inverse") is False
             and item.get("symbol", "").endswith("-SWAP-USDT")
+            and str(item.get("underlying", "")).upper() in crypto_assets
         }
 
         if preferred_bases:
