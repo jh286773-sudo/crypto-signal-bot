@@ -63,3 +63,12 @@ Funding settlement timestamps are charged once. If a settlement and an intrabar
 exit fall in the same 5m OHLC candle, exposure at that candle's open is used
 because OHLC cannot establish the order of the settlement and exit; this avoids
 optimistically omitting a potentially payable funding event.
+
+
+## Price-source parity
+
+The Android strategy and the Python walk-forward runner both use Toobit's
+contract-price `/quote/v1/klines` OHLCV stream, including the exchange's
+taker-buy base-volume field when supplied. The Android chart remains explicitly
+a mark-price chart and now displays the matching mark-price quote; the chart
+series is not silently reused as the strategy/backtest input.
