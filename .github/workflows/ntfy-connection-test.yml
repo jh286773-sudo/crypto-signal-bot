@@ -1,6 +1,10 @@
 name: AURUM X ntfy Connection Test
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ntfy-connection-test.yml"
   workflow_dispatch:
     inputs:
       confirmation:
@@ -13,7 +17,7 @@ permissions:
 
 jobs:
   ntfy-test:
-    if: ${{ inputs.confirmation == 'SEND_TEST' }}
+    if: ${{ github.event_name == 'push' || inputs.confirmation == 'SEND_TEST' }}
     runs-on: ubuntu-latest
     steps:
       - name: Send one diagnostic message to ntfy
