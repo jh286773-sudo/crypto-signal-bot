@@ -573,6 +573,16 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
             if last_closed_index < MIN_INDICATOR_CANDLES - 1:
                 return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Insufficient fully closed {tf} candles","trade_enabled":False}
             analysis_timeframes[tf] = analysis_timeframes[tf][:last_closed_index + 1]
+            # Match Android's freshness gate: a closed candle older than one full
+            # interval is stale and must not produce a delayed/replayed entry signal.
+            latest_close_ms = stamps[last_closed_index] + d
+            if now_ms - latest_close_ms >= d:
+                return {
+                    "signal": "NO_SIGNAL", "status": "NO_SIGNAL",
+                    "reason": f"Stale closed {tf} candle data; latest close is at least one interval old",
+                    "trade_enabled": False,
+                    "rejection_reasons": ["stale_timeframe_data"],
+                }
     reports={tf:analyze_timeframe(analysis_timeframes.get(tf,[]),tf) for tf in selected_tfs}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
