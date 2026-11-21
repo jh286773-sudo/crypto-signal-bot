@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   ntfy-test:
-    if: ${{ github.event_name == 'push' || inputs.confirmation == 'SEND_TEST' }}
+    if: ${{ github.event_name == 'push' || github.event.inputs.confirmation == 'SEND_TEST' }}
     runs-on: ubuntu-latest
     steps:
       - name: Send one diagnostic message to ntfy
