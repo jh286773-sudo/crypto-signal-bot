@@ -15,7 +15,7 @@ on:
       symbols:
         description: Selected Toobit USDT perpetual symbols
         required: true
-        default: "BTC-SWAP-USDT"
+        default: "BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT"
         type: string
       timeframes:
         description: Selected analysis intervals
@@ -42,7 +42,7 @@ jobs:
       - name: Run selected-symbol Toobit walk-forward backtest
         env:
           START_DATETIME: ${{ github.event.inputs.start_datetime || '2026-11-09T00:00:00Z' }}
-          SYMBOLS: ${{ github.event.inputs.symbols || 'BTC-SWAP-USDT' }}
+          SYMBOLS: ${{ github.event.inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
           TIMEFRAMES: ${{ github.event.inputs.timeframes || '5m,15m,30m' }}
         run: |
           python run_toobit_multi_backtest.py \
