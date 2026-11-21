@@ -78,7 +78,7 @@ class CryptoMonitorService : Service() {
                 val slowestDuration=selectedTimeframes.maxOf { ExchangeMarketData.durationMs(it) }
                 val candleMap=selectedTimeframes.associateWith { tf ->
                     val duration=ExchangeMarketData.durationMs(tf)
-                    val historyLimit=(slowestDuration/duration+220L).coerceAtLeast(260L).coerceAtMost(1000L).toInt()
+                    val historyLimit=(slowestDuration/duration+400L).coerceAtLeast(400L).coerceAtMost(1000L).toInt()
                     ExchangeMarketData.candles(exchange,symbol,tf,marketAsOfMs,historyLimit)
                 }
                 // Analyze the latest closed candle of EACH timeframe independently.
