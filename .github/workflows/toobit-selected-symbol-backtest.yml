@@ -1,9 +1,6 @@
 name: AURUM X Selected-Symbol Backtest From 2026-11-09 01:00 UTC
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       start_datetime:
@@ -43,9 +40,9 @@ jobs:
           python -m unittest discover -v
       - name: Run selected-symbol backtest from requested UTC datetime
         env:
-          START_DATETIME: ${{ inputs.start_datetime || '2026-11-09T01:00:00Z' }}
-          SYMBOLS: ${{ inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
-          TIMEFRAMES: ${{ inputs.timeframes || vars.SELECTED_TIMEFRAMES || '5m,15m,30m' }}
+          START_DATETIME: ${{ github.event.inputs.start_datetime || '2026-11-09T01:00:00Z' }}
+          SYMBOLS: ${{ github.event.inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
+          TIMEFRAMES: ${{ github.event.inputs.timeframes || vars.SELECTED_TIMEFRAMES || '5m,15m,30m' }}
         run: |
           python run_toobit_multi_backtest.py --days 0 --start-datetime "$START_DATETIME" --symbols "$SYMBOLS" --timeframes "$TIMEFRAMES" --slippage-bps 1.0 --output toobit_selected_from_2026-11-09_0100_utc.json
       - uses: actions/upload-artifact@v4
