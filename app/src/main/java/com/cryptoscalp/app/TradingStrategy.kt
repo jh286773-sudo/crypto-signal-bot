@@ -326,16 +326,18 @@ object TradingStrategy {
         }
         if(selected.isEmpty()) return StrategyResult("WAIT",0.0,listOf("هیچ تایم‌فریمی انتخاب نشده؛ سیگنالی صادر نمی‌شود"))
         val durations = selected.associateWith(TimeframeSelection::durationMs)
-        fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
-            if(rows.size<MIN_CANDLES||rows.any{it.time<=0L||it.time%duration!=0L})return false
-            for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
+        fun validSeries(rows:List<MarketCandle>):Boolean {
+            // Validate ordering only. Gaps and different timeframe boundaries are
+            // allowed: each timeframe is evaluated from its own latest closed candle.
+            if(rows.size<MIN_CANDLES||rows.any{it.time<=0L})return false
+            for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time)return false
             return true
         }
         val missing = selected.filter { timeframes[it].isNullOrEmpty() }
         if(missing.isNotEmpty()) return StrategyResult("WAIT",0.0,
             listOf("داده تایم‌فریم انتخاب‌شده موجود نیست: "+missing.joinToString("، ")))
         val raw = selected.associateWith { timeframes[it].orEmpty() }
-        val invalidSeries=selected.filter { !validSeries(raw.getValue(it),durations.getValue(it)) }
+        val invalidSeries=selected.filter { !validSeries(raw.getValue(it)) }
         if(invalidSeries.isNotEmpty()) {
             return StrategyResult("WAIT",raw[selected.first()]?.lastOrNull()?.close?:0.0,
                 listOf("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص/ناپیوسته است؛ سیگنالی صادر نمی‌شود")+
@@ -363,9 +365,12 @@ object TradingStrategy {
         val volatileTimeframes=reports.filterValues{it.highVolatility}.keys
         if(volatileTimeframes.isNotEmpty())return StrategyResult("WAIT",price,
             listOf("نوسان غیرعادی بازار؛ ورود تا آرام‌شدن نوسان متوقف شد: "+volatileTimeframes.joinToString("، ")))
-        val allBullish=reports.values.all{it.bias=="bullish"}
-        val allBearish=reports.values.all{it.bias=="bearish"}
-        val direction=when { allBullish->"LONG"; allBearish->"SHORT"; else->"WAIT" }
+        val direction = TimeframeSignalAggregator.combine(
+            selected,
+            reports.mapValues { (_, report) ->
+                when (report.bias) { "bullish" -> "LONG"; "bearish" -> "SHORT"; else -> "WAIT" }
+            }
+        )
         val diagnostics=reports.map { (tf,report) -> timeframeDiagnostic(tf,report) }
         if(direction=="WAIT") return StrategyResult("WAIT",price,
             listOf("شرط‌های جهت‌دار در همه تایم‌فریم‌های انتخاب‌شده تأیید نشد؛ EMA و DMI باید هم‌جهت باشند و RSI یا MACD یکی از آن‌ها را تأیید کند.",
