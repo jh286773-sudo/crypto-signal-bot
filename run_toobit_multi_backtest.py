@@ -69,11 +69,11 @@ def main():
         raise SystemExit("Selected symbols are not active Toobit USDT perpetuals: " + ", ".join(invalid))
     available_starts = ({
         symbol: {tf: api.get_first_available_candle_open(symbol, tf, end_ms)
-                 for tf in ("5m", "15m", "30m")}
+                 for tf in selected_timeframes}
         for symbol in selected_symbols
     } if not (args.start_date or args.start_datetime) else {})
     starts_by_symbol = {
-        symbol: ({tf: requested_start_ms for tf in ("5m", "15m", "30m")}
+        symbol: ({tf: requested_start_ms for tf in selected_timeframes}
                  if (args.start_date or args.start_datetime) else
                  {tf: max(requested_start_ms, start) for tf, start in available_starts[symbol].items()})
         for symbol in selected_symbols
@@ -167,7 +167,9 @@ def main():
             },
         },
         "methodology": {
-            "strategy": "same 5m/15m/30m closed-candle strategy on every eligible contract",
+            "strategy": "independent selected-timeframe closed-candle strategy; all selected intervals must agree",
+            "selected_timeframes": list(selected_timeframes),
+            "execution_timeframe": execution_tf,
             "symbol_selection": "only user-selected active Toobit USDT-margined linear perpetual contracts",
             "earliest_available_candle_by_symbol_and_timeframe_utc": {
                 symbol: {tf: datetime.fromtimestamp(value / 1000, timezone.utc).isoformat()
