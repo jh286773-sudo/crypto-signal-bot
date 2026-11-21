@@ -151,12 +151,12 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             "equity_after": equity,
         })
 
-    i = 59
-    while i + 1 < len(five):
-        decision_open, decision_candle = five[i]
-        decision_time = decision_open + DURATION_MS["5m"]
-        histories = {tf: _closed_history(indexed[tf], tf, decision_time) for tf in REQUIRED_TFS}
-        if not histories["5m"] or _timestamp(histories["5m"][-1]) != decision_open:
+    i = 199
+    while i + 1 < len(base):
+        decision_open, decision_candle = base[i]
+        decision_time = decision_open + DURATION_MS[base_tf]
+        histories = {tf: _closed_history(indexed[tf], tf, decision_time) for tf in selected_tfs}
+        if not histories[base_tf] or _timestamp(histories[base_tf][-1]) != decision_open:
             i += 1
             continue
         if min(len(histories[tf]) for tf in selected_tfs) < 200:
