@@ -412,51 +412,55 @@ class ToobitAPI:
         return oldest
 
     def get_historical_range(self, symbol, start_ms, end_ms, include_funding=True, allow_leading_gap=False):
-        """Fetch timestamped 5m/15m/30m histories and attach actual funding events."""
-        start_by_tf = (start_ms if isinstance(start_ms, dict)
-                       else {tf: int(start_ms) for tf in ("5m", "15m", "30m")})
+        """Fetch only selected timestamped histories and attach actual funding to the execution interval."""
+        if isinstance(start_ms, dict):
+            selected_timeframes = tuple(start_ms.keys())
+            start_by_tf = start_ms
+        else:
+            selected_timeframes = self.DEFAULT_TIMEFRAMES
+            start_by_tf = {tf: int(start_ms) for tf in selected_timeframes}
+        if not selected_timeframes or any(tf not in self.INTERVALS for tf in selected_timeframes):
+            raise ValueError("Invalid or empty selected timeframe range")
+        execution_tf = min(selected_timeframes, key=lambda tf: self.INTERVALS[tf])
         range_options = {"allow_leading_gap": True} if allow_leading_gap else {}
         data = {
             tf: self.get_klines_range(symbol, tf, int(start_by_tf[tf]), end_ms, **range_options)
-            for tf in ("5m", "15m", "30m")
+            for tf in selected_timeframes
         }
         for tf, rows in data.items():
-            if len(rows) < 60:
+            if len(rows) < 200:
                 raise RuntimeError(f"Insufficient real {tf} candles returned by Toobit: {len(rows)}")
         if include_funding:
-            five = data["5m"]
-            # Ignore settlements before the first real 5m candle when an unavailable leading prefix was explicitly accepted.
-            funding_start = int(five[0]["timestamp"]) if five else int(start_by_tf["5m"])
+            execution_rows = data[execution_tf]
+            funding_start = int(execution_rows[0]["timestamp"]) if execution_rows else int(start_by_tf[execution_tf])
             events = self.get_historical_funding_rates(symbol)
             if len(events) >= 1000 and events[0]["settle_time"] > funding_start:
                 raise RuntimeError("Toobit funding history reached the 1000-event page cap; shorten the backtest window to avoid missing funding settlements")
-            bars_by_open = {row["timestamp"]: row for row in five}
+            duration = self.INTERVALS[execution_tf]
+            bars_by_open = {row["timestamp"]: row for row in execution_rows}
             for event in events:
                 settle = event["settle_time"]
                 if settle <= funding_start or settle > end_ms:
                     continue
-                candle_open = ((settle - 1) // self.INTERVALS["5m"]) * self.INTERVALS["5m"]
+                candle_open = ((settle - 1) // duration) * duration
                 bar = bars_by_open.get(candle_open)
                 if bar is None:
-                    # A paged public kline response can occasionally omit one row.
-                    # Retry the exact settlement candle before failing the backtest;
-                    # never silently discard a real funding event.
                     for _ in range(3):
                         retry_rows = self.get_klines_range(
-                            symbol, "5m", candle_open, candle_open + self.INTERVALS["5m"]
+                            symbol, execution_tf, candle_open, candle_open + duration
                         )
                         bar = next((row for row in retry_rows
                                     if int(row["timestamp"]) == candle_open), None)
                         if bar is not None:
                             bars_by_open[candle_open] = bar
-                            five.append(bar)
-                            five.sort(key=lambda row: row["timestamp"])
+                            execution_rows.append(bar)
+                            execution_rows.sort(key=lambda row: row["timestamp"])
                             break
                         time.sleep(0.15)
                 if bar is None:
-                    raise RuntimeError(f"Missing 5m candle covering Toobit funding settlement at {settle}")
-                if not bar["timestamp"] < settle <= bar["timestamp"] + self.INTERVALS["5m"]:
-                    raise RuntimeError(f"Funding settlement timestamp does not align with a 5m candle: {settle}")
+                    raise RuntimeError(f"Missing {execution_tf} candle covering Toobit funding settlement at {settle}")
+                if not bar["timestamp"] < settle <= bar["timestamp"] + duration:
+                    raise RuntimeError(f"Funding settlement timestamp does not align with {execution_tf} candle: {settle}")
                 bar["funding_rate"] = event["funding_rate"]
                 bar["funding_settle_time"] = settle
         return data
