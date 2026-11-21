@@ -1,0 +1,120 @@
+name: AURUM X Toobit Historical Data Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/toobit-diagnostic.yml"
+  workflow_dispatch:
+    inputs:
+      start_datetime:
+        description: Inclusive UTC start datetime (must include timezone)
+        required: true
+        default: "2026-11-09T00:00:00Z"
+        type: string
+      symbols:
+        description: Comma-separated Toobit USDT perpetual symbols
+        required: true
+        default: "BTC-SWAP-USDT"
+        type: string
+      timeframes:
+        description: Selected intervals
+        required: true
+        default: "5m,15m,30m"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-toobit-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Verify selected contracts and contiguous real history
+        env:
+          START_DATETIME: ${{ inputs.start_datetime || '2026-11-09T00:00:00Z' }}
+          SYMBOLS: ${{ inputs.symbols || 'BTC-SWAP-USDT' }}
+          TIMEFRAMES: ${{ inputs.timeframes || '5m,15m,30m' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from toobit_api import ToobitAPI
+
+          api = ToobitAPI()
+          raw_start = os.environ["START_DATETIME"].replace("Z", "+00:00")
+          parsed = datetime.fromisoformat(raw_start)
+          if parsed.tzinfo is None:
+              raise ValueError("START_DATETIME must include a timezone")
+          requested_start = int(parsed.astimezone(timezone.utc).timestamp() * 1000)
+          symbols = list(dict.fromkeys(x.strip().upper() for x in os.environ["SYMBOLS"].split(",") if x.strip()))
+          timeframes = tuple(dict.fromkeys(x.strip().lower() for x in os.environ["TIMEFRAMES"].split(",") if x.strip()))
+          if not symbols or not timeframes or any(tf not in api.INTERVALS for tf in timeframes):
+              raise ValueError("Invalid symbols or timeframes")
+
+          active = set(api.get_futures_symbols(limit=10000))
+          server_now = int(api.server_time()["serverTime"])
+          report = {
+              "checked_at_utc": datetime.fromtimestamp(server_now / 1000, timezone.utc).isoformat(),
+              "requested_start_utc": parsed.astimezone(timezone.utc).isoformat(),
+              "symbols": symbols,
+              "timeframes": list(timeframes),
+              "results": [],
+              "all_checks_passed": True,
+          }
+          for symbol in symbols:
+              if symbol not in active:
+                  report["all_checks_passed"] = False
+                  report["results"].append({"symbol": symbol, "error": "Not an active Toobit USDT perpetual"})
+                  continue
+              for tf in timeframes:
+                  step = api.INTERVALS[tf]
+                  start = ((requested_start + step - 1) // step) * step
+                  end = (server_now // step) * step
+                  try:
+                      rows = api.get_klines_range(symbol, tf, start, end)
+                      expected = (end - start) // step
+                      actual_start = int(rows[0]["timestamp"])
+                      actual_end = int(rows[-1]["timestamp"])
+                      item = {
+                          "symbol": symbol, "timeframe": tf,
+                          "requested_start_utc": datetime.fromtimestamp(start / 1000, timezone.utc).isoformat(),
+                          "actual_start_utc": datetime.fromtimestamp(actual_start / 1000, timezone.utc).isoformat(),
+                          "actual_end_utc": datetime.fromtimestamp(actual_end / 1000, timezone.utc).isoformat(),
+                          "candles_received": len(rows), "candles_expected": expected,
+                          "complete_from_requested_start": actual_start == start and len(rows) == expected,
+                          "contiguous_real_candles": True,
+                      }
+                      if not item["complete_from_requested_start"]:
+                          report["all_checks_passed"] = False
+                      report["results"].append(item)
+                      print(json.dumps(item, ensure_ascii=False), flush=True)
+                  except Exception as exc:
+                      report["all_checks_passed"] = False
+                      item = {"symbol": symbol, "timeframe": tf, "error": str(exc)}
+                      report["results"].append(item)
+                      print(json.dumps(item, ensure_ascii=False), flush=True)
+
+          with open("toobit_history_diagnostic.json", "w", encoding="utf-8") as handle:
+              json.dump(report, handle, ensure_ascii=False, indent=2)
+          if not report["all_checks_passed"]:
+              raise SystemExit("Toobit history diagnostic failed; inspect the uploaded JSON report and page logs.")
+          PY
+      - name: Upload diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurum-x-toobit-history-diagnostic
+          path: toobit_history_diagnostic.json
+          if-no-files-found: warn
+          retention-days: 30
