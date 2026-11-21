@@ -319,11 +319,13 @@ object TradingStrategy {
 
     /** Each selected timeframe is analyzed independently; multi-timeframe signals require unanimity. */
     fun evaluate(timeframes:Map<String,List<MarketCandle>>,asOfMs:Long=System.currentTimeMillis()):StrategyResult {
-        val supported = listOf("1m","3m","5m","15m","30m","1h","4h")
-        val selected = supported.filter { timeframes.containsKey(it) }
+        val selected = try {
+            TimeframeSelection.normalize(timeframes.keys)
+        } catch (e: IllegalArgumentException) {
+            return StrategyResult("WAIT", 0.0, listOf(e.message ?: "انتخاب تایم‌فریم معتبر نیست"))
+        }
         if(selected.isEmpty()) return StrategyResult("WAIT",0.0,listOf("هیچ تایم‌فریمی انتخاب نشده؛ سیگنالی صادر نمی‌شود"))
-        val durations = mapOf("1m" to 60_000L,"3m" to 180_000L,"5m" to 300_000L,
-            "15m" to 900_000L,"30m" to 1_800_000L,"1h" to 3_600_000L,"4h" to 14_400_000L)
+        val durations = selected.associateWith(TimeframeSelection::durationMs)
         fun validSeries(rows:List<MarketCandle>,duration:Long):Boolean {
             if(rows.size<MIN_CANDLES||rows.any{it.time<=0L||it.time%duration!=0L})return false
             for(i in 1 until rows.size)if(rows[i].time<=rows[i-1].time||rows[i].time-rows[i-1].time!=duration)return false
