@@ -14,7 +14,7 @@ def bars(tf, n=800):
 def signal(side):
     # Deliberately no stop_loss or take_profits: those are not required by the
     # user's hold-until-SHORT strategy. ATR is used only for risk sizing.
-    return {"signal": side, "timeframes": {"5m": {"indicators": {"atr": 1.0}}}}
+    return {"signal": side, "timeframes": {tf: {"indicators": {"atr": 1.0}} for tf in DURATION_MS}}
 
 
 class WalkForwardTests(unittest.TestCase):
@@ -127,6 +127,23 @@ class WalkForwardTests(unittest.TestCase):
                                       slippage_bps_per_side=0)
         self.assertEqual(result["trade_count"], 1)
         self.assertEqual(result["trades"][0]["exit_reason"], "end_of_data")
+
+
+    def test_single_selected_timeframe_runs_without_fetching_or_requiring_others(self):
+        data = {"3m": bars("3m", 800)}
+        def fake(hist, **kwargs):
+            self.assertEqual(tuple(kwargs["selected_timeframes"]), ("3m",))
+            self.assertEqual(set(hist), {"3m"})
+            index = hist["3m"][-1]["timestamp"] // DURATION_MS["3m"]
+            return signal("LONG") if index == 259 else {"signal": "NO_SIGNAL"}
+        with patch("walk_forward.analyze_market", side_effect=fake):
+            result = run_walk_forward(
+                data, fee_bps_per_side=0, slippage_bps_per_side=0,
+                selected_timeframes=("3m",)
+            )
+        self.assertEqual(result["selected_timeframes"], ["3m"])
+        self.assertEqual(result["execution_timeframe"], "3m")
+        self.assertEqual(result["trade_count"], 1)
 
 
 if __name__ == "__main__":
