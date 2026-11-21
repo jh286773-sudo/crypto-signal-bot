@@ -60,9 +60,12 @@ class TradingStrategyParityTest {
             assertFalse("Unexpected missing/invalid data for $tf: ${result.reasons}",
                 result.reasons.any{it.contains("داده تایم‌فریم انتخاب‌شده موجود نیست") ||
                     it.contains("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص")})
-            assertTrue("Analysis diagnostics must refer only to $tf: ${result.reasons}",
-                result.reasons.all { reason ->
-                    !durations.keys.any { other -> other != tf && reason.contains(other) }
+            assertTrue("Analysis diagnostics must include $tf: ${result.reasons}",
+                result.reasons.any { it.startsWith("$tf:") || it.startsWith("$tf SMC:") })
+            assertFalse("Unselected timeframe diagnostics must be absent for $tf: ${result.reasons}",
+                result.reasons.any { reason ->
+                    durations.keys.any { other -> other != tf &&
+                        (reason.startsWith("$other:") || reason.startsWith("$other SMC:")) }
                 })
         }
     }
