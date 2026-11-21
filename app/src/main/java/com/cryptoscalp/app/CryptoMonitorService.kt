@@ -64,7 +64,7 @@ class CryptoMonitorService : Service() {
             var failed=0
             var analyzed=0
             var firstError=""
-            var lastDiagnostic=""
+            val diagnosticRows=mutableListOf<String>()
             val now=System.currentTimeMillis()
             for(symbol in list)try{
                 // Keep a tracked position open until an opposite confirmed signal arrives.
@@ -75,11 +75,10 @@ class CryptoMonitorService : Service() {
                 val savedTimeframes=prefs.getStringSet("selected_timeframes",setOf("5m","15m","30m")).orEmpty()
                 val selectedTimeframes=ExchangeMarketData.supportedTimeframes.filter { it in savedTimeframes }
                 if(selectedTimeframes.isEmpty()) throw IllegalStateException("هیچ تایم‌فریمی انتخاب نشده است.")
-                val slowestDuration=selectedTimeframes.maxOf { ExchangeMarketData.durationMs(it) }
+                // Every selected timeframe gets the same independent closed-candle history.
+                // Do not derive one timeframe's history request from another timeframe's duration.
                 val candleMap=selectedTimeframes.associateWith { tf ->
-                    val duration=ExchangeMarketData.durationMs(tf)
-                    val historyLimit=(slowestDuration/duration+400L).coerceAtLeast(400L).coerceAtMost(1000L).toInt()
-                    ExchangeMarketData.candles(exchange,symbol,tf,marketAsOfMs,historyLimit)
+                    ExchangeMarketData.candles(exchange,symbol,tf,marketAsOfMs,500)
                 }
                 // Analyze the latest closed candle of EACH timeframe independently.
                 // A new scan is driven by indicator agreement, not by a shared candle close.
@@ -89,7 +88,7 @@ class CryptoMonitorService : Service() {
                 val r=TradingStrategy.evaluate(candleMap,marketAsOfMs)
                 recordSuccessfulAnalysis()
                 analyzed++
-                lastDiagnostic=symbol+" • تحلیل مستقل اندیکاتورها • تایم‌فریم‌ها: "+selectedTimeframes.joinToString("، ")+" • "+r.reasons.joinToString(" ؛ ")
+                diagnosticRows.add(symbol+" • "+r.signal+" • "+r.reasons.joinToString(" ؛ "))
                 closeShadowOnReversal(symbol,r.signal,r.entry)
                 if(r.signal=="LONG" && prefs.getString("shadow_setup_$symbol",null)==null) saveShadow(symbol,r,latestAnalyzedDataTime)
                 val open=prefs.getString("open_setup_$symbol",null)
@@ -114,13 +113,16 @@ class CryptoMonitorService : Service() {
                 failed++
                 val errorText="$symbol: ${e.message ?: e.javaClass.simpleName}"
                 if(firstError.isBlank()) firstError=errorText
-                lastDiagnostic="خطای دریافت/تحلیل $errorText"
+                diagnosticRows.add("خطای دریافت/تحلیل $errorText")
             }
             scanning=false
             handler.post{
                 val totalAnalyses=prefs.getInt("analysis_count_total",0)
                 val statusLine="توبیت • مجموع تحلیل‌های موفق: $totalAnalyses • فاصله پایش: ۶۰ ثانیه"
-                if(lastDiagnostic.isNotBlank()) prefs.edit().putString("latest_signal_diagnostic",lastDiagnostic).apply()
+                if(diagnosticRows.isNotEmpty()) {
+                    val diagnosticText=diagnosticRows.takeLast(5).joinToString("\n")
+                    prefs.edit().putString("latest_signal_diagnostic",diagnosticText).apply()
+                }
                 // Keep errors and per-symbol diagnostics internal; never show them in the phone notification.
                 updateStatus(statusLine)
             }
