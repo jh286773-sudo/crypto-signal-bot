@@ -368,10 +368,21 @@ object TradingStrategy {
         if(direction=="WAIT") return StrategyResult("WAIT",price,
             listOf("شرط‌های جهت‌دار در همه تایم‌فریم‌های انتخاب‌شده تأیید نشد؛ EMA و DMI باید هم‌جهت باشند و RSI یا MACD یکی از آن‌ها را تأیید کند.",
                 "اندیکاتورهای پشتیبان فقط برای اطلاع نمایش داده می‌شوند و به‌تنهایی سیگنال را مسدود نمی‌کنند.")+diagnostics)
+        // SMC is a separate structural confirmation for EVERY selected timeframe.
+        // It is never converted into a score or allowed to override indicator direction.
+        val smcRejected=reports.filter { (_,report) -> !smcConfirms(report.structure,direction) }.keys
+        if(smcRejected.isNotEmpty()) return StrategyResult("WAIT",price,
+            listOf("تأیید ساختار بازار (SMC) برای جهت $direction در این تایم‌فریم‌ها کامل نیست؛ سیگنالی صادر نمی‌شود: "+
+                smcRejected.joinToString("، "))+
+                reports.map { (tf,report) ->
+                    "$tf SMC: ساختار ${report.structure.event}، نقدینگی ${report.structure.sweep}، اردربلاک ${report.structure.orderBlockType}"+
+                        if(report.structure.falseBreakout) "، شکست نامعتبر" else ""
+                })
         val reasons=(mutableListOf("تحلیل تکنیکال مستقل اندیکاتورها در تایم‌فریم‌های انتخاب‌شده: "+selected.joinToString("، "),
             "قانون ورود بدون وزن‌دهی: EMA و DMI هم‌جهت، به‌علاوه تأیید RSI یا MACD.")+diagnostics).toMutableList()
         if(selected.size==1) reasons.add("سیگنال مستقل تایم‌فریم ${selected.first()}")
         else reasons.add("اجماع کامل "+selected.size+" تایم‌فریم انتخاب‌شده")
+        reasons.add("تأیید مستقل SMC در تمام تایم‌فریم‌های انتخاب‌شده")
         reasons.add(if(direction=="LONG")"تمام تایم‌فریم‌ها LONG؛ سیگنال لانگ" else "تمام تایم‌فریم‌ها SHORT؛ سیگنال شورت")
         return StrategyResult(direction,price,reasons)
     }
