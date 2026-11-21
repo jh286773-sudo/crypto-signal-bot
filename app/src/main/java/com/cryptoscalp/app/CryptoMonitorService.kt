@@ -179,8 +179,9 @@ class CryptoMonitorService : Service() {
         val line=SignalNotificationFormatter.format(r.entry,r.signal)
         val b=notificationBuilder(alertChannel)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(symbol)
-            .setContentText(line)
+            // Keep the visible alert itself exactly in the user's approved format.
+            .setContentTitle(line)
+            .setContentText("")
             .setStyle(Notification.BigTextStyle().bigText(line))
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(symbol.hashCode(),b.build())
     }
