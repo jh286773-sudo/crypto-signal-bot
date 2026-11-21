@@ -622,7 +622,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
     return {"signal":side,"status":side,"timeframes":reports,"entry":reports[entry_tf]["close"],
             "entry_timeframe":entry_tf,"entry_stage":"ENTRY","diagnostics":diagnostics,
             "reason":(("Independent indicator analysis and SMC confirm "+side+" on "+entry_tf) if len(selected_tfs)==1
-                     else ("All selected timeframes independently confirm "+side+" with SMC"),
+                     else ("All selected timeframes independently confirm "+side+" with SMC")),
             "trade_enabled":False,"note":"Read-only technical analysis; no exchange orders are placed."}
 
 def generate_signal(timeframes, mode="auto", selected_timeframes=None):
