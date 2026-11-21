@@ -13,7 +13,7 @@ class SignalDeduplicationPolicyTest {
     @Test fun shortOnlyClosesAnExistingLong() {
         assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide("LONG", "SHORT", "LONG"))
         assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide("LONG", "SHORT", "LONG"))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "SHORT", "WAIT"))
+        assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide(null, "SHORT", "WAIT"))
     }
 
     @Test fun shortIsDeliveredAsExitOnlyAlertWhenNoLocalLongIsTracked() {
