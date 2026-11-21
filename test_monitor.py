@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import Mock, patch
 
 import monitor
 
@@ -16,20 +15,9 @@ class MonitorNotificationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             monitor.format_signal_alert(float("nan"), "LONG")
 
-    @patch("monitor.NTFY_TOPIC", "")
-    def test_missing_topic_reports_notification_not_sent(self):
-        self.assertFalse(monitor.notify("title", "message"))
-
-    @patch("monitor.NTFY_TOPIC", "aurum-test-topic")
-    @patch("monitor.requests.post")
-    def test_successful_delivery_reports_notification_sent(self, post):
-        response = Mock()
-        response.raise_for_status.return_value = None
-        post.return_value = response
-
-        self.assertTrue(monitor.notify("title", "message", "high"))
-        post.assert_called_once()
-        response.raise_for_status.assert_called_once()
+    def test_python_monitor_has_no_external_push_delivery_path(self):
+        self.assertFalse(hasattr(monitor, "notify"))
+        self.assertFalse(hasattr(monitor, "NTFY_TOPIC"))
 
 
 if __name__ == "__main__":
