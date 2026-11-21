@@ -16,6 +16,7 @@ from walk_forward import DURATION_MS
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--symbol", default="BTC-SWAP-USDT")
+    parser.add_argument("--timeframes", default=os.getenv("SELECTED_TIMEFRAMES", "5m,15m,30m"), help="Selected intervals: 1m,3m,5m,15m,30m,1h,4h")
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--slippage-bps", type=float, required=True,
                          help="Adverse slippage assumption per fill, in basis points")
@@ -35,9 +36,16 @@ def main():
     if args.slippage_bps < 0:
         raise SystemExit("--slippage-bps cannot be negative")
     api = ToobitAPI()
+    selected_timeframes = tuple(dict.fromkeys(x.strip().lower() for x in args.timeframes.split(",") if x.strip()))
+    if not selected_timeframes or any(tf not in DURATION_MS for tf in selected_timeframes):
+        raise SystemExit("Invalid --timeframes; supported: " + ", ".join(DURATION_MS))
+    execution_tf = min(selected_timeframes, key=lambda tf: DURATION_MS[tf])
+    execution_step = DURATION_MS[execution_tf]
     server_ms = int(api.server_time()["serverTime"])
-    end_ms = int(os.environ["END_MS"]) if os.environ.get("END_MS") else (server_ms // DURATION_MS["5m"]) * DURATION_MS["5m"]
-    start_ms = ((end_ms - args.days * 86_400_000) // DURATION_MS["30m"]) * DURATION_MS["30m"]
+    end_ms = int(os.environ["END_MS"]) if os.environ.get("END_MS") else (server_ms // execution_step) * execution_step
+    start_ms = ((end_ms - args.days * 86_400_000) // execution_step) * execution_step
+    starts_by_tf = {tf: ((start_ms + DURATION_MS[tf] - 1) // DURATION_MS[tf]) * DURATION_MS[tf]
+                    for tf in selected_timeframes}
 
     # Account-specific open/close taker rates, returned as decimals by Toobit.
     if args.public_vip0_fees:
@@ -48,7 +56,7 @@ def main():
         commission = api.get_account_commission_rate(args.symbol)
         fee_open_bps = commission["openTakerFee"] * 10000
         fee_close_bps = commission["closeTakerFee"] * 10000
-    data = api.get_historical_range(args.symbol, start_ms, end_ms, include_funding=True)
+    data = api.get_historical_range(args.symbol, starts_by_tf, end_ms, include_funding=True)
 
     result = run_backtest(
         data,
@@ -57,13 +65,17 @@ def main():
         slippage_bps=args.slippage_bps,
         initial_equity=args.equity,
         risk_fraction=args.risk,
+        selected_timeframes=selected_timeframes,
     )
     result["data_source"] = "Toobit public historical OHLCV and funding settlements"
     result["symbol"] = args.symbol
     result["period_utc"] = {
-        "start": datetime.fromtimestamp(start_ms / 1000, timezone.utc).isoformat(),
+        "requested_start": datetime.fromtimestamp(start_ms / 1000, timezone.utc).isoformat(),
+        "actual_start_by_timeframe": {tf: datetime.fromtimestamp(rows[0]["timestamp"] / 1000, timezone.utc).isoformat() for tf, rows in data.items() if rows},
         "end": datetime.fromtimestamp(end_ms / 1000, timezone.utc).isoformat(),
     }
+    result["selected_timeframes"] = list(selected_timeframes)
+    result["execution_timeframe"] = execution_tf
     result["commission_source"] = ("published Toobit VIP-0 futures taker schedule" if args.public_vip0_fees
                                    else "Toobit authenticated USER_DATA commissionRate")
     result["commission_rates"] = commission
