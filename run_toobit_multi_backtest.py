@@ -80,11 +80,15 @@ def main():
     }
     candidates = selected_symbols
     results, failures = [], []
+effective_starts = {}
 
     # All symbols use the same UTC window, fee schedule, slippage and risk model.
     for symbol in candidates:
         try:
-            market = api.get_historical_range(symbol, starts_by_symbol[symbol], end_ms, include_funding=True)
+            market = api.get_historical_range(symbol, starts_by_symbol[symbol], end_ms, include_funding=True, allow_leading_gap=True)
+            effective_starts[symbol] = {
+                tf: int(rows[0]["timestamp"]) for tf, rows in market.items() if rows
+            }
             commission = {
                 "source": "published Toobit VIP-0 futures taker fee",
                 "openTakerFee": 0.0006,
@@ -144,9 +148,18 @@ def main():
         "period_utc": {
             "end": datetime.fromtimestamp(end_ms / 1000, timezone.utc).isoformat(),
             "days_requested_max": args.days or "all_available",
-            "window_basis": ("fixed inclusive UTC start datetime" if args.start_datetime else ("fixed inclusive UTC start date" if args.start_date else "each timeframe begins at its own earliest available closed candle, optionally capped by lookback")),
+            "window_basis": ("requested inclusive UTC start; any unavailable leading prefix is disclosed and the effective start is the first real retrievable candle" if (args.start_datetime or args.start_date) else "each timeframe begins at its earliest retrievable real closed candle, optionally capped by lookback"),
             "requested_start_date_utc": args.start_date or None,
             "requested_start_datetime_utc": parsed_start.isoformat() if args.start_datetime else (datetime.fromtimestamp(requested_start_ms / 1000, timezone.utc).isoformat() if args.start_date else None),
+            "actual_start_by_symbol_and_timeframe_utc": {
+                symbol: {tf: datetime.fromtimestamp(start / 1000, timezone.utc).isoformat()
+                         for tf, start in starts.items()}
+                for symbol, starts in effective_starts.items()
+            },
+            "requested_start_coverage_complete": (all(
+                start == requested_start_ms
+                for starts in effective_starts.values() for start in starts.values()
+            ) if (args.start_date or args.start_datetime) and effective_starts else None),
             "timeframe_start_by_symbol_utc": {
                 symbol: {tf: datetime.fromtimestamp(start / 1000, timezone.utc).isoformat()
                          for tf, start in starts.items()}
@@ -171,10 +184,17 @@ def main():
             "risk_per_trade": args.risk,
             "starting_equity_per_symbol": args.equity_per_symbol,
             "funding": "historical Toobit settlement events",
-            "same_utc_window_for_all_symbols": True,
+            "same_requested_utc_start_for_all_symbols": True,
+            "effective_start_may_differ_by_symbol_and_timeframe": True,
             "production_symbol_universe_changed": False,
             "full_candidate_scan_completed": len(results) + len(failures) == len(candidates),
             "selected_symbol_data_complete": len(results) == len(candidates) and not failures,
+            "selected_symbol_data_contiguous_from_actual_start": len(results) == len(candidates) and not failures,
+            "requested_start_coverage_complete": (all(
+                start == requested_start_ms
+                for starts in effective_starts.values() for start in starts.values()
+            ) if (args.start_date or args.start_datetime) and effective_starts else None),
+            "leading_history_policy": "Only an unavailable leading prefix may be excluded when explicitly enabled; no synthetic candles are created and all candles after the effective start must be contiguous.",
             "failed_contract_count": len(failures),
         },
         "pooled_summary": pooled,

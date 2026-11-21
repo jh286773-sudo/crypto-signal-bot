@@ -25,9 +25,32 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         later = [row(2), row(3)]
         # The bulk range omits the first two candles; exact-time retries recover
         # both real exchange candles rather than shifting the requested start.
-        with patch.object(api, "_get", side_effect=[later, [row(0)], [row(1)]]):
+        with patch.object(api, "_get", side_effect=[later, [row(0), row(1)]]):
             rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 4 * 300000)
         self.assertEqual([item["timestamp"] for item in rows], [0, 300000, 600000, 900000])
+
+    def test_kline_range_allows_only_an_unavailable_leading_prefix_when_requested(self):
+        api = ToobitAPI()
+        def row(i):
+            return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
+        # The first two requested candles are not retrievable from Toobit. The
+        # explicit backtest option starts at the first real candle and still
+        # requires every later candle to be present and contiguous.
+        with patch.object(api, "_get", side_effect=[[row(2), row(3)], []]):
+            rows = api.get_klines_range(
+                "BTC-SWAP-USDT", "5m", 0, 4 * 300000, allow_leading_gap=True
+            )
+        self.assertEqual([item["timestamp"] for item in rows], [600000, 900000])
+
+    def test_allowing_leading_prefix_does_not_allow_internal_gaps(self):
+        api = ToobitAPI()
+        def row(i):
+            return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
+        with patch.object(api, "_get", side_effect=[[row(2), row(4)], [], [], []]):
+            with self.assertRaisesRegex(RuntimeError, "omitted real 5m candle"):
+                api.get_klines_range(
+                    "BTC-SWAP-USDT", "5m", 0, 5 * 300000, allow_leading_gap=True
+                )
 
     def test_kline_range_continues_after_a_short_nonfinal_page(self):
         api = ToobitAPI()

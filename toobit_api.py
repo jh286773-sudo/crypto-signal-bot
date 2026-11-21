@@ -185,7 +185,7 @@ class ToobitAPI:
             aligned[tf] = closed if closed and int(closed[-1]["open_time"]) == expected_open else []
         return aligned
 
-    def get_klines_range(self, symbol, interval, start_ms, end_ms, limit=1000):
+    def get_klines_range(self, symbol, interval, start_ms, end_ms, limit=1000, allow_leading_gap=False):
         """Download a complete contiguous kline range by paging forward from its start."""
         if interval not in self.INTERVALS:
             raise ValueError("Invalid interval")
@@ -255,48 +255,46 @@ class ToobitAPI:
             cursor_start = next_cursor_start
             time.sleep(0.05)
 
-        # Some Toobit range responses omit a leading prefix even though the
-        # requested interval is within the contract's available history. Recover
-        # every missing leading candle with bounded exact-time queries. Never
-        # move the requested start forward or fabricate OHLCV data.
+        # A single bounded query attempts to recover an omitted leading prefix.
+        # Some contracts genuinely have no retrievable candles at the requested
+        # boundary. Historical backtests may explicitly accept that shorter
+        # effective start, but never fabricate bars or tolerate gaps after it.
         if rows_by_time:
             first_received = min(rows_by_time)
-            leading_opens = list(range(expected_first, first_received, step))
-            for missing_open in leading_opens:
-                recovered = False
-                for attempt in range(3):
-                    boundary_page = self._get("/quote/v1/klines", {
-                        "symbol": symbol, "interval": interval,
-                        "startTime": max(0, missing_open - step),
-                        "endTime": missing_open + step, "limit": 10
-                    })
-                    match = next((row for row in boundary_page if len(row) >= 6
-                                  and int(row[0]) == missing_open), None) if isinstance(boundary_page, list) else None
-                    if match is not None:
-                        item = {
-                            "timestamp": missing_open, "open_time": missing_open,
-                            "open": float(match[1]), "high": float(match[2]),
-                            "low": float(match[3]), "close": float(match[4]),
-                            "volume": float(match[5])
-                        }
-                        if len(match) > 9:
-                            item["taker_buy_volume"] = float(match[9])
-                        rows_by_time[missing_open] = item
-                        recovered = True
-                        print(
-                            f"Toobit leading-prefix retry recovered {symbol} {interval} "
-                            f"candle {missing_open}",
-                            flush=True,
-                        )
-                        break
-                    if attempt < 2:
-                        time.sleep(0.15)
-                if not recovered:
-                    print(
-                        f"Toobit leading-prefix candle unavailable {symbol} {interval}: "
-                        f"{missing_open}",
-                        flush=True,
+            if first_received > expected_first:
+                prefix_page = self._get("/quote/v1/klines", {
+                    "symbol": symbol, "interval": interval,
+                    "startTime": max(0, expected_first - step),
+                    "endTime": first_received, "limit": page_size
+                })
+                if isinstance(prefix_page, list):
+                    for row in prefix_page:
+                        if len(row) < 6:
+                            continue
+                        opened = int(row[0])
+                        if expected_first <= opened < first_received:
+                            item = {
+                                "timestamp": opened, "open_time": opened,
+                                "open": float(row[1]), "high": float(row[2]),
+                                "low": float(row[3]), "close": float(row[4]),
+                                "volume": float(row[5])
+                            }
+                            if len(row) > 9:
+                                item["taker_buy_volume"] = float(row[9])
+                            rows_by_time[opened] = item
+            effective_first = min(rows_by_time)
+            if effective_first > expected_first:
+                if not allow_leading_gap:
+                    raise RuntimeError(
+                        f"Toobit returned incomplete {interval} history: expected from "
+                        f"{expected_first}, earliest retrievable candle {effective_first}"
                     )
+                print(
+                    f"Toobit history boundary adjusted for {symbol} {interval}: "
+                    f"requested={expected_first}, first_retrievable={effective_first}; "
+                    "all subsequent candles must remain contiguous",
+                    flush=True,
+                )
 
         # Retry small internal gaps with exact exchange queries. Never synthesize bars.
         ordered_times = sorted(rows_by_time)
@@ -330,7 +328,7 @@ class ToobitAPI:
                 time.sleep(0.15)
 
         rows = [rows_by_time[key] for key in sorted(rows_by_time)]
-        if not rows or int(rows[0]["timestamp"]) != expected_first:
+        if not rows or (not allow_leading_gap and int(rows[0]["timestamp"]) != expected_first):
             raise RuntimeError(
                 f"Toobit returned incomplete {interval} history: expected from "
                 f"{expected_first}, earliest received {rows[0]['timestamp'] if rows else 'none'}"
@@ -413,12 +411,13 @@ class ToobitAPI:
             raise RuntimeError(f"Toobit exposes no closed {interval} candles for {symbol}")
         return oldest
 
-    def get_historical_range(self, symbol, start_ms, end_ms, include_funding=True):
+    def get_historical_range(self, symbol, start_ms, end_ms, include_funding=True, allow_leading_gap=False):
         """Fetch timestamped 5m/15m/30m histories and attach actual funding events."""
         start_by_tf = (start_ms if isinstance(start_ms, dict)
                        else {tf: int(start_ms) for tf in ("5m", "15m", "30m")})
+        range_options = {"allow_leading_gap": True} if allow_leading_gap else {}
         data = {
-            tf: self.get_klines_range(symbol, tf, int(start_by_tf[tf]), end_ms)
+            tf: self.get_klines_range(symbol, tf, int(start_by_tf[tf]), end_ms, **range_options)
             for tf in ("5m", "15m", "30m")
         }
         for tf, rows in data.items():
