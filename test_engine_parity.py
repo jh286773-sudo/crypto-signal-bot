@@ -22,7 +22,7 @@ class CrossEngineContractTests(unittest.TestCase):
         for obsolete in ("family_weights", "tfWeights", "familyWeights",
                          "combined_score", "timeframe_weights", "confidence_score"):
             self.assertNotIn(obsolete,py_signal)
-        for obsolete in ("tfWeights", "familyWeights", "combined", "score"):
+        for obsolete in ("tfWeights", "familyWeights", "combinedScore", "scoreThreshold"):
             self.assertNotIn(obsolete,kt_signal)
         self.assertIn("_smc_confirms(reports[tf].get(\"smc\", {}), side)",py_signal)
         self.assertIn('"smc_confirmation_required"',py_signal)
