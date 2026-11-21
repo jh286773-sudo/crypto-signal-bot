@@ -11,9 +11,9 @@ Create the key with read permission only. The runner calls only the signed read-
 
 Run:
 
-    python run_toobit_backtest.py --symbol BTC-SWAP-USDT --days 30 --slippage-bps 2.0
+    python run_toobit_multi_backtest.py --symbols BTC-SWAP-USDT --timeframes 3m,5m --days 30 --slippage-bps 2.0
 
-The slippage argument must be a measured adverse per-fill estimate supplied by the operator. The runner downloads paginated historical 5m/15m/30m OHLCV, fetches historical funding settlement rates, retrieves the account-specific opening and closing taker fees, and writes a JSON report.
+The slippage argument must be a measured adverse per-fill estimate supplied by the operator. The runner downloads paginated historical OHLCV only for the selected intervals (1m, 3m, 5m, 15m, 30m, 1h, 4h), fetches historical funding settlement rates and maps them to the fastest selected execution interval, retrieves the account-specific opening and closing taker fees, and writes a JSON report. Every selected interval must independently agree; unselected intervals are not fetched or analyzed. A single selected interval is valid.
 
 ## Fee source
 
@@ -72,3 +72,4 @@ contract-price `/quote/v1/klines` OHLCV stream, including the exchange's
 taker-buy base-volume field when supplied. The Android chart remains explicitly
 a mark-price chart and now displays the matching mark-price quote; the chart
 series is not silently reused as the strategy/backtest input.
+\n\n## Selecting analysis timeframes\n\nPass one or more comma-separated intervals using `--timeframes`. The fastest selected interval is used as the walk-forward execution clock; every selected interval is evaluated using only candles closed by each decision time. Example: `--timeframes 30m` runs a single-timeframe backtest, while `--timeframes 3m,5m,15m` requires all three directions to agree. Unselected intervals are neither downloaded nor used in decisions. The same selection can be supplied through `SELECTED_TIMEFRAMES` for the Python monitor and backtest runner.\n
