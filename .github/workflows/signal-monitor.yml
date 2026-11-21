@@ -45,4 +45,6 @@ jobs:
       - name: Scan liquid USDT perpetual contracts
         env:
           MAX_SYMBOLS: "40"
+          # Comma-separated user-selected intervals; unlisted intervals are not fetched or analyzed.
+          SELECTED_TIMEFRAMES: "5m,15m,30m"
         run: python monitor.py

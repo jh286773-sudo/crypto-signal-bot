@@ -15,6 +15,12 @@ class MonitorNotificationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             monitor.format_signal_alert(float("nan"), "LONG")
 
+    def test_python_monitor_uses_selected_timeframes_from_configuration(self):
+        from unittest.mock import patch
+        from toobit_api import ToobitAPI
+        with patch.dict("os.environ", {"SELECTED_TIMEFRAMES": "1m,4h"}):
+            self.assertEqual(ToobitAPI.configured_timeframes(), ("1m", "4h"))
+
     def test_python_monitor_has_no_external_push_delivery_path(self):
         self.assertFalse(hasattr(monitor, "notify"))
         self.assertFalse(hasattr(monitor, "NTFY_TOPIC"))

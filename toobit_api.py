@@ -156,34 +156,34 @@ class ToobitAPI:
         duration = cls.INTERVALS[interval]
         return [row for row in candles if int(row["open_time"]) + duration <= int(as_of_ms)]
 
+    @classmethod
+    def configured_timeframes(cls):
+        """Read an optional comma-separated timeframe selection for Python runners."""
+        raw = os.getenv("SELECTED_TIMEFRAMES", "").strip()
+        if not raw:
+            return cls.DEFAULT_TIMEFRAMES
+        selected = tuple(dict.fromkeys(part.strip().lower() for part in raw.split(",") if part.strip()))
+        if not selected or any(tf not in cls.INTERVALS for tf in selected):
+            raise ValueError(
+                "SELECTED_TIMEFRAMES must contain supported intervals: " +
+                ", ".join(cls.INTERVALS)
+            )
+        return selected
+
     def get_multi_timeframe(self, symbol, selected_timeframes=None):
-        """Fetch only selected intervals and freeze them at one common closed-candle boundary."""
-        selected = tuple(dict.fromkeys(self.DEFAULT_TIMEFRAMES if selected_timeframes is None else selected_timeframes))
+        """Fetch only selected intervals; each interval keeps its own latest closed candle."""
+        selected = tuple(dict.fromkeys(
+            self.DEFAULT_TIMEFRAMES if selected_timeframes is None else selected_timeframes
+        ))
         if not selected or any(tf not in self.INTERVALS for tf in selected):
             raise ValueError("Invalid or empty selected timeframe list")
+        # One exchange-clock snapshot prevents a network-time race, but candle
+        # closes remain independent: no slower timeframe truncates a faster one.
         server_now = int(self.server_time()["serverTime"])
-        slowest_duration = max(self.INTERVALS[tf] for tf in selected)
-        series = {
-            tf: self.get_klines(
-                symbol, tf,
-                min(1000, max(260, slowest_duration // self.INTERVALS[tf] + 220)),
-                as_of_ms=server_now
-            )
+        return {
+            tf: self.get_klines(symbol, tf, 260, as_of_ms=server_now)
             for tf in selected
         }
-        if any(not rows for rows in series.values()):
-            return {tf: [] for tf in selected}
-        # The slowest available close is the common decision boundary. No
-        # timeframe may contribute a candle that had not closed at that instant.
-        decision_time = min(int(rows[-1]["open_time"]) + self.INTERVALS[tf]
-                            for tf, rows in series.items())
-        aligned = {}
-        for tf, rows in series.items():
-            closed = self.closed_candles(rows, tf, decision_time)
-            duration = self.INTERVALS[tf]
-            expected_open = (decision_time // duration) * duration - duration
-            aligned[tf] = closed if closed and int(closed[-1]["open_time"]) == expected_open else []
-        return aligned
 
     def get_klines_range(self, symbol, interval, start_ms, end_ms, limit=1000, allow_leading_gap=False):
         """Download a complete contiguous kline range by paging forward from its start."""

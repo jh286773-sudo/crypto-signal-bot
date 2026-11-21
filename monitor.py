@@ -25,7 +25,9 @@ def format_signal_alert(price, signal):
 
 def main():
     api = ToobitAPI()
+    selected_timeframes = api.configured_timeframes()
     symbols = api.get_futures_symbols(limit=MAX_SYMBOLS, preferred_bases=MAJOR_BASE_ASSETS)
+    logging.info("Selected analysis timeframes: %s", ", ".join(selected_timeframes))
     logging.info("Scanning %d supported major-coin USDT perpetual contracts: %s",
                  len(symbols), ", ".join(symbols))
 
@@ -33,7 +35,9 @@ def main():
     signals_detected = 0
     for symbol in symbols:
         try:
-            candles = api.get_multi_timeframe(symbol)
+            # Only configured/selected intervals are fetched; unselected intervals
+            # are not downloaded, analyzed, or allowed to affect the signal.
+            candles = api.get_multi_timeframe(symbol, selected_timeframes=selected_timeframes)
             # The same no-score, selected-timeframe unanimous engine is used for
             # every Python monitor cycle. No expectancy/score gate is applied.
             result = analyze_market(candles)

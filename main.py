@@ -16,13 +16,15 @@ logging.basicConfig(
 
 def main():
     api = ToobitAPI()
+    selected_timeframes = api.configured_timeframes()
 
     logging.info("Starting Crypto Signal Bot")
+    logging.info("Selected analysis timeframes: %s", ", ".join(selected_timeframes))
     logging.info("Symbol: %s", SYMBOL)
 
     while True:
         try:
-            candles = api.get_multi_timeframe(SYMBOL)
+            candles = api.get_multi_timeframe(SYMBOL, selected_timeframes=selected_timeframes)
 
             result = analyze_market(candles)
 

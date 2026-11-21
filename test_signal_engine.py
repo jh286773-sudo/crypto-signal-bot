@@ -126,6 +126,15 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["signal"],"LONG")
         self.assertEqual(list(result["timeframes"]),["30m"])
 
+    def test_explicit_selection_ignores_unselected_timeframe_data(self):
+        from unittest.mock import patch
+        data = {tf: candles() for tf in ("1m", "3m", "5m", "15m", "4h")}
+        with patch("signal_engine.analyze_timeframe", return_value=report("bullish")) as analyze:
+            result = analyze_market(data, selected_timeframes=("3m", "5m"))
+        self.assertEqual(result["signal"], "LONG")
+        self.assertEqual(list(result["timeframes"]), ["3m", "5m"])
+        self.assertEqual([call.args[1] for call in analyze.call_args_list], ["3m", "5m"])
+
     def test_missing_selected_timeframe_data_returns_no_signal(self):
         result=analyze_market({"1m":candles()},selected_timeframes=("1m","4h"))
         self.assertEqual(result["signal"],"NO_SIGNAL")

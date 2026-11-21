@@ -49,6 +49,24 @@ class TradingStrategyParityTest {
         assertFalse(result.reasons.any{it.contains("5m")||it.contains("15m")||it.contains("30m")})
     }
 
+    @Test fun everySupportedTimeframeCanBeAnalyzedIndependently() {
+        val durations=mapOf("1m" to 60_000L,"3m" to 180_000L,"5m" to 300_000L,
+            "15m" to 900_000L,"30m" to 1_800_000L,"1h" to 3_600_000L,"4h" to 14_400_000L)
+        for ((tf,duration) in durations) {
+            val boundary=(System.currentTimeMillis()/duration)*duration
+            val lastOpen=boundary-duration
+            val rows=series(220,duration,lastOpen-219L*duration)
+            val result=TradingStrategy.evaluate(mapOf(tf to rows),boundary+1_000L)
+            assertFalse("Unexpected missing/invalid data for $tf: ${result.reasons}",
+                result.reasons.any{it.contains("داده تایم‌فریم انتخاب‌شده موجود نیست") ||
+                    it.contains("داده یا زمان‌بندی تایم‌فریم انتخاب‌شده ناقص")})
+            assertTrue("Analysis diagnostics must refer only to $tf: ${result.reasons}",
+                result.reasons.all { reason ->
+                    !durations.keys.any { other -> other != tf && reason.contains(other) }
+                })
+        }
+    }
+
     @Test fun twoAndFourSelectedTimeframesAreAcceptedAsTheSelection() {
         val now=System.currentTimeMillis()
         val durations=mapOf("1m" to 60_000L,"3m" to 180_000L,

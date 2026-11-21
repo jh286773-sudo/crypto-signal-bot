@@ -8,28 +8,33 @@ class ToobitClosedCandleTests(unittest.TestCase):
         self.assertEqual(ToobitAPI.closed_candles(rows,"5m",600000),[rows[0],rows[1]])
         self.assertEqual(ToobitAPI.closed_candles(rows,"5m",900000),rows)
 
-    def test_multi_timeframe_uses_one_exchange_clock_snapshot(self):
+    def test_only_selected_intervals_are_fetched_and_keep_independent_latest_closes(self):
         from unittest.mock import patch
         api = ToobitAPI()
-        five = [{"open_time": 1_500_000}]
-        fifteen = [{"open_time": 900_000}, {"open_time": 1_800_000}]
-        thirty = [{"open_time": 0}, {"open_time": 1_800_000}]
-        with patch.object(api, "server_time", return_value={"serverTime": 1_800_000}) as clock:
-            with patch.object(api, "get_klines", side_effect=[five, fifteen, thirty]) as get:
-                result = api.get_multi_timeframe("BTC-SWAP-USDT")
-        self.assertEqual(get.call_args_list[0].kwargs["as_of_ms"], 1_800_000)
-        self.assertEqual(get.call_args_list[1].kwargs["as_of_ms"], 1_800_000)
-        self.assertEqual(get.call_args_list[2].kwargs["as_of_ms"], 1_800_000)
-        self.assertEqual([call.args[2] for call in get.call_args_list], [260, 260, 260])
-        self.assertEqual(result["15m"], fifteen[:1])
-        self.assertEqual(result["30m"], thirty[:1])
+        one_hour = [{"open_time": 0}, {"open_time": 3_600_000}]
+        four_hour = [{"open_time": 0}]
+        # At 4h+30m, the 1h series has a newer closed candle than the 4h series.
+        with patch.object(api, "server_time", return_value={"serverTime": 16_200_000}):
+            with patch.object(api, "get_klines", side_effect=[one_hour, four_hour]) as get:
+                result = api.get_multi_timeframe(
+                    "BTC-SWAP-USDT", selected_timeframes=("1h", "4h")
+                )
+        self.assertEqual([call.args[1] for call in get.call_args_list], ["1h", "4h"])
+        self.assertEqual([call.args[2] for call in get.call_args_list], [260, 260])
+        self.assertTrue(all(call.kwargs["as_of_ms"] == 16_200_000 for call in get.call_args_list))
+        self.assertEqual(result, {"1h": one_hour, "4h": four_hour})
+        self.assertEqual(result["1h"][-1]["open_time"] + ToobitAPI.INTERVALS["1h"], 7_200_000)
+        self.assertEqual(result["4h"][-1]["open_time"] + ToobitAPI.INTERVALS["4h"], 14_400_000)
 
-    def test_higher_timeframe_is_frozen_to_5m_decision_close(self):
-        fifteen=[{"open_time":0},{"open_time":900000},{"open_time":1800000}]
-        thirty=[{"open_time":0},{"open_time":1800000}]
-        decision=1800000
-        self.assertEqual(ToobitAPI.closed_candles(fifteen,"15m",decision),fifteen[:2])
-        self.assertEqual(ToobitAPI.closed_candles(thirty,"30m",decision),thirty[:1])
+    def test_configured_timeframes_accepts_any_supported_selection(self):
+        from unittest.mock import patch
+        with patch.dict("os.environ", {"SELECTED_TIMEFRAMES": "3m, 5m, 4h"}):
+            self.assertEqual(ToobitAPI.configured_timeframes(), ("3m", "5m", "4h"))
+        with patch.dict("os.environ", {"SELECTED_TIMEFRAMES": "30m"}):
+            self.assertEqual(ToobitAPI.configured_timeframes(), ("30m",))
+        with patch.dict("os.environ", {"SELECTED_TIMEFRAMES": "2m"}):
+            with self.assertRaises(ValueError):
+                ToobitAPI.configured_timeframes()
 
 
 if __name__=="__main__":
