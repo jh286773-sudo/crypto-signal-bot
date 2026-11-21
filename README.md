@@ -2,20 +2,11 @@
 
 Read-only Toobit USDT perpetual signal monitor and historical walk-forward research tools.
 
-## ntfy phone alerts
+## Signal monitoring
 
-The scheduled GitHub Actions workflow `.github/workflows/signal-monitor.yml` runs the Python monitor every five minutes. Directional signals are published to the ntfy app using the exact message body:
-
-- `[price] ورود LONG`
-- `[price] ورود SHORT`
-
-Configure the repository Actions secret `NTFY_TOPIC` with the topic name subscribed to in the ntfy phone app. For compatibility, a repository Actions variable with the same name is also accepted. If the topic is private, configure `NTFY_TOKEN` as an Actions secret. The default server is `https://ntfy.sh`; an alternate HTTPS server can be supplied with `NTFY_SERVER`.
-
-The monitor persists per-symbol signal state in `aurum_ntfy_state.json` through the Actions cache. Repeated same-direction alerts are suppressed until the symbol returns to WAIT/NO_SIGNAL or changes direction. Failed ntfy delivery is not marked as sent, so a later scan can retry.
+The scheduled GitHub Actions workflow `.github/workflows/signal-monitor.yml` runs the Python monitor every five minutes. It scans selected markets and records detected signals in workflow logs only. Push notifications from ntfy and GitHub Actions are disabled. Signal notifications are delivered only by the AURUM X Android application through the phone's local notification service.
 
 Set the repository Actions variable `SELECTED_TIMEFRAMES` to a comma-separated selection from `1m,3m,5m,15m,30m,1h,4h`. A single interval is valid. Only selected intervals are downloaded and analyzed. Android app selections are stored locally on the phone and do not automatically synchronize to GitHub Actions.
-
-Android app alerts use the device's local notification service. They are a separate delivery path from Python/GitHub Actions to ntfy.
 
 ## Strategy contract
 
