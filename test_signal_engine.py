@@ -169,6 +169,20 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(invalid["signal"],"NO_SIGNAL")
         self.assertIn("Non-contiguous",invalid["reason"])
 
+    def test_timestamped_closed_candles_older_than_one_interval_are_rejected(self):
+        duration = 300_000
+        now_ms = 1_800_000_000_000
+        latest_open = (now_ms // duration) * duration - 2 * duration
+        rows = candles(220)
+        first = latest_open - (len(rows) - 1) * duration
+        for index, row in enumerate(rows):
+            row["open_time"] = first + index * duration
+        with patch("signal_engine.time.time", return_value=now_ms / 1000):
+            result = analyze_market({"5m": rows}, selected_timeframes=("5m",))
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("Stale closed 5m", result["reason"])
+        self.assertIn("stale_timeframe_data", result["rejection_reasons"])
+
     def test_partially_timestamped_series_is_rejected_instead_of_bypassing_candle_alignment(self):
         duration = 300_000
         start = 1_800_000_000_000
