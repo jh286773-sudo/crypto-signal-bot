@@ -9,6 +9,8 @@ import run_toobit_multi_backtest as runner
 
 
 class FailedHistoryAPI:
+    INTERVALS = {"1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000, "4h": 14_400_000}
+
     def server_time(self):
         return {"serverTime": 1_800_000_000_000}
 
