@@ -13,9 +13,13 @@ def candles(n=220, trend=1.0):
 
 
 def report(bias, close=100.0):
+    event = "BOS_up" if bias == "bullish" else "BOS_down"
     return {"valid":True,"bias":bias,"close":close,
             "indicator_votes":{"EMA":1,"RSI":1,"MACD":1,"ADX_DMI":1,
                                "VWAP":1,"OBV_Trend":0,"Bollinger":1},
+            "smc":{"false_breakout":False,"order_blocks":[],
+                   "structure_event":event,"retest_long":False,"retest_short":False,
+                   "liquidity_sweep":"none"},
             "indicators":{"atr":1.0}}
 
 
@@ -74,6 +78,20 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["entry_timeframe"],"1m")
         self.assertNotIn("combined_score",result)
         self.assertNotIn("timeframe_weights",result)
+
+    def test_smc_must_confirm_every_selected_timeframe_before_signal(self):
+        bullish = report("bullish")
+        bearish_structure = dict(bullish["smc"], structure_event="BOS_down")
+        rejected = dict(bullish, smc=bearish_structure)
+        with patch("signal_engine.analyze_timeframe", side_effect=[bullish, rejected]):
+            result = analyze_market({"5m": candles(), "15m": candles()})
+        self.assertEqual(result["signal"], "NO_SIGNAL")
+        self.assertIn("SMC structural confirmation", result["reason"])
+        self.assertIn("smc_confirmation_required", result["rejection_reasons"])
+        with patch("signal_engine.analyze_timeframe", return_value=bullish):
+            accepted = analyze_market({"5m": candles()})
+        self.assertEqual(accepted["signal"], "LONG")
+        self.assertTrue(accepted["diagnostics"]["5m"]["smc_confirmed"])
 
     def test_exceptional_volatility_blocks_entries(self):
         volatile = dict(report("bullish"), high_volatility=True)
