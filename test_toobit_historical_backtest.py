@@ -133,9 +133,9 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
             result = api.get_historical_range(
                 "BTC-SWAP-USDT", 0, 60 * DURATION_MS["30m"], allow_leading_gap=True
             )
-        self.assertNotIn("funding_rate", result["5m"][0])
-        self.assertEqual(result["5m"][1]["funding_settle_time"], 900000)
-        self.assertAlmostEqual(result["5m"][1]["funding_rate"], 0.002)
+        self.assertEqual(result["5m"][0]["funding_settle_time"], 900000)
+        self.assertAlmostEqual(result["5m"][0]["funding_rate"], 0.002)
+        self.assertNotIn("funding_rate", result["5m"][1])
 
     def test_historical_range_attaches_funding_to_candle_by_settlement_timestamp(self):
         from walk_forward import DURATION_MS
