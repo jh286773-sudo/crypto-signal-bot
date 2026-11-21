@@ -163,11 +163,17 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(seen["15m"],now_ms-900000)
         self.assertNotEqual(seen["5m"],seen["15m"])
 
+        # The 15m timeframe may have a different latest closed timestamp.
+        # Advancing its final row into a still-forming candle only removes that row;
+        # it must not force the 5m timeframe to wait for a shared close boundary.
         data["15m"][-1]["open_time"]+=durations["15m"]
-        with patch("signal_engine.time.time",return_value=now_ms/1000):
-            invalid=analyze_market(data)
-        self.assertEqual(invalid["signal"],"NO_SIGNAL")
-        self.assertIn("Non-contiguous",invalid["reason"])
+        with patch("signal_engine.time.time",return_value=now_ms/1000), patch(
+            "signal_engine.analyze_timeframe", side_effect=capture
+        ):
+            independent=analyze_market(data)
+        self.assertEqual(independent["signal"],"LONG")
+        self.assertEqual(seen["5m"],now_ms-300000)
+        self.assertEqual(seen["15m"],now_ms-2*durations["15m"])
 
     def test_timestamped_closed_candles_older_than_one_interval_are_rejected(self):
         duration = 300_000
