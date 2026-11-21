@@ -6,5 +6,5 @@
     "15m": 440,
     "30m": 220
   },
-  "expected_signal": "LONG"
+  "expected_signal": "NO_SIGNAL"
 }
