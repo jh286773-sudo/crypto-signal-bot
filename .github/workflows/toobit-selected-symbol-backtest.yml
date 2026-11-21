@@ -11,6 +11,11 @@ on:
         required: true
         default: "2026-11-09T01:00:00Z"
         type: string
+      timeframes:
+        description: Selected analysis intervals (comma-separated: 1m,3m,5m,15m,30m,1h,4h)
+        required: true
+        default: "5m,15m,30m"
+        type: string
       symbols:
         description: Comma-separated Toobit USDT perpetual symbols
         required: true
@@ -40,8 +45,9 @@ jobs:
         env:
           START_DATETIME: ${{ inputs.start_datetime || '2026-11-09T01:00:00Z' }}
           SYMBOLS: ${{ inputs.symbols || 'BTC-SWAP-USDT,ETH-SWAP-USDT,BNB-SWAP-USDT,SOL-SWAP-USDT,XRP-SWAP-USDT' }}
+          TIMEFRAMES: ${{ inputs.timeframes || '5m,15m,30m' }}
         run: |
-          python run_toobit_multi_backtest.py --days 0 --start-datetime "$START_DATETIME" --symbols "$SYMBOLS" --slippage-bps 1.0 --output toobit_selected_from_2026-11-09_0100_utc.json
+          python run_toobit_multi_backtest.py --days 0 --start-datetime "$START_DATETIME" --symbols "$SYMBOLS" --timeframes "$TIMEFRAMES" --slippage-bps 1.0 --output toobit_selected_from_2026-11-09_0100_utc.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
