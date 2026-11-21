@@ -41,8 +41,11 @@ class TradingStrategyParityTest {
         val start=(now/duration)*duration-219*duration
         val rows=series(220,duration,start)
         val result=TradingStrategy.evaluate(mapOf("1m" to rows),rows.last().time+duration+1_000L)
-        assertEquals("LONG",result.signal) // RSI above 50 confirms the rising trend even when overbought
-        assertTrue(result.reasons.any{it.startsWith("1m:")})
+        // The rising series confirms bullish indicator direction, but contains no
+        // qualifying SMC structure. The independent 1m analysis must be visible
+        // and rejected by SMC rather than requiring any unselected timeframe.
+        assertEquals("WAIT",result.signal)
+        assertTrue(result.reasons.any{it.startsWith("1m SMC:")})
         assertFalse(result.reasons.any{it.contains("5m")||it.contains("15m")||it.contains("30m")})
     }
 
@@ -117,10 +120,13 @@ class TradingStrategyParityTest {
             "4h" to rows4h
         ),asOf)
         assertFalse(result.reasons.any{it.contains("مرز تصمیم مشترک")||it.contains("کندل بسته‌شده تازه برای تایم‌فریم‌های انتخاب‌شده")})
-        assertTrue(result.reasons.any{it.startsWith("1m:")})
-        assertTrue(result.reasons.any{it.startsWith("3m:")})
-        assertTrue(result.reasons.any{it.startsWith("15m:")})
-        assertTrue(result.reasons.any{it.startsWith("4h:")})
+        // All four series are independently analyzed. This synthetic monotonic
+        // data has no SMC trigger, so each timeframe appears in the SMC rejection
+        // diagnostics instead of the normal direction diagnostics.
+        assertTrue(result.reasons.any{it.startsWith("1m SMC:")})
+        assertTrue(result.reasons.any{it.startsWith("3m SMC:")})
+        assertTrue(result.reasons.any{it.startsWith("15m SMC:")})
+        assertTrue(result.reasons.any{it.startsWith("4h SMC:")})
     }
 
     @Test fun conflictingSelectedTimeframesDoNotEmitAnySignal() {
