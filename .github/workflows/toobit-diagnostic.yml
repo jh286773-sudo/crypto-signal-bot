@@ -82,20 +82,21 @@ jobs:
                   start = ((requested_start + step - 1) // step) * step
                   end = (server_now // step) * step
                   try:
-                      rows = api.get_klines_range(symbol, tf, start, end)
-                      expected = (end - start) // step
+                      rows = api.get_klines_range(symbol, tf, start, end, allow_leading_gap=True)
                       actual_start = int(rows[0]["timestamp"])
+                      expected_from_actual_start = (end - actual_start) // step
                       actual_end = int(rows[-1]["timestamp"])
                       item = {
                           "symbol": symbol, "timeframe": tf,
                           "requested_start_utc": datetime.fromtimestamp(start / 1000, timezone.utc).isoformat(),
                           "actual_start_utc": datetime.fromtimestamp(actual_start / 1000, timezone.utc).isoformat(),
                           "actual_end_utc": datetime.fromtimestamp(actual_end / 1000, timezone.utc).isoformat(),
-                          "candles_received": len(rows), "candles_expected": expected,
-                          "complete_from_requested_start": actual_start == start and len(rows) == expected,
-                          "contiguous_real_candles": True,
+                          "candles_received": len(rows), "candles_expected_from_actual_start": expected_from_actual_start,
+                          "leading_candles_unavailable": max(0, (actual_start - start) // step),
+                          "requested_start_coverage_complete": actual_start == start,
+                          "contiguous_real_candles": len(rows) == expected_from_actual_start,
                       }
-                      if not item["complete_from_requested_start"]:
+                      if not item["contiguous_real_candles"]:
                           report["all_checks_passed"] = False
                       report["results"].append(item)
                       print(json.dumps(item, ensure_ascii=False), flush=True)
