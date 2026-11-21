@@ -5,7 +5,7 @@ import unittest
 
 
 class CrossEngineContractTests(unittest.TestCase):
-    def test_both_engines_use_direct_indicator_rules_without_weights_or_smc_gates(self):
+    def test_both_engines_use_direct_indicator_rules_and_independent_smc_confirmation(self):
         root=pathlib.Path(__file__).parent
         py=(root/"signal_engine.py").read_text()
         kt=(root/"app/src/main/java/com/cryptoscalp/app/TradingStrategy.kt").read_text()
@@ -18,14 +18,16 @@ class CrossEngineContractTests(unittest.TestCase):
                       'votes["ADX_DMI"]==1', 'votes["RSI"]==1', 'votes["MACD"]==1'):
             self.assertIn(token,kt)
         py_signal=py[py.index("def analyze_market("):py.index("def generate_signal(")]
-        kt_signal=kt[kt.index("fun evaluate(timeframes:"):kt.rfind("\\n}")]
+        kt_signal=kt[kt.index("fun evaluate(timeframes:"):kt.rfind("\n}")]
         for obsolete in ("family_weights", "tfWeights", "familyWeights",
-                         "combined_score", "timeframe_weights", "confidence_score",
-                         "retest_long", "retest_short", "smc_false_breakout"):
+                         "combined_score", "timeframe_weights", "confidence_score"):
             self.assertNotIn(obsolete,py_signal)
-        for obsolete in ("tfWeights", "familyWeights", "combined", "retestLong",
-                         "retestShort", "falseBreakout", "score"):
+        for obsolete in ("tfWeights", "familyWeights", "combined", "score"):
             self.assertNotIn(obsolete,kt_signal)
+        self.assertIn("_smc_confirms(reports[tf].get(\"smc\", {}), side)",py_signal)
+        self.assertIn('"smc_confirmation_required"',py_signal)
+        self.assertIn("smcConfirms(report.structure,direction)",kt_signal)
+        self.assertIn("تأیید مستقل SMC",kt_signal)
 
     def test_shared_golden_fixture_has_no_score_contract(self):
         root=pathlib.Path(__file__).parent
@@ -45,6 +47,8 @@ class CrossEngineContractTests(unittest.TestCase):
         from signal_engine import analyze_market
         result=analyze_market(data)
         self.assertEqual(result["signal"],fixture["expected_signal"])
+        if fixture["expected_signal"] == "NO_SIGNAL":
+            self.assertIn("smc_confirmation_required",result.get("rejection_reasons",[]))
         self.assertNotIn("combined_score",result)
         self.assertNotIn("timeframe_weights",result)
 
