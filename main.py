@@ -26,9 +26,13 @@ def main():
         try:
             candles = api.get_multi_timeframe(SYMBOL, selected_timeframes=selected_timeframes)
 
-            result = analyze_market(candles)
+            result = analyze_market(candles, selected_timeframes=selected_timeframes)
 
-            logging.info("Price: %s", result.get("timeframes", {}).get("5m", {}).get("close"))
+            entry_tf = result.get("entry_timeframe")
+            entry_price = result.get("entry")
+            if entry_price is None and entry_tf:
+                entry_price = result.get("timeframes", {}).get(entry_tf, {}).get("close")
+            logging.info("Price (%s): %s", entry_tf or "selected timeframes", entry_price)
             logging.info("Signal: %s", result.get("signal"))
             logging.info("Reason: %s", result.get("reason", ""))
             logging.info("Details: %s", result)
