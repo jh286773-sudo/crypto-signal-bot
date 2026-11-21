@@ -54,6 +54,34 @@ class MonitorNotificationTests(unittest.TestCase):
             self.assertFalse(monitor.notify("2500.00 ورود LONG"))
         post.assert_not_called()
 
+    @patch("monitor.notify")
+    @patch("monitor.analyze_market")
+    @patch("monitor.ToobitAPI")
+    def test_monitor_passes_selected_timeframes_and_deduplicates_repeated_signal(
+        self, api_class, analyze, notify
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ntfy-state.json"
+            api = api_class.return_value
+            api.configured_timeframes.return_value = ("1m", "4h")
+            api.get_futures_symbols.return_value = ["BTC-SWAP-USDT"]
+            api.get_multi_timeframe.return_value = {"1m": [], "4h": []}
+            analyze.return_value = {
+                "signal": "LONG", "entry": 2500.0, "entry_timeframe": "1m",
+                "timeframes": {"1m": {"close": 2500.0}},
+            }
+            notify.return_value = True
+            with patch.object(monitor, "NTFY_STATE_PATH", path):
+                monitor.main()
+                monitor.main()
+            api.get_multi_timeframe.assert_called_with(
+                "BTC-SWAP-USDT", selected_timeframes=("1m", "4h")
+            )
+            analyze.assert_called_with(
+                {"1m": [], "4h": []}, selected_timeframes=("1m", "4h")
+            )
+            notify.assert_called_once_with("2500.00 ورود LONG")
+
     def test_signal_state_round_trips_and_replaces_atomically(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "ntfy-state.json"
