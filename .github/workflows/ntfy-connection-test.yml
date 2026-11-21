@@ -1,0 +1,44 @@
+name: AURUM X ntfy Connection Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type SEND_TEST to send one diagnostic notification to your ntfy topic
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ntfy-test:
+    if: ${{ inputs.confirmation == 'SEND_TEST' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send one diagnostic message to ntfy
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || vars.NTFY_TOPIC }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import requests
+
+          topic = os.environ.get("NTFY_TOPIC", "").strip()
+          token = os.environ.get("NTFY_TOKEN", "").strip()
+          if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", topic):
+              raise SystemExit("NTFY_TOPIC is missing or invalid; no message was sent.")
+          headers = {"Title": "AURUM X connection test", "Priority": "low"}
+          if token:
+              headers["Authorization"] = "Bearer " + token
+          response = requests.post(
+              "https://ntfy.sh/" + topic,
+              data="AURUM X ntfy connection test".encode("utf-8"),
+              headers=headers,
+              timeout=20,
+          )
+          response.raise_for_status()
+          print("ntfy accepted the diagnostic notification (HTTP %s)." % response.status_code)
+          PY
