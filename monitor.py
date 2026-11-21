@@ -40,7 +40,7 @@ def main():
             candles = api.get_multi_timeframe(symbol, selected_timeframes=selected_timeframes)
             # The same no-score, selected-timeframe unanimous engine is used for
             # every Python monitor cycle. No expectancy/score gate is applied.
-            result = analyze_market(candles)
+            result = analyze_market(candles, selected_timeframes=selected_timeframes)
             signal = result.get("signal", "NO_SIGNAL")
             reports = result.get("timeframes", {})
             entry_tf = result.get("entry_timeframe") or next(iter(reports), None)
