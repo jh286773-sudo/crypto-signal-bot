@@ -42,19 +42,10 @@ jobs:
           key: aurum-shadow-ledger-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             aurum-shadow-ledger-
-      - name: Restore ntfy notification deduplication state
-        uses: actions/cache@v4
-        with:
-          path: aurum_ntfy_state.json
-          key: aurum-ntfy-state-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            aurum-ntfy-state-
-      - name: Scan liquid USDT perpetual contracts and publish signals to ntfy
+      - name: Scan liquid USDT perpetual contracts and log signals
         env:
           MAX_SYMBOLS: "40"
           # Selected intervals are explicit and only these are fetched/analyzed.
           SELECTED_TIMEFRAMES: ${{ vars.SELECTED_TIMEFRAMES || '5m,15m,30m' }}
-          # Configure NTFY_TOPIC as a repository secret (or variable for compatibility).
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || vars.NTFY_TOPIC }}
           NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
         run: python monitor.py
