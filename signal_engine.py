@@ -7,6 +7,7 @@ when the exchange explicitly supplies it.
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 from math import isfinite, sqrt
+import time
 
 SUPPORTED_TFS = ("1m", "3m", "5m", "15m", "30m", "1h", "4h")
 # Kept only for legacy fixed-window research/backtest modules; live signal selection
@@ -552,6 +553,7 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
         # Validate each timeframe's own candle sequence and retain its latest
         # fully closed candle independently. Never align selected timeframes
         # to a shared decision timestamp: their candle closes are asynchronous.
+        now_ms = int(time.time() * 1000)
         for tf in selected_tfs:
             rows = timeframes.get(tf, [])
             try:
@@ -565,7 +567,6 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
             # only when its close boundary is no later than the current time.
             # The supplied feed is expected to contain closed candles; discard
             # the newest row only when its close boundary is still in the future.
-            now_ms = int(__import__("time").time() * 1000)
             last_closed_index = len(stamps) - 1
             while last_closed_index >= 0 and stamps[last_closed_index] + d > now_ms:
                 last_closed_index -= 1
