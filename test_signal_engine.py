@@ -131,24 +131,34 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["signal"],"NO_SIGNAL")
         self.assertIn("Missing selected timeframe",result["reason"])
 
-    def test_timestamped_timeframes_must_share_a_closed_decision_boundary(self):
+    def test_timestamped_timeframes_use_their_own_latest_closed_candle(self):
         durations={"5m":300000,"15m":900000}
-        start=1800000000000
-        decision=start+100*300000
+        now_ms=1_800_000_000_000
         data={}
         for tf,duration in durations.items():
             count=220
-            first=(decision//duration)*duration-duration-(count-1)*duration
+            latest_open=(now_ms//duration)*duration-duration
+            first=latest_open-(count-1)*duration
             rows=candles(count)
             for i,row in enumerate(rows):
                 row["open_time"]=first+i*duration
             data[tf]=rows
-        with patch("signal_engine.analyze_timeframe",return_value=report("bullish")):
-            self.assertEqual(analyze_market(data)["signal"],"LONG")
+        seen={}
+        def capture(rows,tf):
+            seen[tf]=rows[-1]["open_time"]
+            return report("bullish")
+        with patch("signal_engine.time.time",return_value=now_ms/1000), patch("signal_engine.analyze_timeframe",side_effect=capture):
+            result=analyze_market(data)
+        self.assertEqual(result["signal"],"LONG")
+        self.assertEqual(seen["5m"],now_ms-300000)
+        self.assertEqual(seen["15m"],now_ms-900000)
+        self.assertNotEqual(seen["5m"],seen["15m"])
+
         data["15m"][-1]["open_time"]+=durations["15m"]
-        result=analyze_market(data)
-        self.assertEqual(result["signal"],"NO_SIGNAL")
-        self.assertIn("Non-contiguous",result["reason"])
+        with patch("signal_engine.time.time",return_value=now_ms/1000):
+            invalid=analyze_market(data)
+        self.assertEqual(invalid["signal"],"NO_SIGNAL")
+        self.assertIn("Non-contiguous",invalid["reason"])
 
     def test_partially_timestamped_series_is_rejected_instead_of_bypassing_candle_alignment(self):
         duration = 300_000
