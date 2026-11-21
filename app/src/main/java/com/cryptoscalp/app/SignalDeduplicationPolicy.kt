@@ -5,7 +5,9 @@ enum class SignalDecision { NONE, OPEN, CLOSE_ONLY }
 /**
  * LONG-only position policy:
  * - LONG opens a position whenever flat.
- * - SHORT only closes an existing LONG; it never opens a SHORT.
+ * - SHORT is an exit-only signal; it closes a tracked LONG when present and
+ *   is still delivered as an exit alert when a position was opened elsewhere.
+ * - SHORT never opens a SHORT position.
  */
 object SignalDeduplicationPolicy {
     fun decide(
