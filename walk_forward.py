@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 from math import isfinite
-from signal_engine import SUPPORTED_TFS, analyze_market
+from signal_engine import SUPPORTED_TFS, REQUIRED_TFS, analyze_market
 
 DURATION_MS = {"1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000, "4h": 14_400_000}
 MAX_ENTRY_GAP_ATR = 0.25
@@ -23,7 +23,8 @@ def _timestamp(row: Dict[str, Any]) -> int:
     raise ValueError("every candle must contain timestamp/open_time/time in Unix milliseconds")
 
 
-def _validate(timeframes: Dict[str, list], selected_tfs) -> Dict[str, List[Tuple[int, dict]]]:
+def _validate(timeframes: Dict[str, list], selected_tfs=None) -> Dict[str, List[Tuple[int, dict]]]:
+    selected_tfs = tuple(REQUIRED_TFS if selected_tfs is None else selected_tfs)
     missing = [tf for tf in selected_tfs if tf not in timeframes]
     if missing:
         raise ValueError("Missing selected timeframes: " + ", ".join(missing))
@@ -73,7 +74,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         raise ValueError("exchange fee and slippage assumptions cannot be negative")
     if initial_equity <= 0 or not 0 < risk_fraction <= 0.05 or max_holding_bars < 1:
         raise ValueError("invalid equity, risk fraction, or holding horizon")
-    selected_tfs = tuple(tf for tf in SUPPORTED_TFS if tf in timeframes) if selected_timeframes is None else tuple(dict.fromkeys(selected_timeframes))
+    selected_tfs = tuple(REQUIRED_TFS if selected_timeframes is None else dict.fromkeys(selected_timeframes))
     if not selected_tfs or any(tf not in SUPPORTED_TFS for tf in selected_tfs):
         raise ValueError("selected_timeframes must contain one or more supported intervals")
     indexed = _validate(timeframes, selected_tfs)
