@@ -428,7 +428,7 @@ class ToobitAPI:
             for tf in selected_timeframes
         }
         for tf, rows in data.items():
-            if len(rows) < 200:
+            if len(rows) < 60:
                 raise RuntimeError(f"Insufficient real {tf} candles returned by Toobit: {len(rows)}")
         if include_funding:
             execution_rows = data[execution_tf]
