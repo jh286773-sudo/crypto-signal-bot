@@ -424,12 +424,12 @@ class ToobitAPI:
             if len(rows) < 60:
                 raise RuntimeError(f"Insufficient real {tf} candles returned by Toobit: {len(rows)}")
         if include_funding:
-            events = self.get_historical_funding_rates(symbol)
+            five = data["5m"]
             # Ignore settlements before the first real 5m candle when an unavailable leading prefix was explicitly accepted.
             funding_start = int(five[0]["timestamp"]) if five else int(start_by_tf["5m"])
+            events = self.get_historical_funding_rates(symbol)
             if len(events) >= 1000 and events[0]["settle_time"] > funding_start:
                 raise RuntimeError("Toobit funding history reached the 1000-event page cap; shorten the backtest window to avoid missing funding settlements")
-            five = data["5m"]
             bars_by_open = {row["timestamp"]: row for row in five}
             for event in events:
                 settle = event["settle_time"]
