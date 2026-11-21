@@ -18,15 +18,16 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         self.assertEqual(rows[0]["taker_buy_volume"], 4.0)
         self.assertEqual(get.call_count, 2)
 
-    def test_kline_range_recovers_a_missing_leading_prefix(self):
+    def test_kline_range_recovers_a_missing_multi_candle_leading_prefix(self):
         api = ToobitAPI()
         def row(i):
             return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
         later = [row(2), row(3)]
-        prefix = [row(0), row(1)]
-        with patch.object(api, "_get", side_effect=[later, []]):
-            with self.assertRaisesRegex(RuntimeError, "incomplete 5m history"):
-                api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 4 * 300000)
+        # The bulk range omits the first two candles; exact-time retries recover
+        # both real exchange candles rather than shifting the requested start.
+        with patch.object(api, "_get", side_effect=[later, [row(0)], [row(1)]]):
+            rows = api.get_klines_range("BTC-SWAP-USDT", "5m", 0, 4 * 300000)
+        self.assertEqual([item["timestamp"] for item in rows], [0, 300000, 600000, 900000])
 
     def test_kline_range_continues_after_a_short_nonfinal_page(self):
         api = ToobitAPI()
