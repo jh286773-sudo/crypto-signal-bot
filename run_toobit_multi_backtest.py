@@ -40,9 +40,14 @@ def main():
         raise SystemExit("--slippage-bps cannot be negative")
 
     api = ToobitAPI()
+    selected_timeframes = tuple(dict.fromkeys(x.strip().lower() for x in args.timeframes.split(",") if x.strip()))
+    if not selected_timeframes or any(tf not in api.INTERVALS for tf in selected_timeframes):
+        raise SystemExit("Invalid --timeframes; supported: " + ", ".join(api.INTERVALS))
+    execution_tf = min(selected_timeframes, key=lambda tf: api.INTERVALS[tf])
+    execution_step = api.INTERVALS[execution_tf]
     end_ms = int(api.server_time()["serverTime"])
-    end_ms = (end_ms // 300000) * 300000
-    requested_start_ms = ((end_ms - args.days * 86400000) // 1800000) * 1800000 if args.days else 0
+    end_ms = (end_ms // execution_step) * execution_step
+    requested_start_ms = ((end_ms - args.days * 86400000) // execution_step) * execution_step if args.days else 0
     if args.start_date and args.start_datetime:
         raise SystemExit("Use only one of --start-date or --start-datetime")
     if args.start_date or args.start_datetime:
@@ -58,8 +63,8 @@ def main():
             requested_start_ms = int(parsed_start.timestamp() * 1000)
         except ValueError as exc:
             raise SystemExit("--start-date must use YYYY-MM-DD; --start-datetime must be ISO-8601 with timezone") from exc
-        if requested_start_ms % 300000:
-            raise SystemExit("Start datetime must align to a 5-minute candle boundary")
+        if requested_start_ms % execution_step:
+            raise SystemExit("Start datetime must align to the fastest selected timeframe candle boundary")
         if requested_start_ms >= end_ms:
             raise SystemExit("--start-date must be earlier than the current backtest end")
     # Only selected symbols are tested. Each timeframe starts at its own first real candle.
