@@ -73,7 +73,8 @@ def main():
         for symbol in selected_symbols
     } if not (args.start_date or args.start_datetime) else {})
     starts_by_symbol = {
-        symbol: ({tf: requested_start_ms for tf in selected_timeframes}
+        symbol: ({tf: ((requested_start_ms + api.INTERVALS[tf] - 1) // api.INTERVALS[tf]) * api.INTERVALS[tf]
+                  for tf in selected_timeframes}
                  if (args.start_date or args.start_datetime) else
                  {tf: max(requested_start_ms, start) for tf, start in available_starts[symbol].items()})
         for symbol in selected_symbols
@@ -158,7 +159,7 @@ def main():
                 for symbol, starts in effective_starts.items()
             },
             "requested_start_coverage_complete": (all(
-                start == requested_start_ms
+                start >= requested_start_ms
                 for starts in effective_starts.values() for start in starts.values()
             ) if (args.start_date or args.start_datetime) and effective_starts else None),
             "timeframe_start_by_symbol_utc": {
