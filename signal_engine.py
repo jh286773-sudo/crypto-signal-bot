@@ -515,7 +515,7 @@ def _smc_confirms(structure: Dict[str, Any], side: str) -> bool:
 
 
 def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframes: Optional[Sequence[str]] = None) -> Dict[str,Any]:
-    """Analyze only selected timeframes; one timeframe is independent, several require unanimity."""
+    """Analyze each selected timeframe at its own latest closed candle; several require directional unanimity."""
     if selected_timeframes is None:
         selected_tfs = tuple(tf for tf in SUPPORTED_TFS if tf in timeframes)
     else:
@@ -549,8 +549,9 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
     analysis_timeframes = {tf:list(timeframes.get(tf,[])) for tf in selected_tfs}
     if all(timestamped):
         durations = {"1m":60000,"3m":180000,"5m":300000,"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000}
-        opens = {}
-        latest_closes = []
+        # Validate each timeframe's own candle sequence and retain its latest
+        # fully closed candle independently. Never align selected timeframes
+        # to a shared decision timestamp: their candle closes are asynchronous.
         for tf in selected_tfs:
             rows = timeframes.get(tf, [])
             try:
@@ -560,16 +561,17 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
             d = durations[tf]
             if len(stamps) < MIN_INDICATOR_CANDLES or any(t < 0 or t % d for t in stamps) or any(b-a != d for a,b in zip(stamps,stamps[1:])):
                 return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Non-contiguous or insufficient {tf} candles","trade_enabled":False}
-            opens[tf] = stamps
-            latest_closes.append(stamps[-1] + d)
-        decision_time = min(latest_closes)
-        for tf in selected_tfs:
-            d = durations[tf]
-            expected_open = (decision_time // d) * d - d
-            if expected_open not in opens[tf]:
-                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"{tf} has no fully closed candle at the common decision boundary","trade_enabled":False}
-            analysis_timeframes[tf] = [row for row in analysis_timeframes[tf]
-                if int(next(row[k] for k in ("timestamp","open_time","time") if k in row)) <= expected_open]
+            # Exchange timestamps identify candle OPEN time. A candle is closed
+            # only when its close boundary is no later than the current time.
+            # The supplied feed is expected to contain closed candles; discard
+            # the newest row only when its close boundary is still in the future.
+            now_ms = int(__import__("time").time() * 1000)
+            last_closed_index = len(stamps) - 1
+            while last_closed_index >= 0 and stamps[last_closed_index] + d > now_ms:
+                last_closed_index -= 1
+            if last_closed_index < MIN_INDICATOR_CANDLES - 1:
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Insufficient fully closed {tf} candles","trade_enabled":False}
+            analysis_timeframes[tf] = analysis_timeframes[tf][:last_closed_index + 1]
     reports={tf:analyze_timeframe(analysis_timeframes.get(tf,[]),tf) for tf in selected_tfs}
     invalid=[tf for tf,r in reports.items() if not r.get("valid")]
     if invalid:
