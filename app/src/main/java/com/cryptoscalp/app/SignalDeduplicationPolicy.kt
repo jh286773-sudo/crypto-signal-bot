@@ -26,7 +26,12 @@ object SignalDeduplicationPolicy {
         }
 
         if (openSide != null) return SignalDecision.NONE
-        if (signal != "LONG") return SignalDecision.NONE
+        if (signal == "SHORT") {
+            // A valid SHORT must still reach the user as an exit-only alert when
+            // the LONG was opened manually or is not tracked by this app.
+            // lastSignal suppresses duplicate notifications on subsequent scans.
+            return if (lastSignal == "SHORT") SignalDecision.NONE else SignalDecision.CLOSE_ONLY
+        }
         return SignalDecision.OPEN
     }
 }
