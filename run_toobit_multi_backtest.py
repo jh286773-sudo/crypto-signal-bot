@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--start-date", help="Inclusive UTC start date (YYYY-MM-DD), e.g. 2026-11-09")
     parser.add_argument("--start-datetime", help="Inclusive UTC start datetime (ISO-8601), e.g. 2026-11-09T01:00:00Z")
     parser.add_argument("--symbols", required=True, help="Comma-separated selected Toobit symbols, e.g. BTC-SWAP-USDT,ETH-SWAP-USDT")
+    parser.add_argument("--timeframes", default=os.getenv("SELECTED_TIMEFRAMES", "5m,15m,30m"), help="Comma-separated selected intervals: 1m,3m,5m,15m,30m,1h,4h")
     
     parser.add_argument("--slippage-bps", type=float, default=1.0,
                         help="Assumed adverse slippage per fill; not measured")
