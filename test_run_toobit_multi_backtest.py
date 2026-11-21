@@ -18,7 +18,7 @@ class FailedHistoryAPI:
     def get_first_available_candle_open(self, symbol, interval, end_ms):
         return 1_799_000_000_000
 
-    def get_historical_range(self, symbol, start_ms, end_ms, include_funding=True):
+    def get_historical_range(self, symbol, start_ms, end_ms, include_funding=True, allow_leading_gap=False):
         raise RuntimeError("historical candles unavailable")
 
 

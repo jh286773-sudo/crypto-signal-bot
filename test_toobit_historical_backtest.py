@@ -113,6 +113,30 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         self.assertEqual([x["settle_time"] for x in rates], [800, 1600])
 
 
+    def test_historical_range_skips_funding_before_effective_leading_boundary(self):
+        from walk_forward import DURATION_MS
+        api = ToobitAPI()
+        data = {}
+        for tf, step in DURATION_MS.items():
+            first = 600000 if tf == "5m" else 0
+            data[tf] = [
+                {"timestamp": first + i * step, "open_time": first + i * step,
+                 "open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0, "volume": 10.0}
+                for i in range(60)
+            ]
+        with patch.object(api, "get_klines_range",
+                          side_effect=lambda symbol, tf, start, end, **kwargs: data[tf]), \
+             patch.object(api, "get_historical_funding_rates", return_value=[
+                 {"settle_time": 300000, "funding_rate": 0.001},
+                 {"settle_time": 900000, "funding_rate": 0.002},
+             ]):
+            result = api.get_historical_range(
+                "BTC-SWAP-USDT", 0, 60 * DURATION_MS["30m"], allow_leading_gap=True
+            )
+        self.assertNotIn("funding_rate", result["5m"][0])
+        self.assertEqual(result["5m"][1]["funding_settle_time"], 900000)
+        self.assertAlmostEqual(result["5m"][1]["funding_rate"], 0.002)
+
     def test_historical_range_attaches_funding_to_candle_by_settlement_timestamp(self):
         from walk_forward import DURATION_MS
         api = ToobitAPI()
