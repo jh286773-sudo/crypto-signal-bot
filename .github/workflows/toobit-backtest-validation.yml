@@ -1,0 +1,62 @@
+name: AURUM X Toobit Backtest Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/toobit-backtest-validation.yml"
+  workflow_dispatch:
+    inputs:
+      start_datetime:
+        description: Inclusive UTC start datetime (ISO-8601 with timezone)
+        required: true
+        default: "2026-11-09T00:00:00Z"
+        type: string
+      symbols:
+        description: Selected Toobit USDT perpetual symbols
+        required: true
+        default: "BTC-SWAP-USDT"
+        type: string
+      timeframes:
+        description: Selected analysis intervals
+        required: true
+        default: "5m,15m,30m"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run selected-symbol Toobit walk-forward backtest
+        env:
+          START_DATETIME: ${{ github.event.inputs.start_datetime || '2026-11-09T00:00:00Z' }}
+          SYMBOLS: ${{ github.event.inputs.symbols || 'BTC-SWAP-USDT' }}
+          TIMEFRAMES: ${{ github.event.inputs.timeframes || '5m,15m,30m' }}
+        run: |
+          python run_toobit_multi_backtest.py \
+            --days 0 \
+            --start-datetime "$START_DATETIME" \
+            --symbols "$SYMBOLS" \
+            --timeframes "$TIMEFRAMES" \
+            --slippage-bps 1.0 \
+            --output toobit_validation_backtest.json
+      - name: Upload full backtest report even when data validation fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurum-x-toobit-validation-backtest
+          path: toobit_validation_backtest.json
+          if-no-files-found: warn
+          retention-days: 30
