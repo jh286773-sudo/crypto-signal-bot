@@ -1,21 +1,68 @@
-# AURUM X 0.4.0 — causal walk-forward and execution model
+# AURUM X — Current strategy contract (supersedes the earlier 0.4.0 draft)
 
-## Timestamp contract
-- All historical candle timestamps are Unix milliseconds and denote candle OPEN time.
-- A candle is available at decision time only when open_time + interval_ms <= decision_time.
-- The 5m decision candle is used only after its close. 15m/30m bars still forming at that instant are excluded.
-- Timestamped 5m/15m/30m series must be strictly increasing and contiguous. Gaps are rejected rather than silently aligned by row index.
+This document records the active strategy behavior in the current `main` branch.
+The earlier 0.4.0 draft described a fixed 5m/15m/30m decision clock and staged
+stop/target exits; those rules are not the active AURUM X policy.
 
-## Live signal feed
-The Toobit Python gateway drops any candle whose close time is later than the request snapshot and then freezes 15m/30m histories to the latest closed 5m candle close. The Android gateway also filters forming candles; the Android strategy independently checks timestamps and trims higher timeframes as-of the 5m decision close.
+## Timeframe selection
+- Supported intervals: `1m`, `3m`, `5m`, `15m`, `30m`, `1h`, `4h`.
+- Any non-empty combination is valid, including a single interval.
+- Only selected intervals are fetched and analyzed. Unselected intervals do
+  not participate in signal direction, freshness, or validation.
+- Each selected interval is checked using its own latest fully closed candle.
+  There is no shared candle-close boundary or row-index alignment requirement.
+- One selected interval can independently produce LONG or SHORT. With multiple
+  selected intervals, every selected interval must agree; disagreement or a
+  neutral result means no signal.
 
-## Walk-forward simulation
-Use `ToobitAPI.get_historical_multi_timeframe()` to fetch longer real OHLCV windows, then call the public `backtest.run_backtest` API (or `walk_forward.run_walk_forward`). `fee_bps` and `slippage_bps` are mandatory, explicit per-side inputs; the simulator does not silently assume a fee tier. Fee and slippage assumptions are mandatory inputs; supply the actual account fee tier and measured slippage. The module never downloads, invents, or fills missing historical data.
+## Direction and entry filters
+- Indicator direction uses direct logical conditions, not weights, points,
+  weighted sums, confidence scores, or score thresholds.
+- EMA trend and DMI directional pressure must agree. RSI midpoint momentum or
+  MACD histogram momentum must additionally confirm that direction.
+- VWAP, OBV, and Bollinger direction are reported as supporting diagnostics;
+  they are not added to a score and do not independently create a signal.
+- SMC is a separate structural confirmation required on every selected
+  interval. A false breakout or missing directional SMC confirmation blocks
+  the entry.
+- Exceptional volatility blocks new entries.
+- Insufficient, stale, malformed, or non-contiguous candle data produces
+  WAIT / NO_SIGNAL, never a forced LONG or SHORT.
 
-Position sizing risks the configured equity fraction at the initial stop. The position is reduced at TP1/TP2/TP3 using a one-third default allocation; after TP1 the stop moves to entry. Stop is resolved before targets when both are touched in one OHLC bar. Fees and slippage are charged on entry and each exit fill. Funding is included only when historical per-candle `funding_rate` exists.
+## Position and alert policy
+- The strategy is read-only; it does not place exchange orders.
+- LONG is the only position-opening direction.
+- SHORT is an exit-only signal. It closes an existing LONG and never opens a
+  SHORT position. A confirmed SHORT can still be delivered as an alert when
+  no locally tracked LONG exists.
+- WAIT does not open or close a position.
+- No active stop-loss or take-profit exit is used in the current
+  signal-reversal hold policy. A LONG remains open until a confirmed SHORT.
+- The Android signal alert text is exactly `[price] ورود LONG` or
+  `[price] ورود SHORT`, with price first and no indicator diagnostics.
 
-## Limits
-This is a causal OHLCV walk-forward estimate, not a fill-accurate exchange simulator. It does not model liquidation, order-book queue priority, market impact, or partial fill uncertainty. A real profitability claim requires real historical data, documented fee tier, funding history, and out-of-sample walk-forward periods.
+## Candle and historical-data contract
+- Exchange candle timestamps are Unix milliseconds and identify candle open
+  time. Only candles whose close boundary has passed are eligible.
+- Every selected interval is validated independently for sufficient history,
+  valid OHLCV values, aligned timestamps, and contiguous candle spacing.
+- The Toobit historical runner fetches only selected intervals and records the
+  actual first retrieved candle time for each symbol and interval.
+- No synthetic candles are generated and missing candles are not silently
+  filled. An incomplete symbol/data set must be reported as incomplete.
+- Backtest reports disclose the requested and actual data start, selected
+  intervals, fees, slippage assumptions, funding data, failed symbols, and
+  completeness status.
 
-## Python/Android contract
-Android market candles carry Unix-ms open times. The strategy must reject missing/non-monotonic timestamps and must trim 15m/30m histories to bars whose close time is no later than the latest closed 5m decision time. Shared golden test vectors and matching threshold/SMC assertions are used to detect drift; exact full-output parity is not claimed until all feature inputs and outputs are compared.
+## Walk-forward execution assumptions
+The simulator uses the fastest selected interval as its execution clock so
+entries and exits can be modeled at the next available execution candle open.
+At each decision point, every selected interval contributes only its own
+latest candle that had fully closed by that decision time. This is a causal
+execution constraint, not a requirement that the selected intervals share
+candle boundaries.
+
+Fees and adverse slippage are modeled explicitly. Funding is included only
+when real historical settlement events are supplied. OHLCV cannot reconstruct
+queue position, market impact, liquidation, partial fills, or exact intrabar
+event ordering; results are estimates, not a profitability guarantee.
