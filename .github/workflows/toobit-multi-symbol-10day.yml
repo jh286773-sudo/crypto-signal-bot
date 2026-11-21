@@ -1,8 +1,6 @@
 name: AURUM X Selected-Symbol Full-History Walk-Forward
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       days:
