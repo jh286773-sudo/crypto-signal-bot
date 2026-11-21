@@ -2,74 +2,73 @@
 
 ## Run locally
 
-Install requirements, then set the read-only Toobit API credentials in environment variables:
+Install the project requirements, then run a selected-symbol historical test:
 
-- TOOBIT_API_KEY
-- TOOBIT_API_SECRET
+```bash
+python run_toobit_multi_backtest.py \
+  --symbols BTC-SWAP-USDT,ETH-SWAP-USDT \
+  --timeframes 3m,15m \
+  --days 30 \
+  --slippage-bps 1.0
+```
 
-Create the key with read permission only. The runner calls only the signed read-only futures commission endpoint; it does not submit, amend, or cancel orders.
+The runner uses Toobit's public historical OHLCV and funding-settlement data.
+The multi-symbol runner currently labels its commission assumption as the
+published VIP-0 taker rate (6 bps per side); it does not claim that this is
+the user's authenticated account-specific fee tier. Slippage is an explicit
+adverse per-fill assumption supplied with `--slippage-bps`, not a measured
+historical fill statistic unless the operator has independently measured it.
 
-Run:
+## Selecting timeframes
 
-    python run_toobit_multi_backtest.py --symbols BTC-SWAP-USDT --timeframes 3m,5m --days 30 --slippage-bps 2.0
+Supported intervals are `1m`, `3m`, `5m`, `15m`, `30m`, `1h`, and
+`4h`. Pass any non-empty combination with `--timeframes`, or configure
+`SELECTED_TIMEFRAMES` for Python monitor/backtest processes.
 
-The slippage argument must be a measured adverse per-fill estimate supplied by the operator. The runner downloads paginated historical OHLCV only for the selected intervals (1m, 3m, 5m, 15m, 30m, 1h, 4h), fetches historical funding settlement rates and maps them to the fastest selected execution interval, retrieves the account-specific opening and closing taker fees, and writes a JSON report. Every selected interval must independently agree; unselected intervals are not fetched or analyzed. A single selected interval is valid.
+- A single selected interval is valid and is analyzed independently.
+- With multiple selected intervals, all selected directions must agree.
+- Unselected intervals are neither downloaded nor used in the signal decision.
+- Each interval uses its own latest fully closed candle. No common candle
+  boundary or row-index alignment is required.
+- The fastest selected interval is used only as the walk-forward execution
+  clock to model the next executable entry/exit open. At each decision time,
+  slower intervals contribute their own latest candle already closed by then.
 
-## Fee source
+Examples:
 
-By default, actual account-specific rates are fetched from the signed Toobit USER_DATA endpoint. To run without API credentials, explicitly choose the currently published VIP-0 futures taker schedule:
+```bash
+# Independent 30-minute strategy
+python run_toobit_multi_backtest.py --symbols BTC-SWAP-USDT --timeframes 30m --days 30 --slippage-bps 1.0
 
-    python run_toobit_backtest.py --symbol BTC-SWAP-USDT --days 30 --slippage-bps 2.0 --public-vip0-fees
+# Require agreement among 3m, 5m and 15m
+python run_toobit_multi_backtest.py --symbols BTC-SWAP-USDT --timeframes 3m,5m,15m --days 30 --slippage-bps 1.0
+```
 
-VIP-0 is a published public schedule, not a claim about the user's personal fee tier. If the account has a different tier, use the authenticated account mode.
+## Active position model
 
-## GitHub Actions
+- LONG opens the only supported position type.
+- SHORT closes an existing LONG and never opens a SHORT position.
+- WAIT keeps an existing LONG open.
+- No active stop-loss or take-profit exit is used in this signal-reversal
+  model; a LONG is held until a confirmed SHORT.
+- The Python and Android engines use the same direct indicator-direction
+  conditions, with no score, points, or indicator/timeframe weighting.
+- SMC must independently confirm the direction on every selected interval.
+  Exceptional volatility blocks new entries.
 
-Use Actions -> Toobit Real Historical Walk-Forward -> Run workflow. For account mode, configure repository Actions secrets named TOOBIT_API_KEY and TOOBIT_API_SECRET. Select the fee source, symbol, date window, and measured slippage. The result is uploaded as the artifact aurum-x-toobit-walk-forward-result.
+## Data integrity and report
 
-## Model boundaries
+The runner validates timestamp alignment, candle ordering, OHLCV values,
+contiguous intervals, and historical pagination. It does not synthesize or
+silently fill missing candles. The report includes:
 
-- Kline pagination respects Toobit's 1000-bar page cap and verifies contiguous timestamps in the simulator.
-- Funding is charged once per historical settlement event, not once per 5m bar. If the position exits before the settlement candle closes, that settlement is not charged.
-- Open and close taker rates are distinct and come from the account endpoint.
-- Position quantity is sized against the configured equity-risk budget after estimated round-trip opening/closing fees and adverse slippage at the modeled stop. Gaps and market impact can still exceed the estimate.
-- Historical OHLCV still cannot reconstruct queue position, exact intrabar execution order, market impact, liquidation, or actual historical per-trade VIP fee changes. Current account rates are applied consistently across the selected historical period and this is stated in the output.
-- Android monitors TP1/TP2/TP3 as staged exit reminders. The current app does not submit exchange orders or automatically execute partial closes.
-- This is a backtest, not a profitability guarantee or live execution engine.
+- Requested UTC start and actual first retrieved candle time for every
+  symbol/timeframe.
+- Selected intervals and the fastest execution interval.
+- Candle counts, fee and slippage assumptions, and historical funding events.
+- Per-symbol results, failed symbols, and explicit data-completeness flags.
+- A failure exit status when the selected-symbol backtest is incomplete.
 
-
-## Conservative same-bar exit handling
-
-When TP1 is reached and the same OHLC candle also trades through the newly
-raised breakeven stop, the simulator books TP1 and closes the remaining size at
-the breakeven stop (with modeled adverse slippage). It does not assume that TP2
-or TP3 filled first. This avoids optimistic sequencing that cannot be proven
-from a single OHLC candle.
-
-## Validation scope
-
-The Python and Android strategy engines validate every OHLCV candle used by
-recursive indicators. Non-finite values, negative volume, and impossible
-high/low ranges invalidate the dataset and suppress a directional signal.
-
-The walk-forward runner uses closed candles only and enters at the next 5m open.
-This is not a full exchange matching-engine simulation: liquidation, queue
-priority, market impact, partial fills, and exact intrabar event order are not
-recoverable from OHLCV alone. A real performance report still requires a
-measured adverse slippage input and either authenticated account commission
-rates or the explicitly labeled public VIP-0 fee schedule.
-
-Funding settlement timestamps are charged once. If a settlement and an intrabar
-exit fall in the same 5m OHLC candle, exposure at that candle's open is used
-because OHLC cannot establish the order of the settlement and exit; this avoids
-optimistically omitting a potentially payable funding event.
-
-
-## Price-source parity
-
-The Android strategy and the Python walk-forward runner both use Toobit's
-contract-price `/quote/v1/klines` OHLCV stream, including the exchange's
-taker-buy base-volume field when supplied. The Android chart remains explicitly
-a mark-price chart and now displays the matching mark-price quote; the chart
-series is not silently reused as the strategy/backtest input.
-\n\n## Selecting analysis timeframes\n\nPass one or more comma-separated intervals using `--timeframes`. The fastest selected interval is used as the walk-forward execution clock; every selected interval is evaluated using only candles closed by each decision time. Example: `--timeframes 30m` runs a single-timeframe backtest, while `--timeframes 3m,5m,15m` requires all three directions to agree. Unselected intervals are neither downloaded nor used in decisions. The same selection can be supplied through `SELECTED_TIMEFRAMES` for the Python monitor and backtest runner.\n
+The report is a historical simulation, not a live execution result or a
+profitability guarantee. OHLCV data cannot reconstruct queue priority,
+market impact, liquidation, partial fills, or exact intrabar event ordering.
