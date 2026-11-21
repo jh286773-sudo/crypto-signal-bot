@@ -255,32 +255,48 @@ class ToobitAPI:
             cursor_start = next_cursor_start
             time.sleep(0.05)
 
-        # The Toobit endpoint may omit the first open-time when startTime is
-        # exactly on a candle boundary. Retry that boundary with a narrow range
-        # beginning one full interval earlier; never fabricate the missing bar.
-        if expected_first not in rows_by_time:
-            boundary_page = self._get("/quote/v1/klines", {
-                "symbol": symbol, "interval": interval,
-                "startTime": max(0, expected_first - step),
-                "endTime": expected_first + step, "limit": 10
-            })
-            match = next((row for row in boundary_page if len(row) >= 6
-                          and int(row[0]) == expected_first), None) if isinstance(boundary_page, list) else None
-            if match is not None:
-                item = {
-                    "timestamp": expected_first, "open_time": expected_first,
-                    "open": float(match[1]), "high": float(match[2]),
-                    "low": float(match[3]), "close": float(match[4]),
-                    "volume": float(match[5])
-                }
-                if len(match) > 9:
-                    item["taker_buy_volume"] = float(match[9])
-                rows_by_time[expected_first] = item
-                print(
-                    f"Toobit exact-boundary retry recovered {symbol} {interval} "
-                    f"candle {expected_first}",
-                    flush=True,
-                )
+        # Some Toobit range responses omit a leading prefix even though the
+        # requested interval is within the contract's available history. Recover
+        # every missing leading candle with bounded exact-time queries. Never
+        # move the requested start forward or fabricate OHLCV data.
+        if rows_by_time:
+            first_received = min(rows_by_time)
+            leading_opens = list(range(expected_first, first_received, step))
+            for missing_open in leading_opens:
+                recovered = False
+                for attempt in range(3):
+                    boundary_page = self._get("/quote/v1/klines", {
+                        "symbol": symbol, "interval": interval,
+                        "startTime": max(0, missing_open - step),
+                        "endTime": missing_open + step, "limit": 10
+                    })
+                    match = next((row for row in boundary_page if len(row) >= 6
+                                  and int(row[0]) == missing_open), None) if isinstance(boundary_page, list) else None
+                    if match is not None:
+                        item = {
+                            "timestamp": missing_open, "open_time": missing_open,
+                            "open": float(match[1]), "high": float(match[2]),
+                            "low": float(match[3]), "close": float(match[4]),
+                            "volume": float(match[5])
+                        }
+                        if len(match) > 9:
+                            item["taker_buy_volume"] = float(match[9])
+                        rows_by_time[missing_open] = item
+                        recovered = True
+                        print(
+                            f"Toobit leading-prefix retry recovered {symbol} {interval} "
+                            f"candle {missing_open}",
+                            flush=True,
+                        )
+                        break
+                    if attempt < 2:
+                        time.sleep(0.15)
+                if not recovered:
+                    print(
+                        f"Toobit leading-prefix candle unavailable {symbol} {interval}: "
+                        f"{missing_open}",
+                        flush=True,
+                    )
 
         # Retry small internal gaps with exact exchange queries. Never synthesize bars.
         ordered_times = sorted(rows_by_time)
