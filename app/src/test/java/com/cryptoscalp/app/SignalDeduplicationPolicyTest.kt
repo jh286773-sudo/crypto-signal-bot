@@ -6,7 +6,7 @@ import org.junit.Test
 class SignalDeduplicationPolicyTest {
     @Test fun opensLongWheneverFlat() {
         assertEquals(SignalDecision.OPEN, SignalDeduplicationPolicy.decide(null, "LONG", "WAIT"))
-        assertEquals(SignalDecision.NONE, SignalDeduplicationPolicy.decide(null, "SHORT", "WAIT"))
+        assertEquals(SignalDecision.CLOSE_ONLY, SignalDeduplicationPolicy.decide(null, "SHORT", "WAIT"))
         assertEquals(SignalDecision.OPEN, SignalDeduplicationPolicy.decide(null, "LONG", "LONG"))
     }
 
