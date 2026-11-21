@@ -2,6 +2,7 @@ import pathlib
 import json
 import math
 import unittest
+from unittest.mock import patch
 
 
 class CrossEngineContractTests(unittest.TestCase):
@@ -45,7 +46,12 @@ class CrossEngineContractTests(unittest.TestCase):
                              "close":close,"volume":100+i})
             data[tf]=rows
         from signal_engine import analyze_market
-        result=analyze_market(data)
+        # The golden fixture is intentionally historical and deterministic;
+        # freeze the engine clock at its final candle close so the live stale-data
+        # guard does not invalidate this offline cross-engine parity fixture.
+        as_of_ms=max(rows[-1]["timestamp"]+durations[tf] for tf,rows in data.items())
+        with patch("signal_engine.time.time",return_value=as_of_ms/1000):
+            result=analyze_market(data)
         self.assertEqual(result["signal"],fixture["expected_signal"])
         if fixture["expected_signal"] == "NO_SIGNAL":
             self.assertIn("smc_confirmation_required",result.get("rejection_reasons",[]))
