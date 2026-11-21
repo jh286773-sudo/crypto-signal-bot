@@ -80,8 +80,8 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
     indexed = _validate(timeframes, selected_tfs)
     base_tf = min(selected_tfs, key=lambda tf: DURATION_MS[tf])
     base = indexed[base_tf]
-    if len(base) < 201:
-        raise ValueError(f"at least 201 timestamped {base_tf} candles are required")
+    if len(base) < 61:
+        raise ValueError(f"at least 61 timestamped {base_tf} candles are required")
 
     equity = float(initial_equity)
     peak = equity
@@ -152,7 +152,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
             "equity_after": equity,
         })
 
-    i = 199
+    i = 59
     while i + 1 < len(base):
         decision_open, decision_candle = base[i]
         decision_time = decision_open + DURATION_MS[base_tf]
@@ -160,7 +160,7 @@ def run_walk_forward(timeframes: Dict[str, list], *, fee_bps_per_side: float = N
         if not histories[base_tf] or _timestamp(histories[base_tf][-1]) != decision_open:
             i += 1
             continue
-        if min(len(histories[tf]) for tf in selected_tfs) < 200:
+        if min(len(histories[tf]) for tf in selected_tfs) < 60:
             i += 1
             continue
 
