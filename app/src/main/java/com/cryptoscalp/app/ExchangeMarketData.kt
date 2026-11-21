@@ -110,8 +110,8 @@ object ExchangeMarketData {
                 // Ignore malformed rows without discarding otherwise valid candles.
             }
         }
-        if (result.size < 60) {
-            throw IllegalStateException("توبیت: تعداد کندل معتبر $interval کافی نیست (${result.size}).")
+        if (result.size < 200) {
+            throw IllegalStateException("توبیت: برای تحلیل مستقل $interval حداقل ۲۰۰ کندل بسته و معتبر لازم است؛ دریافت‌شده: ${result.size}.")
         }
         return result.sortedBy { it.time }
     }
