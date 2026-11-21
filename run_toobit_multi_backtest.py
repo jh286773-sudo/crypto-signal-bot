@@ -166,7 +166,7 @@ def main():
                 for symbol, starts in effective_starts.items()
             },
             "requested_start_coverage_complete": (all(
-                start >= requested_start_ms
+                start == requested_start_ms
                 for starts in effective_starts.values() for start in starts.values()
             ) if (args.start_date or args.start_datetime) and effective_starts else None),
             "timeframe_start_by_symbol_utc": {
