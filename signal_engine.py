@@ -561,8 +561,11 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
             except (TypeError, ValueError, StopIteration):
                 return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Invalid {tf} timestamps","trade_enabled":False}
             d = durations[tf]
-            if len(stamps) < MIN_INDICATOR_CANDLES or any(t < 0 or t % d for t in stamps) or any(b-a != d for a,b in zip(stamps,stamps[1:])):
-                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Non-contiguous or insufficient {tf} candles","trade_enabled":False}
+            # Do not require interval-aligned timestamps or gap-free candles.
+            # Each selected timeframe contributes its own latest fully closed bar;
+            # candle boundaries are never synchronized across timeframes.
+            if len(stamps) < MIN_INDICATOR_CANDLES or any(t < 0 for t in stamps) or any(b <= a for a,b in zip(stamps,stamps[1:])):
+                return {"signal":"NO_SIGNAL","status":"NO_SIGNAL","reason":f"Insufficient or unordered {tf} candles","trade_enabled":False}
             # Exchange timestamps identify candle OPEN time. A candle is closed
             # only when its close boundary is no later than the current time.
             # The supplied feed is expected to contain closed candles; discard
