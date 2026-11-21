@@ -99,6 +99,7 @@ def main():
                 fee_bps_open=6.0,
                 fee_bps_close=6.0,
                 slippage_bps=args.slippage_bps,
+                selected_timeframes=selected_timeframes,
                 initial_equity=args.equity_per_symbol,
                 risk_fraction=args.risk,
             )
