@@ -99,11 +99,11 @@ class MainActivity : Activity() {
     }
 
 
-    private val gold = Color.rgb(212, 175, 55)
-    private val goldLight = Color.rgb(245, 220, 135)
-    private val ink = Color.rgb(8, 9, 12)
-    private val panel = Color.rgb(22, 23, 27)
-    private val muted = Color.rgb(166, 160, 145)
+    private val gold = AurumDesignSystem.gold
+    private val goldLight = AurumDesignSystem.goldHighlight
+    private val ink = AurumDesignSystem.background
+    private val panel = AurumDesignSystem.surface
+    private val muted = AurumDesignSystem.textSecondary
 
     override fun onResume() {
         super.onResume()
@@ -128,7 +128,8 @@ class MainActivity : Activity() {
         window.decorView.systemUiVisibility = 0
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(30))
+            val gutter = dp(AurumDesignSystem.horizontalGutterDp(this@MainActivity))
+            setPadding(gutter, dp(14), gutter, dp(30))
             setBackgroundResource(R.drawable.app_background)
         }
 
