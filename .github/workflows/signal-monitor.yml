@@ -46,5 +46,7 @@ jobs:
         env:
           MAX_SYMBOLS: "40"
           # Comma-separated user-selected intervals; unlisted intervals are not fetched or analyzed.
-          SELECTED_TIMEFRAMES: "5m,15m,30m"
+          # Set repository Actions variable SELECTED_TIMEFRAMES to mirror the user's Python-monitor selection.
+          # Android SharedPreferences are local to the device and are not silently assumed to sync to GitHub.
+          SELECTED_TIMEFRAMES: ${{ vars.SELECTED_TIMEFRAMES || '5m,15m,30m' }}
         run: python monitor.py
