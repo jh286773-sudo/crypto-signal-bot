@@ -603,11 +603,26 @@ def analyze_market(timeframes: Dict[str,List[Dict[str,Any]]], selected_timeframe
                 "reason":"All selected timeframes must independently agree; neutral or conflicting directions mean no signal. "+detail,
                 "timeframes":reports,"diagnostics":diagnostics,"trade_enabled":False,
                 "rejection_reasons":["selected_timeframe_unanimity_required"]}
+    # SMC is a separate structural confirmation, not a weighted vote.
+    # Every selected timeframe must confirm the same indicator-derived direction.
+    smc_rejected = [tf for tf in selected_tfs
+                    if not _smc_confirms(reports[tf].get("smc", {}), side)]
+    if smc_rejected:
+        for tf in selected_tfs:
+            structure = reports[tf].get("smc", {})
+            diagnostics[tf]["smc_confirmed"] = tf not in smc_rejected
+            diagnostics[tf]["smc_structure"] = structure
+        return {"signal":"NO_SIGNAL","status":"NO_SIGNAL",
+                "reason":"SMC structural confirmation did not agree with "+side+" on: "+", ".join(smc_rejected),
+                "timeframes":reports,"diagnostics":diagnostics,"trade_enabled":False,
+                "rejection_reasons":["smc_confirmation_required"]}
+    for tf in selected_tfs:
+        diagnostics[tf]["smc_confirmed"] = True
     entry_tf=min(selected_tfs,key=lambda tf:SUPPORTED_TFS.index(tf))
     return {"signal":side,"status":side,"timeframes":reports,"entry":reports[entry_tf]["close"],
             "entry_timeframe":entry_tf,"entry_stage":"ENTRY","diagnostics":diagnostics,
-            "reason":("Independent indicator analysis confirms "+side+" on "+entry_tf) if len(selected_tfs)==1
-                     else ("All selected timeframes independently confirm "+side),
+            "reason":(("Independent indicator analysis and SMC confirm "+side+" on "+entry_tf) if len(selected_tfs)==1
+                     else ("All selected timeframes independently confirm "+side+" with SMC"),
             "trade_enabled":False,"note":"Read-only technical analysis; no exchange orders are placed."}
 
 def generate_signal(timeframes, mode="auto", selected_timeframes=None):
