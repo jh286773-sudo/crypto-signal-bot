@@ -46,7 +46,7 @@ class ToobitHistoricalBacktestTests(unittest.TestCase):
         api = ToobitAPI()
         def row(i):
             return [i * 300000, "1", "2", "0.5", "1.5", "10", 0, "0", 1, "4"]
-        with patch.object(api, "_get", side_effect=[[row(2), row(4)], [], [], []]):
+        with patch.object(api, "_get", side_effect=[[row(2), row(4)], [], [], [], []]):
             with self.assertRaisesRegex(RuntimeError, "omitted real 5m candle"):
                 api.get_klines_range(
                     "BTC-SWAP-USDT", "5m", 0, 5 * 300000, allow_leading_gap=True

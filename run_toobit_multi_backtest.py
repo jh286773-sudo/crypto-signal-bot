@@ -80,7 +80,7 @@ def main():
     }
     candidates = selected_symbols
     results, failures = [], []
-effective_starts = {}
+    effective_starts = {}
 
     # All symbols use the same UTC window, fee schedule, slippage and risk model.
     for symbol in candidates:
