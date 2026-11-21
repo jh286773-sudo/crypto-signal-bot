@@ -17,7 +17,7 @@ def run_backtest(timeframes: Dict[str, list], *, fee_bps: float = None,
                  risk_fraction: float = 0.005,
                  allocation: Tuple[float, float, float] = (1/3, 1/3, 1/3),
                  selected_timeframes=None) -> Dict[str, Any]:
-    """Run causal 5m/15m/30m walk-forward using explicit per-side costs.
+    """Run a causal walk-forward over only the selected timeframes using explicit per-side costs.
 
     Funding fallback is intentionally disabled: callers must provide real
     historical funding settlement events to include funding costs.
